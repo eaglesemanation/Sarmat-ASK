@@ -1,0 +1,11 @@
+CREATE OR REPLACE TRIGGER GD_P__bi_e
+BEFORE INSERT
+ON GD_PARTY
+REFERENCING NEW AS NEW OLD AS OLD
+FOR EACH ROW
+BEGIN
+ if :new.ID is null then
+   SELECT SEQ_gd_p.nextval INTO :new.ID FROM dual;
+ end if;
+END;
+/
