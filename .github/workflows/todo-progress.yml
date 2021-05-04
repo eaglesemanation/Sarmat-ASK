@@ -1,0 +1,28 @@
+name: todo-list-progress
+
+on:
+  pull_request:
+  push:
+    branches:
+      - "main"
+
+jobs:
+  update-progress:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        ref: ${{ github.head_ref }}
+
+    - name: Run php-cs-fixer
+      run: |
+        TOTAL=$(grep '\[ \]' "$GITHUB_WORKSPACE/postgres-robots/README.md" | wc -l)
+        FINISHED=$(grep '\[x\]' "$GITHUB_WORKSPACE/postgres-robots/README.md" | wc -l)
+        PRECENTAGE=$(bc -l <<< "scale=0;$FINISHED * 100 / $TOTAL")
+        sed -i "s/\(progress-bar.dev\/\)[0-9]*/\1$PRECENTAGE/" "$GITHUB_WORKSPACE/postgres-robots/README.md"
+
+    - uses: stefanzweifel/git-auto-commit-action@v4
+      with:
+        commit_message: Update todo-list progress bar
+        file_pattern: postgres-robots/README.md
