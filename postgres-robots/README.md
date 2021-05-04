@@ -526,9 +526,9 @@
 
   	- [ ] log_moci
 
-  	- [ ] log2file
+  	- [x] log2file
 
-  	- [ ] log2filen
+  	- [x] log2filen
 
   	- [ ] recover_last_ocil
 
