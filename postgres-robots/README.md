@@ -94,7 +94,7 @@
     - [ ] Cancel_Error_Cmd_Cont_Out
  
 - obj_robot
-    - [ ] Log
+    - [x] Log
     - [ ] Is_Robot_Ready_For_Cmd
     - [ ] Is_Robot_Ready_For_Cmd_Inner
     - [ ] get_ci_cnt_bc
@@ -296,62 +296,63 @@
   	- [ ] who_called_me
   	- [ ] who_am_i
 
-- [ ] GD_P__bi_e
-- [ ] GD_P_bd_e
-- [ ] GOOD_DESC_aiu_e
-- [ ] GOOD_DESC_biu_e
-- [ ] LOG_bi_e
-- [x] cell_au
-- [x] cell_bi_e
-- [x] cell_bu_notes_e
-- [x] cell_bu_some_e
-- [ ] command_ad_e
-- [ ] command_au_cis
-- [ ] command_bi_e
-- [ ] command_bu_cis_e
-- [ ] command_bu_state_e
-- [ ] command_gas_ad_e
-- [ ] command_gas_aiu
-- [ ] command_gas_bi_e
-- [ ] command_gas_bu_state_e
-- [ ] command_gas_oc_bi_e
-- [ ] command_inner_ade
-- [ ] command_inner_au_state
-- [ ] command_inner_bi_e
-- [ ] command_inner_bu_problemr_e
-- [ ] command_inner_bu_status_e
-- [ ] command_inner_check_bi_e
-- [ ] command_rp_ad_e
-- [ ] command_rp_au_cis_e
-- [ ] command_rp_bi_e
-- [ ] command_rp_bu_calc_cost_e
-- [ ] command_rp_bu_cis_e
-- [ ] cont_coll_bi_e
-- [ ] container_ad_e
-- [ ] container_aiu_e
-- [ ] container_aui_some_e
-- [ ] container_bi_e
-- [ ] container_bu_firm_e
-- [ ] container_collection_ai
-- [ ] emu_robot_problem_biu_e
-- [ ] firm_bd_e
-- [ ] firm_gd_bi_e
-- [ ] firm_gd_bu_qty_e
-- [ ] gd_party_aiu_e
-- [ ] gd_party_bu_qty_e
-- [ ] good_desc_ad_e
-- [ ] good_desc_au_e
-- [ ] good_desc_bd_e
-- [ ] good_desc_bi_e
-- [ ] repository_bu_work_e
-- [ ] robot_au_e
-- [ ] robot_bu_ciid_e
-- [ ] robot_bu_crp_e
-- [ ] robot_bu_ctrack_e
-- [ ] robot_bu_state_e
-- [ ] robot_bu_wait_e
-- [ ] rp_ad_e
-- [ ] rp_bi_e
-- [ ] rp_bu_middle_e
-- [ ] shelving_ad_e
-- [ ] track_ad_e
+- public.triggers
+    - [ ] GD_P__bi_e
+    - [ ] GD_P_bd_e
+    - [ ] GOOD_DESC_aiu_e
+    - [ ] GOOD_DESC_biu_e
+    - [ ] LOG_bi_e
+    - [x] cell_au
+    - [x] cell_bi_e
+    - [x] cell_bu_notes_e
+    - [x] cell_bu_some_e
+    - [ ] command_ad_e
+    - [ ] command_au_cis
+    - [ ] command_bi_e
+    - [ ] command_bu_cis_e
+    - [ ] command_bu_state_e
+    - [ ] command_gas_ad_e
+    - [ ] command_gas_aiu
+    - [ ] command_gas_bi_e
+    - [ ] command_gas_bu_state_e
+    - [ ] command_gas_oc_bi_e
+    - [ ] command_inner_ade
+    - [ ] command_inner_au_state
+    - [ ] command_inner_bi_e
+    - [ ] command_inner_bu_problemr_e
+    - [ ] command_inner_bu_status_e
+    - [ ] command_inner_check_bi_e
+    - [ ] command_rp_ad_e
+    - [ ] command_rp_au_cis_e
+    - [ ] command_rp_bi_e
+    - [ ] command_rp_bu_calc_cost_e
+    - [ ] command_rp_bu_cis_e
+    - [ ] cont_coll_bi_e
+    - [ ] container_ad_e
+    - [ ] container_aiu_e
+    - [ ] container_aui_some_e
+    - [ ] container_bi_e
+    - [ ] container_bu_firm_e
+    - [ ] container_collection_ai
+    - [ ] emu_robot_problem_biu_e
+    - [ ] firm_bd_e
+    - [ ] firm_gd_bi_e
+    - [ ] firm_gd_bu_qty_e
+    - [ ] gd_party_aiu_e
+    - [ ] gd_party_bu_qty_e
+    - [ ] good_desc_ad_e
+    - [ ] good_desc_au_e
+    - [ ] good_desc_bd_e
+    - [ ] good_desc_bi_e
+    - [ ] repository_bu_work_e
+    - [x] robot_au_e
+    - [x] robot_bu_ciid_e
+    - [ ] robot_bu_crp_e
+    - [ ] robot_bu_ctrack_e
+    - [ ] robot_bu_state_e
+    - [ ] robot_bu_wait_e
+    - [ ] rp_ad_e
+    - [ ] rp_bi_e
+    - [ ] rp_bu_middle_e
+    - [ ] shelving_ad_e
+    - [ ] track_ad_e
