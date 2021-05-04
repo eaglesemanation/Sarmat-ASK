@@ -94,7 +94,7 @@
     - [ ] Cancel_Error_Cmd_Cont_Out
  
 - obj_robot
-    - [x] Log
+    - [x] log
     - [ ] Is_Robot_Ready_For_Cmd
     - [ ] Is_Robot_Ready_For_Cmd_Inner
     - [ ] get_ci_cnt_bc
@@ -142,7 +142,7 @@
     - [ ] Cmd_RP_Cancel
 
 - obj_rpart
-    - [ ] Log
+    - [x] log
     - [ ] Form_Cmds
     - [ ] crash_test_tact
     - [ ] crash_test_rzn
@@ -167,7 +167,7 @@
     - [ ] is_way_locked
     - [ ] has_free_cell
     - [ ] has_free_cell_by_cnt
-    - [ ] add_track_npp
+    - [x] add_track_npp
     - [ ] Calc_Distance_By_Dir
     - [ ] Calc_Min_Distance
     - [ ] Calc_Min_Distance
@@ -192,7 +192,7 @@
     - [ ] Get_Cmd_RP_Order_After_Min
     - [ ] Get_Cmd_RP_Order_After_Min
     - [ ] Get_Cmd_RP_Time_Work
-    - [ ] get_next_npp
+    - [x] get_next_npp
     - [ ] get_real_min_abc_zone
     - [ ] Get_RP_CIA_State
     - [ ] Get_RP_Command_State
@@ -206,7 +206,7 @@
     - [ ] get_track_id_by_robot_and_npp
     - [ ] get_track_npp_by_cell_and_rp
     - [ ] get_track_npp_by_npp
-    - [ ] get_track_npp_by_id
+    - [x] get_track_npp_by_id
     - [ ] Get_Track_Npp_Not_Baned
     - [ ] get_transit_1rp_cell
     - [ ] Check_Lock_Robot_Around
@@ -214,7 +214,7 @@
     - [ ] Check_WPR_Lock
     - [ ] Try_Track_Lock
     - [ ] Try_Track_Lock_Robot_Around
-    - [ ] Unlock_Track
+    - [x] unlock_track
     - [ ] unlock_track_after_cmd_error
     - [ ] Robot_Stop_Drive_Away_Try
     - [ ] Group_Op_To_Simple_CRP
@@ -347,7 +347,7 @@
     - [ ] repository_bu_work_e
     - [x] robot_au_e
     - [x] robot_bu_ciid_e
-    - [ ] robot_bu_crp_e
+    - [x] robot_bu_crp_e
     - [ ] robot_bu_ctrack_e
     - [ ] robot_bu_state_e
     - [ ] robot_bu_wait_e
