@@ -262,3 +262,63 @@ BEGIN
 END;
 $BODY$;
 COMMENT ON PROCEDURE obj_rpart.unlock_track(numeric, numeric, numeric, numeric, numeric) IS 'Unlocks track by fulfilling track orders';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.is_track_between(
+    goal_npp numeric,
+    npp_from numeric,
+    npp_to numeric,
+    dir numeric,
+    rp_id_ numeric)
+    RETURNS numeric
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rp_rec_max_npp NUMERIC;
+    rp_rec_min_npp NUMERIC;
+BEGIN
+    SELECT min(npp), max(npp) INTO rp_rec_min_npp, rp_rec_max_npp
+        FROM track WHERE repository_part_id = rp_id_;
+    IF (dir = 1) THEN -- CLOCKWISE
+        FOR i IN npp_from..rp_rec_max_npp LOOP
+            IF (i = goal_npp) THEN
+                RETURN 1;
+            END IF;
+            IF (i = npp_to) THEN
+                RETURN 0;
+            END IF;
+        END LOOP;
+        -- Looping over
+        FOR i IN rp_rec_min_npp..npp_to LOOP
+            IF (i = goal_npp) THEN
+                RETURN 1;
+            END IF;
+            IF (i = npp_to) THEN
+                RETURN 0;
+            END IF;
+        END LOOP;
+    ELSE -- COUNTERCLOCKWISE
+        FOR i IN REVERSE rp_rec_min_npp..npp_from LOOP
+            IF (i = goal_npp) THEN
+                RETURN 1;
+            END IF;
+            IF (i = npp_to) THEN
+                RETURN 0;
+            END IF;
+        END LOOP;
+        -- Looping over
+        FOR i IN REVERSE npp_to..rp_rec_max_npp LOOP
+            IF (i = goal_npp) THEN
+                RETURN 1;
+            END IF;
+            IF (i = npp_to) THEN
+                RETURN 0;
+            END IF;
+        END LOOP;
+    END IF;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.is_track_between(numeric, numeric, numeric, numeric, numeric) OWNER TO postgres;

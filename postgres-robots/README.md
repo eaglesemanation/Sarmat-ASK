@@ -156,7 +156,7 @@
     - [ ] is_poss_ass_new_unload_cell
     - [ ] is_robot_lock_bad
     - [ ] is_rp_simple_1_robot
-    - [ ] is_track_between
+    - [x] is_track_between
     - [ ] is_track_locked
     - [ ] locked_
     - [ ] Is_Track_Locked_Around
@@ -348,9 +348,9 @@
     - [x] robot_au_e
     - [x] robot_bu_ciid_e
     - [x] robot_bu_crp_e
-    - [ ] robot_bu_ctrack_e
-    - [ ] robot_bu_state_e
-    - [ ] robot_bu_wait_e
+    - [x] robot_bu_ctrack_e
+    - [x] robot_bu_state_e
+    - [x] robot_bu_wait_e
     - [ ] rp_ad_e
     - [ ] rp_bi_e
     - [ ] rp_bu_middle_e
