@@ -5,9 +5,9 @@ CREATE OR REPLACE FUNCTION cell_bi_e()
     VOLATILE NOT LEAKPROOF
 AS $BODY$
 BEGIN
-	  IF (NEW.id IS null) THEN
-		    SELECT nextval('SEQ_cell') INTO NEW.id;
-	  END IF;
+    IF (NEW.id IS null) THEN
+        SELECT nextval('SEQ_cell') INTO NEW.id;
+    END IF;
 END;
 $BODY$;
 

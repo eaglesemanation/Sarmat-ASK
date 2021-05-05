@@ -5,50 +5,50 @@ CREATE OR REPLACE FUNCTION cell_bu_some_e()
     VOLATILE NOT LEAKPROOF
 AS $BODY$
 DECLARE
-	  cfchi NUMERIC;
-	  cab RECORD;
+    cfchi NUMERIC;
+    cab RECORD;
 BEGIN
-	  IF (coalesce(NEW.is_full, 0) <> coalesce(OLD.is_full, 0)) THEN
-		    SELECT coalesce(ignore_full_cell_check, 0) INTO cfchi FROM repository;
-		    -- Insertion cells should be processed seperatly
-		    IF (NEW.hi_level_type <> 999) THEN
-			      IF (cfchi = 0) THEN
-				        IF (coalesce(NEW.is_full, 0) < 0) THEN
-					          RAISE EXCEPTION 'Cell fullnes must be positive number! Cell ID=%', NEW.id
-						            USING errcode = -20033;
-				        END IF;
-				        IF (coalesce(NEW.is_full, 0) > NEW.max_full_size) THEN
-					          RAISE EXCEPTION 'Cell fullnes must be less then max_full_sixe! Cell ID=%', NEW.id
-						            USING errcode = -20033;
-				        END IF;
-			      END IF;
-		    END IF;
-		    IF (coalesce(NEW.is_full, 0) = 0) THEN -- Not full
-			      -- Check for error requests
-			      FOR cab IN (SELECT * FROM cell_autoblock WHERE cell_id = NEW.id AND state=0 ORDER BY id) LOOP
-				        NEW.is_error := 1;
-				        UPDATE cell_autoblock SET state = 1 WHERE id = cab.id;
-			      END LOOP;
-		    END IF;
+    IF (coalesce(NEW.is_full, 0) <> coalesce(OLD.is_full, 0)) THEN
+        SELECT coalesce(ignore_full_cell_check, 0) INTO cfchi FROM repository;
+        -- Insertion cells should be processed seperatly
+        IF (NEW.hi_level_type <> 999) THEN
+            IF (cfchi = 0) THEN
+                IF (coalesce(NEW.is_full, 0) < 0) THEN
+                    RAISE EXCEPTION 'Cell fullnes must be positive number! Cell ID=%', NEW.id
+                        USING errcode = -20033;
+                END IF;
+                IF (coalesce(NEW.is_full, 0) > NEW.max_full_size) THEN
+                    RAISE EXCEPTION 'Cell fullnes must be less then max_full_sixe! Cell ID=%', NEW.id
+                        USING errcode = -20033;
+                END IF;
+            END IF;
+        END IF;
+        IF (coalesce(NEW.is_full, 0) = 0) THEN -- Not full
+            -- Check for error requests
+            FOR cab IN (SELECT * FROM cell_autoblock WHERE cell_id = NEW.id AND state=0 ORDER BY id) LOOP
+                NEW.is_error := 1;
+                UPDATE cell_autoblock SET state = 1 WHERE id = cab.id;
+            END LOOP;
+        END IF;
 
-		INSERT INTO log (action, comments, cell_id)
-			  VALUES (30, 'Cell fullness was changed from ' || OLD.is_full || ' to ' || NEW.is_full, NEW.id);
-	  END IF;
+        INSERT INTO log (action, comments, cell_id)
+            VALUES (30, 'Cell fullness was changed from ' || OLD.is_full || ' to ' || NEW.is_full, NEW.id);
+    END IF;
 
-	  IF (coalesce(NEW.is_error, 0) <> coalesce(OLD.is_error, 0)) THEN
-		    INSERT INTO log (action, comments, cell_id)
-			      VALUES (31, 'Cell is_error was changed from ' || OLD.is_error || ' to ' || NEW.is_error, NEW.id);
-	  END IF;
+    IF (coalesce(NEW.is_error, 0) <> coalesce(OLD.is_error, 0)) THEN
+        INSERT INTO log (action, comments, cell_id)
+            VALUES (31, 'Cell is_error was changed from ' || OLD.is_error || ' to ' || NEW.is_error, NEW.id);
+    END IF;
 
-	  IF (coalesce(NEW.container_id ,0) <> coalesce(OLD.container_id, 0)) THEN
-		    INSERT INTO log (action, comments, cell_id, container_id)
-			      VALUES (24, 'Cell container_id was changed from ' || OLD.container_id || ' to ' || NEW.container_id, NEW.id, NEW.container_id);
-	  END IF;
+    IF (coalesce(NEW.container_id ,0) <> coalesce(OLD.container_id, 0)) THEN
+        INSERT INTO log (action, comments, cell_id, container_id)
+            VALUES (24, 'Cell container_id was changed from ' || OLD.container_id || ' to ' || NEW.container_id, NEW.id, NEW.container_id);
+    END IF;
 
-	  IF (coalesce(NEW.emp_id, 0) <> coalesce(OLD.emp_id,0)) AND (coalesce(NEW.emp_id,0) > 0) THEN
-		    INSERT INTO tmp_check_cell (cell_id, action, par)
-			      VALUES (NEW.id, 1, NEW.emp_id);
-	  END IF;
+    IF (coalesce(NEW.emp_id, 0) <> coalesce(OLD.emp_id,0)) AND (coalesce(NEW.emp_id,0) > 0) THEN
+        INSERT INTO tmp_check_cell (cell_id, action, par)
+            VALUES (NEW.id, 1, NEW.emp_id);
+    END IF;
 END;
 $BODY$;
 
