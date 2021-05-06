@@ -10,7 +10,7 @@
 ### Starting
 
 ```bash
-docker-compose up
+docker-compose build postgres && docker-compose up
 ```
 
 ### Stopping

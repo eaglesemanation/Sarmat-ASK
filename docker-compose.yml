@@ -6,6 +6,8 @@ services:
     build: ./postgres-robots
     image: postgres-robots
     restart: always
+    ports:
+        - 5432:5432
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
