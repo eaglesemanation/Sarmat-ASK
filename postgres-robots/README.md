@@ -328,7 +328,7 @@
     - [ ] command_rp_bu_calc_cost_e
     - [ ] command_rp_bu_cis_e
     - [ ] cont_coll_bi_e
-    - [ ] container_ad_e
+    - [x] container_ad_e
     - [ ] container_aiu_e
     - [ ] container_aui_some_e
     - [ ] container_bi_e
