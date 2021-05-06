@@ -15,13 +15,14 @@ BEGIN
     END LOOP;
     IF (coalesce(NEW.wait_for_problem_resolve, 0) <> coalesce(OLD.wait_for_problem_resolve, 0)) THEN
         IF (coalesce(NEW.wait_for_problem_resolve, 0) = 1) THEN
-            SELECT obj_robot.log(NEW.id, 'Установили режим решения проблемы');
+            CALL obj_robot.log(NEW.id, 'Установили режим решения проблемы');
             NEW.platform_busy_on_problem_set := NEW.platform_busy;
         ELSE
-            SELECT obj_robot.log(NEW.id, 'Сняли режим решения проблемы');
+            CALL obj_robot.log(NEW.id, 'Сняли режим решения проблемы');
             NEW.platform_busy_on_problem_set := null;
         END IF;
     END IF;
+    RETURN NEW;
 END;
 $BODY$;
 

@@ -6,12 +6,13 @@ CREATE OR REPLACE FUNCTION robot_bu_crp_e()
 AS $BODY$
 BEGIN
     IF (coalesce(OLD.command_rp_id, 0) <> coalesce(NEW.command_rp_id, 0)) THEN
-        SELECT service.log2file(
+        CALL service.log2file(
             '  триггер robot_bu_ciaid_e - сменили команду rp='
             || coalesce(OLD.command_rp_id, 0)
             || ' на ' || coalesce(NEW.command_rp_id, 0)
             || ' на робота ' || NEW.id);
     END IF;
+    RETURN NEW;
 END;
 $BODY$;
 

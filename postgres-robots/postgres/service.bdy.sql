@@ -4,9 +4,9 @@ CREATE OR REPLACE PROCEDURE service.log2filen(
 LANGUAGE 'plpgsql'
 AS $BODY$
 BEGIN
-    SELECT pg_catalog.pg_file_write(
+    PERFORM pg_catalog.pg_file_write(
         filename, 
-        to_char(LOCALTIMESTAMP, 'HH24:MI:SS.MS') || ' ' || txt,
+        to_char(LOCALTIMESTAMP, 'HH24:MI:SS.MS') || ' ' || txt || E'\n',
         true
     );
 END;
@@ -37,7 +37,7 @@ BEGIN
             entryPart := entry;
             entry := null;
         END IF;
-        SELECT pg_catalog.pg_file_write(filename, entryPart, append);
+        PERFORM pg_catalog.pg_file_write(filename, entryPart || E'\n', append);
         EXIT WHEN entry IS null;
     END LOOP;
 END;

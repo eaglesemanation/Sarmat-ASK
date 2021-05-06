@@ -6,13 +6,14 @@ CREATE OR REPLACE FUNCTION robot_au_e()
 AS $BODY$
 BEGIN
     IF (coalesce(NEW.wait_for_problem_resolve, 0) <> coalesce(OLD.wait_for_problem_resolve, 0)) THEN
-        SELECT service.log2file('  робот [' || NEW.id || '] - триггер robot_au_e - смена wait_for_problem_resolve с '
+        CALL service.log2file('  робот [' || NEW.id || '] - триггер robot_au_e - смена wait_for_problem_resolve с '
                                 || OLD.wait_for_problem_resolve || ' на ' || NEW.wait_for_problem_resolve);
     END IF;
     IF (coalesce(NEW.platform_busy, 0) <> coalesce(OLD.platform_busy, 0)) THEN
-        SELECT service.log2file('  робот [' || NEW.id || '] - триггер robot_au_e - смена platform_busy  с '
+        CALL service.log2file('  робот [' || NEW.id || '] - триггер robot_au_e - смена platform_busy  с '
                                 || OLD.platform_busy || ' на ' || NEW.platform_busy);
     END IF;
+    RETURN NEW;
 END;
 $BODY$;
 

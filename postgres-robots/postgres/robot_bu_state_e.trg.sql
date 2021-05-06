@@ -8,13 +8,14 @@ DECLARE
     cnt NUMERIC;
 BEGIN
     IF (coalesce(NEW.state, 0) <> coalesce(OLD.state, 0)) THEN
-        SELECT obj_robot.log(NEW.id, '  триггер robot_bu_state_e - сменился state с '
+        CALL obj_robot.log(NEW.id, '  триггер robot_bu_state_e - сменился state с '
                              || OLD.state || ' на ' || NEW.state || ' у робота ' || NEW.id);
     INSERT INTO log (repository_part_id, action, comments, robot_id, old_value, new_value)
         VALUES(NEW.repository_part_id, 19, '  триггер robot_bu_state_e - сменился state с '
                || OLD.state || ' на ' || NEW.state || ' у робота ' || NEW.id,
                NEW.id, coalesce(OLD.state, 0), coalesce(NEW.state, 0));
     END IF;
+    RETURN NEW;
 END;
 $BODY$;
 

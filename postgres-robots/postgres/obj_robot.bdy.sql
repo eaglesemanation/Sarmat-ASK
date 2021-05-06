@@ -25,7 +25,7 @@ BEGIN
     filename := Get_Log_File_Name(robot_id_);
     SELECT pg_catalog.pg_file_write(
         filename,
-        to_char(LOCALTIMESTAMP,'HH24:MI:SS.MS') || ' ' || txt_,
+        to_char(LOCALTIMESTAMP,'HH24:MI:SS.MS') || ' ' || txt_ || E'\n',
         true
     );
 END;

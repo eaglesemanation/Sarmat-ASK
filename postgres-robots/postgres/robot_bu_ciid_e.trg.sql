@@ -15,10 +15,10 @@ BEGIN
     IF (coalesce(OLD.command_inner_id, 0) <> coalesce(NEW.command_inner_id, 0))
         AND (coalesce(NEW.command_inner_id, 0) <> 0)
     THEN
-        SELECT obj_robot.log(NEW.id, '  триггер robot_bu_ciid_e - назначилась новая команда inner=' || coalesce(NEW.command_inner_id, 0));
+        CALL obj_robot.log(NEW.id, '  триггер robot_bu_ciid_e - назначилась новая команда inner=' || coalesce(NEW.command_inner_id, 0));
         IF (NEW.state <> 1) THEN
             NEW.state:=1;
-            SELECT obj_robot.log(NEW.id, '  триггер robot_bu_ciid_e - сменили состояние робота на 1');
+            CALL obj_robot.log(NEW.id, '  триггер robot_bu_ciid_e - сменили состояние робота на 1');
         END IF;
         UPDATE command_inner
             SET
@@ -32,9 +32,11 @@ BEGIN
     IF (coalesce(OLD.command_inner_id, 0) <> coalesce(NEW.command_inner_id, 0))
         AND (coalesce(NEW.command_inner_id, 0) = 0)
     THEN
-        SELECT obj_robot.log(NEW.id, '  триггер robot_bu_ciid_e - убрали команду inner=' || coalesce(OLD.command_inner_id, 0));
+        CALL obj_robot.log(NEW.id, '  триггер robot_bu_ciid_e - убрали команду inner=' || coalesce(OLD.command_inner_id, 0));
         NEW.command_inner_assigned_id := 0;
     END IF;
+
+    RETURN NEW;
 END;
 $BODY$;
 

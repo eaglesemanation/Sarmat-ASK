@@ -22,9 +22,9 @@ DECLARE
     filename TEXT;
 BEGIN
     filename := Get_Log_File_Name(rp_id_);
-    SELECT pg_catalog.pg_file_write(
+    PERFORM pg_catalog.pg_file_write(
         filename,
-        to_char(LOCALTIMESTAMP, 'HH24:MI:SS.MS') || ' ' || txt_,
+        to_char(LOCALTIMESTAMP, 'HH24:MI:SS.MS') || ' ' || txt_ || E'\n',
         true
     );
 END;
@@ -206,9 +206,9 @@ BEGIN
             FROM repository_part rp
             WHERE rp.id = rp_id_
     ) LOOP
-        SELECT log(rrp.rpid_, 'unlock_track: пришла npp_from_=' || npp_from_ || '; npp_to_=' || npp_to_ || '; direction=' || dir_ || '; robot.id=' || robot_id_);
+        CALL log(rrp.rpid_, 'unlock_track: пришла npp_from_=' || npp_from_ || '; npp_to_=' || npp_to_ || '; direction=' || dir_ || '; robot.id=' || robot_id_);
         IF (npp_from_ = npp_to_) THEN
-            SELECT log(rrp.rpid_, '  нет смысла сразу npp_from_=' || npp_from_ || '; npp_to_=' || npp_to_ || '; direction=' || dir_ || '; robot.id=' || robot_id_);
+            CALL log(rrp.rpid_, '  нет смысла сразу npp_from_=' || npp_from_ || '; npp_to_=' || npp_to_ || '; direction=' || dir_ || '; robot.id=' || robot_id_);
             RETURN;
         END IF;
         -- FIXME: confusing naming
@@ -228,7 +228,7 @@ BEGIN
                     WHERE npp = tr_npp AND repository_part_id = rrp.rpid_;
                 IF coalesce(tr_locked_by_robot_id, 0) NOT IN (robot_id_, 0) THEN
                     errmm := 'ERROR - Ошибка ошибка разблокировки трека ' || tr_npp || '! locked by ' || coalesce(tr_locked_by_robot_id,0);
-                    SELECT log(rrp.rpid_, errmm);
+                    CALL log(rrp.rpid_, errmm);
                     RAISE EXCEPTION '%', errmm USING errcode = -20012;
                 END IF;
                 UPDATE track SET locked_by_robot_id = 0 WHERE id = tr_id;
@@ -240,21 +240,21 @@ BEGIN
                         AND repository_part_id = rrp.rpid_
                         ORDER BY id
                 ) LOOP
-                    SELECT log(rrp.rpid_,'  есть заявка =' || ord.id || ' - освобождаем');
+                    CALL log(rrp.rpid_,'  есть заявка =' || ord.id || ' - освобождаем');
                     UPDATE track SET locked_by_robot_id = ord.robot_id WHERE id = tr_id;
-                    SELECT add_check_point(ord.repository_part_id, rrp.sorb, ord.robot_id, ord.direction, tr_npp);
+                    CALL add_check_point(ord.repository_part_id, rrp.sorb, ord.robot_id, ord.direction, tr_npp);
                     IF ord.npp_from = ord.npp_to THEN -- Order is fulfilled
                         DELETE FROM track_order WHERE id = ord.id;
-                        SELECT log(rrp.rpid_,'  уже все выбрано по заявке - удаляем');
+                        CALL log(rrp.rpid_,'  уже все выбрано по заявке - удаляем');
                     ELSE -- Still fulfilling
                         IF ord.npp_from = tr_npp THEN
-                            SELECT log(rrp.rpid_,'  уменьшаем заявку трек ' || tr_npp);
+                            CALL log(rrp.rpid_,'  уменьшаем заявку трек ' || tr_npp);
                             npp1_ := add_track_npp(rrp.rpid_, tr_npp, 1, ord.direction);
                             UPDATE track_order SET npp_from=npp1_ WHERE id = ord.id;
                         END IF;
                     END IF;
                 END LOOP;
-                SELECT get_next_npp(rrp.rpt, rrp.max_npp, tr_npp, npp2_, dir_, tr_npp, is_loop_exit);
+                CALL get_next_npp(rrp.rpt, rrp.max_npp, tr_npp, npp2_, dir_, tr_npp, is_loop_exit);
                 EXIT WHEN is_loop_exit = 1;
             END LOOP;
         END IF;
