@@ -260,7 +260,7 @@
   	- [ ] is_hibernate
   	- [ ] is_way_free_for_robot
   	- [ ] add_shelving_need_to_redraw
-  	- [ ] bkp_to_file
+    - [x] bkp_to_file
   	- [ ] calc_ideal_crp_cost
   	- [ ] cancel_all_verify_cmd
   	- [ ] cell_acc_only_1_robot
@@ -327,13 +327,13 @@
     - [ ] command_rp_bi_e
     - [ ] command_rp_bu_calc_cost_e
     - [ ] command_rp_bu_cis_e
-    - [ ] cont_coll_bi_e
     - [x] container_ad_e
-    - [ ] container_aiu_e
-    - [ ] container_aui_some_e
-    - [ ] container_bi_e
-    - [ ] container_bu_firm_e
-    - [ ] container_collection_ai
+    - [x] container_aiu_e
+    - [x] container_aiu_some_e
+    - [x] container_bi_e
+    - [x] container_bu_firm_e
+    - [x] container_collection_ai_e
+    - [x] container_collection_bi_e
     - [ ] emu_robot_problem_biu_e
     - [ ] firm_bd_e
     - [ ] firm_gd_bi_e

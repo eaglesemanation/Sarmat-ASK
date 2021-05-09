@@ -1,0 +1,33 @@
+CREATE OR REPLACE FUNCTION container_aiu_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+BEGIN
+    PERFORM service.bkp_to_file('container',
+        NEW.id || ';' ||
+        NEW.barcode || ';' ||
+        NEW.type || ';' ||
+        NEW.location || ';' ||
+        NEW.cell_id || ';' ||
+        NEW.robot_id || ';' ||
+        NEW.cell_goal_id || ';' ||
+        NEW.firm_id);
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION container_aiu_e()
+    OWNER TO postgres;
+
+COMMENT ON FUNCTION container_aiu_e()
+    IS 'Backups container on any change';
+
+DROP TRIGGER IF EXISTS container_aiu_e ON container;
+
+CREATE TRIGGER container_aiu_e
+    AFTER INSERT OR UPDATE
+    ON container
+    FOR EACH ROW
+    EXECUTE FUNCTION container_aiu_e();

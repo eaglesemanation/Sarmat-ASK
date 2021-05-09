@@ -1,0 +1,50 @@
+CREATE OR REPLACE FUNCTION container_aiu_some_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+BEGIN
+    IF (TG_OP = 'INSERT') THEN
+        INSERT INTO log (action, comments, container_id)
+            VALUES (29, 'Container added with barcode=' || NEW.barcode, NEW.id);
+    END IF;
+    IF (TG_OP = 'UPDATE') THEN
+        IF (coalesce(NEW.location, 0) <> coalesce(OLD.location, 0)) THEN
+            INSERT INTO log (action, comments, container_id)
+                VALUES (25, 'Container location was changed from ' || OLD.location || ' to ' || NEW.location, NEW.id);
+        END IF;
+        IF (coalesce(NEW.barcode, '-') <> coalesce(OLD.barcode, '-')) THEN
+            INSERT INTO log (action, comments, container_id)
+                VALUES (29, 'Container barcode was changed from ' || OLD.barcode || ' to ' || NEW.barcode, NEW.id);
+        END IF;
+        IF (coalesce(NEW.cell_id, 0) <> coalesce(OLD.cell_id, 0)) THEN
+            INSERT INTO log (action, comments, container_id, cell_id)
+                VALUES (27, 'Container cell_id was changed from ' || OLD.cell_id || ' to ' || NEW.cell_id, NEW.id, NEW.cell_id);
+        END IF;
+        IF (coalesce(NEW.cell_goal_id, 0) <> coalesce(OLD.cell_goal_id, 0)) THEN
+            INSERT INTO log (action, comments, container_id, cell_id)
+                VALUES (28, 'Container cell_goal_id  was changed from ' || OLD.cell_goal_id || ' to ' || NEW.cell_goal_id, NEW.id, NEW.cell_goal_id);
+        END IF;
+        IF (coalesce(NEW.robot_id, 0) <> coalesce(OLD.robot_id, 0)) THEN
+            INSERT INTO log (action, comments, container_id, robot_id)
+                VALUES (26, 'Container robot_id was changed from ' || OLD.robot_id || ' to ' || NEW.robot_id, NEW.id, NEW.robot_id);
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION container_aiu_some_e()
+    OWNER TO postgres;
+
+COMMENT ON FUNCTION container_aiu_some_e()
+    IS 'Logs container updates into log table';
+
+DROP TRIGGER IF EXISTS container_aiu_some_e ON container;
+
+CREATE TRIGGER container_aiu_some_e
+    AFTER INSERT OR UPDATE OF location, cell_id, robot_id, cell_goal_id
+    ON container
+    FOR EACH ROW
+    EXECUTE FUNCTION container_aiu_some_e();

@@ -1,0 +1,39 @@
+CREATE OR REPLACE FUNCTION container_collection_ai_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+DECLARE
+    cnt INT;
+    tcc RECORD;
+    cc RECORD;
+BEGIN
+    FOR tcc IN (SELECT * FROM tmp_cc) LOOP
+        DELETE FROM tmp_cc WHERE id = tcc.id;
+        FOR cc IN (SELECT * FROM container_collection WHERE id = tcc.id AND state = 0) LOOP
+            SELECT count(*) INTO cnt FROM container_collection
+                WHERE state = 0 AND container_id = cc.container_id AND id <> tcc.id;
+            IF (cnt > 0) THEN
+                RAISE EXCEPTION 'Нельзя дублировать состав сборки по контейнеру!'
+                    USING errcode = -20123;
+            END IF;
+        END LOOP;
+    END LOOP;
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION container_collection_ai_e()
+    OWNER TO postgres;
+
+COMMENT ON FUNCTION container_collection_ai_e()
+    IS 'Checks for duplicates in inserted container';
+
+DROP TRIGGER IF EXISTS container_collection_ai_e ON container_collection;
+
+CREATE TRIGGER container_collection_ai_e
+    AFTER INSERT
+    ON container_collection
+    FOR EACH ROW
+    EXECUTE FUNCTION container_collection_ai_e();
