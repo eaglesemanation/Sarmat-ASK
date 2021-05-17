@@ -322,3 +322,283 @@ BEGIN
 END;
 $BODY$;
 ALTER FUNCTION obj_rpart.is_track_between(numeric, numeric, numeric, numeric, numeric) OWNER TO postgres;
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_cell_id_by_name(
+    rp_id_ bigint,
+    sname_ text)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+BEGIN
+    SELECT id INTO res
+    FROM cell
+    WHERE sname = sname_ AND shelving_id IN (
+        SELECT id FROM shelving WHERE track_id IN (
+            SELECT id FROM track WHERE repository_part_id = rp_id_
+        )
+    );
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_cell_id_by_name(bigint, text) OWNER TO postgres;
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_track_id_by_cell_and_rp(
+    rp_id_ bigint,
+    sname_ text)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+BEGIN
+    SELECT t.id INTO res
+    FROM cell c
+    INNER JOIN shelving s
+        ON c.shelving_id = s.id
+    INNER JOIN track t
+        ON s.track_id = t.id
+    WHERE c.sname = sname_ AND t.repository_part_id = rp_id_;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_track_id_by_cell_and_rp(bigint, text) OWNER TO postgres;
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_track_npp_by_cell_and_rp(
+    rp_id_ bigint,
+    sname_ text)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+BEGIN
+    SELECT t.npp INTO res
+    FROM cell c
+    INNER JOIN shelving s
+        ON c.shelving_id = s.id
+    INNER JOIN track t
+        ON s.track_id = t.id
+    WHERE c.sname = sname_ AND t.repository_part_id = rp_id_;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_track_npp_by_cell_and_rp(bigint, text) OWNER TO postgres;
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.calc_repair_robots(
+    rpid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt_ BIGINT;
+BEGIN
+    SELECT count(*) INTO cnt_ FROM robot
+        WHERE repository_part_id = rpid_
+        AND state = obj_robot.ROBOT_STATE_REPAIR();
+    RETURN cnt_;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.calc_repair_robots(bigint) OWNER TO postgres;
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.calc_distance_by_dir(
+    rpid_ bigint,
+    n1 bigint,
+    n2 bigint,
+    dir_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rp RECORD;
+    res BIGINT;
+    nn BIGINT;
+BEGIN
+    IF (n1 = n2) THEN
+        RETURN 0;
+    END IF;
+    FOR rp IN (
+        SELECT repository_type, max_npp
+        FROM repository_part
+        WHERE id = rpid_
+    ) LOOP
+        -- Linear track
+        IF (rp.repository_type = 0) THEN
+            IF (n2 < n1) AND (dir_ = 1)
+                OR (n2 > n1) AND (dir_ = 0)
+            THEN
+                res := rp.max_npp * 100;
+            ELSE
+                res := abs(n2 - n1);
+            END IF;
+        -- Cyclic track
+        ELSE
+            nn := n1;
+            res := 0;
+            LOOP
+                res := res + 1;
+                -- Clockwise
+                IF (dir_ = 1) THEN
+                    IF (nn = rp.max_npp) THEN
+                        nn := 0;
+                    ELSE
+                        nn := nn+1;
+                    END IF;
+                -- Counterclockwise
+                ELSE
+                    IF (nn = 0) THEN
+                        nn := rp.max_npp;
+                    ELSE
+                        nn := nn - 1;
+                    END IF;
+                END IF;
+                EXIT WHEN nn = n2;
+            END LOOP;
+        END IF;
+    END LOOP;
+    RETURN res;
+end;
+$BODY$;
+ALTER FUNCTION obj_rpart.calc_distance_by_dir(bigint, bigint, bigint, bigint) OWNER TO postgres;
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_rp_spacing_of_robots(
+    rpid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rp RECORD;
+BEGIN
+    FOR rp IN (
+        SELECT spacing_of_robots FROM repository_part WHERE id = rpid_
+    ) LOOP
+        RETURN rp.spacing_of_robots;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_rp_spacing_of_robots(bigint) OWNER TO postgres;
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_rp_num_of_robots(
+    rpid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rp RECORD;
+BEGIN
+    FOR rp IN (
+        SELECT num_of_robots FROM repository_part WHERE id = rpid_
+    ) LOOP
+        RETURN rp.num_of_robots;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_rp_num_of_robots(bigint) OWNER TO postgres;
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.is_track_near_repair_robot(
+    rp_id_ bigint,
+    npp_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rr RECORD;
+    d1 BIGINT;
+    d2 BIGINT;
+    md BIGINT;
+BEGIN
+    FOR rr IN (
+        SELECT * FROM robot
+        WHERE state = obj_robot.ROBOT_STATE_REPAIR()
+        AND repository_part_id = rp_id_
+    ) LOOP
+        d1 := calc_distance_by_dir(rp_id_, npp_, rr.current_track_npp, 0);
+        d2 := calc_distance_by_dir(rp_id_ , npp_, rr.current_track_npp, 1);
+        md := get_rp_spacing_of_robots(rp_id_) * (get_rp_num_of_robots(rp_id_) - 1) * 2 +(get_rp_num_of_robots(rp_id_) - 1);
+        IF (d1 <= md) OR (d2 <= md) THEN
+            RETURN 1;
+        END IF;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.is_track_near_repair_robot(bigint, bigint) OWNER TO postgres;
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.is_exists_cell_type(
+    rp_id_ bigint,
+    ct_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cc RECORD;
+BEGIN
+    FOR cc IN (
+        SELECT * FROM cell
+        WHERE repository_part_id = rp_id_
+        AND hi_level_type = ct_
+        AND is_error = 0
+    ) LOOP
+        RETURN 1;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.is_exists_cell_type(bigint, bigint) OWNER TO postgres;
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_transit_1rp_cell(
+    rpid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    ncl RECORD;
+BEGIN
+    FOR ncl IN (
+        SELECT * FROM cell
+            WHERE repository_part_id = rpid_
+            AND is_full = 0
+            AND coalesce(blocked_by_ci_id, 0) = 0
+            AND service.is_cell_over_locked(id) = 0
+            AND coalesce(is_error, 0) = 0
+            AND hi_level_type = obj_ask.CELL_TYPE_TRANSIT_1RP
+    ) LOOP
+        RETURN ncl.id;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_transit_1rp_cell(bigint) OWNER TO postgres;

@@ -149,7 +149,7 @@
     - [ ] Is_Active_Command_RP
     - [ ] is_cell_cmd_track_lock
     - [ ] is_cell_locked_by_repaire
-    - [ ] is_exists_cell_type
+    - [x] is_exists_cell_type
     - [ ] is_idle
     - [ ] Is_Npp_Actual_Info
     - [ ] is_poss_to_lock
@@ -160,7 +160,7 @@
     - [ ] is_track_locked
     - [ ] locked_
     - [ ] Is_Track_Locked_Around
-    - [ ] Is_Track_Near_Repair_Robot
+    - [x] is_track_near_repair_robot
     - [ ] is_track_npp_BAN_MOVE_TO
     - [ ] Is_Track_Part_Between
     - [ ] is_way_free
@@ -168,10 +168,10 @@
     - [ ] has_free_cell
     - [ ] has_free_cell_by_cnt
     - [x] add_track_npp
-    - [ ] Calc_Distance_By_Dir
+    - [x] calc_distance_by_dir
     - [ ] Calc_Min_Distance
     - [ ] Calc_Min_Distance
-    - [ ] Calc_Repair_robots
+    - [x] calc_repair_robots
     - [ ] calc_robot_nearest
     - [ ] calc_track_free_cell
     - [ ] inc_spacing_of_robots
@@ -179,7 +179,7 @@
     - [ ] inc_npp
     - [ ] Get_Another_Direction
     - [ ] get_another_robot_id
-    - [ ] Get_Cell_ID_By_Name
+    - [x] get_cell_id_by_name
     - [ ] Get_Cell_Name_By_Track_ID
     - [ ] Get_Cell_Name_By_Track_Npp
     - [ ] Get_Cell_Shelving_ID
@@ -197,18 +197,18 @@
     - [ ] Get_RP_CIA_State
     - [ ] Get_RP_Command_State
     - [ ] Get_RP_Name
-    - [ ] Get_RP_Num_Of_robots
+    - [x] get_rp_num_of_robots
     - [ ] Get_RP_Robots_State
-    - [ ] Get_RP_Spacing_Of_robots
+    - [x] get_rp_spacing_of_robots
     - [ ] get_track_id_by_cell_and_robot
-    - [ ] get_track_id_by_cell_and_rp
+    - [x] get_track_id_by_cell_and_rp
     - [ ] Get_Track_ID_By_Npp
     - [ ] get_track_id_by_robot_and_npp
-    - [ ] get_track_npp_by_cell_and_rp
+    - [x] get_track_npp_by_cell_and_rp
     - [ ] get_track_npp_by_npp
     - [x] get_track_npp_by_id
     - [ ] Get_Track_Npp_Not_Baned
-    - [ ] get_transit_1rp_cell
+    - [x] get_transit_1rp_cell
     - [ ] Check_Lock_Robot_Around
     - [ ] Check_New_Robot_Npp_Correct
     - [ ] Check_WPR_Lock
@@ -252,10 +252,10 @@
   	- [ ] get_ust_cell_dir
   	- [ ] is_cell_accept_enable
   	- [ ] is_cell_cmd_locked
-  	- [ ] is_cell_full_check
-  	- [ ] is_cell_near_edge
+  	- [x] is_cell_full_check
+  	- [x] is_cell_near_edge
   	- [ ] is_cell_on_comp
-  	- [ ] is_cell_over_locked
+  	- [x] is_cell_over_locked
   	- [ ] is_free_way
   	- [ ] is_hibernate
   	- [ ] is_way_free_for_robot
@@ -263,8 +263,8 @@
     - [x] bkp_to_file
   	- [ ] calc_ideal_crp_cost
   	- [ ] cancel_all_verify_cmd
-  	- [ ] cell_acc_only_1_robot
-  	- [ ] cell_lock_by_cmd
+  	- [x] cell_acc_only_1_robot
+  	- [x] cell_lock_by_cmd
   	- [ ] cell_unlock_from_cmd
   	- [ ] change_cc_qty
   	- [ ] clear_form_opened
@@ -278,7 +278,7 @@
   	- [ ] unlock_all_not_ness
   	- [ ] empty_cell_capability
   	- [ ] ml_get_val
-  	- [ ] ml_get_rus_eng_val
+  	- [x] ml_get_rus_eng_val
   	- [ ] make_bkp_stamp
   	- [ ] make_bkp_good
   	- [ ] mark_cell_as_free
@@ -306,11 +306,11 @@
     - [x] cell_bi_e
     - [x] cell_bu_notes_e
     - [x] cell_bu_some_e
-    - [ ] command_ad_e
-    - [ ] command_au_cis
-    - [ ] command_bi_e
-    - [ ] command_bu_cis_e
-    - [ ] command_bu_state_e
+    - [x] command_ad_e
+    - [x] command_au_cis_e
+    - [x] command_bi_e
+    - [x] command_bu_cis_e
+    - [x] command_bu_state_e
     - [ ] command_gas_ad_e
     - [ ] command_gas_aiu
     - [ ] command_gas_bi_e

@@ -1,3 +1,16 @@
+CREATE OR REPLACE FUNCTION obj_robot."ROBOT_STATE_REPAIR"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 6;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."ROBOT_STATE_REPAIR"() OWNER TO postgres;
+
 CREATE OR REPLACE FUNCTION obj_robot.get_log_file_name(
     robot_id_ numeric)
     RETURNS text
