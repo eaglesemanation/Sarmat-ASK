@@ -235,66 +235,66 @@
     - [ ] get_cell_storage_state
     - [ ] get_cells_for_ustirovka
     - [ ] get_cells_for_ustirovka_short
-  	- [ ] get_cnt_name_on_robot
-  	- [ ] get_container_sum_qty
-  	- [ ] get_corr_shelving_id
-  	- [ ] get_free_rest
-  	- [ ] get_last_cmd
-  	- [ ] get_max_cmd_priority
-  	- [ ] get_robot_ci_cnt_bc
-  	- [ ] get_robot_ci_cell_src
-  	- [ ] get_robot_ci_cell_dst
-  	- [ ] get_robot_name
-  	- [ ] get_robot_stop_param
-  	- [ ] get_rp_param_number
-  	- [ ] get_rp_param_string
-  	- [ ] get_sec
-  	- [ ] get_ust_cell_dir
-  	- [ ] is_cell_accept_enable
-  	- [ ] is_cell_cmd_locked
-  	- [x] is_cell_full_check
-  	- [x] is_cell_near_edge
-  	- [ ] is_cell_on_comp
-  	- [x] is_cell_over_locked
-  	- [ ] is_free_way
-  	- [ ] is_hibernate
-  	- [ ] is_way_free_for_robot
-  	- [ ] add_shelving_need_to_redraw
+    - [ ] get_cnt_name_on_robot
+    - [ ] get_container_sum_qty
+    - [ ] get_corr_shelving_id
+    - [ ] get_free_rest
+    - [ ] get_last_cmd
+    - [ ] get_max_cmd_priority
+    - [ ] get_robot_ci_cnt_bc
+    - [ ] get_robot_ci_cell_src
+    - [ ] get_robot_ci_cell_dst
+    - [ ] get_robot_name
+    - [ ] get_robot_stop_param
+    - [ ] get_rp_param_number
+    - [ ] get_rp_param_string
+    - [ ] get_sec
+    - [ ] get_ust_cell_dir
+    - [ ] is_cell_accept_enable
+    - [ ] is_cell_cmd_locked
+    - [x] is_cell_full_check
+    - [x] is_cell_near_edge
+    - [ ] is_cell_on_comp
+    - [x] is_cell_over_locked
+    - [ ] is_free_way
+    - [ ] is_hibernate
+    - [ ] is_way_free_for_robot
+    - [ ] add_shelving_need_to_redraw
     - [x] bkp_to_file
-  	- [ ] calc_ideal_crp_cost
-  	- [ ] cancel_all_verify_cmd
-  	- [x] cell_acc_only_1_robot
-  	- [x] cell_lock_by_cmd
-  	- [ ] cell_unlock_from_cmd
-  	- [ ] change_cc_qty
-  	- [ ] clear_form_opened
-  	- [ ] clearlogfile
-  	- [ ] clearlogfilen
-  	- [ ] log_moci
-  	- [x] log2file
-  	- [x] log2filen
-  	- [ ] recover_last_ocil
-  	- [ ] robot_goto_cell
-  	- [ ] unlock_all_not_ness
-  	- [ ] empty_cell_capability
-  	- [ ] ml_get_val
-  	- [x] ml_get_rus_eng_val
-  	- [ ] make_bkp_stamp
-  	- [ ] make_bkp_good
-  	- [ ] mark_cell_as_free
-  	- [ ] mark_cell_as_full
-  	- [ ] op_last_cmd_repeat
-  	- [ ] op_last_cmd_mark_as_ok
-  	- [ ] test
-  	- [ ] test_raise_wrap
-  	- [ ] to_number_my
-  	- [ ] to_number_from_left
-  	- [ ] shelving_has_error_cell
-  	- [ ] set_robot_mode_to_repair
-  	- [ ] set_robot_repair_done
-  	- [ ] set_rp_param_number
-  	- [ ] who_called_me
-  	- [ ] who_am_i
+    - [ ] calc_ideal_crp_cost
+    - [ ] cancel_all_verify_cmd
+    - [x] cell_acc_only_1_robot
+    - [x] cell_lock_by_cmd
+    - [ ] cell_unlock_from_cmd
+    - [ ] change_cc_qty
+    - [ ] clear_form_opened
+    - [ ] clearlogfile
+    - [ ] clearlogfilen
+    - [ ] log_moci
+    - [x] log2file
+    - [x] log2filen
+    - [ ] recover_last_ocil
+    - [ ] robot_goto_cell
+    - [ ] unlock_all_not_ness
+    - [ ] empty_cell_capability
+    - [ ] ml_get_val
+    - [x] ml_get_rus_eng_val
+    - [ ] make_bkp_stamp
+    - [ ] make_bkp_good
+    - [ ] mark_cell_as_free
+    - [ ] mark_cell_as_full
+    - [ ] op_last_cmd_repeat
+    - [ ] op_last_cmd_mark_as_ok
+    - [ ] test
+    - [ ] test_raise_wrap
+    - [ ] to_number_my
+    - [ ] to_number_from_left
+    - [ ] shelving_has_error_cell
+    - [ ] set_robot_mode_to_repair
+    - [ ] set_robot_repair_done
+    - [ ] set_rp_param_number
+    - [ ] who_called_me
+    - [ ] who_am_i
 
 - public.triggers
     - [ ] GD_P__bi_e
