@@ -1,6 +1,6 @@
 ### Migration progress
 
-![Progress](https://progress-bar.dev/8/)
+![Progress](https://progress-bar.dev/16/)
 
 - api
     - [ ] get_cmd_gas_time_end
