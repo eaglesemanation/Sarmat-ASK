@@ -10,7 +10,8 @@ DECLARE
 BEGIN
     IF (coalesce(NEW.is_full, 0) <> coalesce(OLD.is_full, 0)) THEN
         SELECT coalesce(ignore_full_cell_check, 0) INTO cfchi FROM repository;
-        -- Insertion cells should be processed seperatly
+        -- Insertion cells should be processed separately
+        -- для ячеек приема отдельная тема
         IF (NEW.hi_level_type <> 999) THEN
             IF (cfchi = 0) THEN
                 IF (coalesce(NEW.is_full, 0) < 0) THEN
@@ -23,8 +24,10 @@ BEGIN
                 END IF;
             END IF;
         END IF;
-        IF (coalesce(NEW.is_full, 0) = 0) THEN -- Not full
+        -- Not full
+        IF (coalesce(NEW.is_full, 0) = 0) THEN -- освободилась
             -- Check for error requests
+            -- а нет ли запроса на ее ошибочность?
             FOR cab IN (SELECT * FROM cell_autoblock WHERE cell_id = NEW.id AND state=0 ORDER BY id) LOOP
                 NEW.is_error := 1;
                 UPDATE cell_autoblock SET state = 1 WHERE id = cab.id;

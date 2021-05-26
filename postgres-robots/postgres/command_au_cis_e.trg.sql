@@ -17,7 +17,8 @@ DECLARE
     sumq BIGINT;
     sumqr BIGINT;
 BEGIN
-    -- interwarehouse transfers
+    -- Inter warehouse transfers
+    -- для межскладских передач
     FOR tc IN (SELECT * FROM tmp_cmd WHERE action = 1 ORDER BY id) LOOP
         PERFORM service.log2file(' trigger command_au_cis: Between repository_part transfer begin tmp.id=' || tc.id);
         SELECT * INTO crec FROM command WHERE id = tc.id;
@@ -49,7 +50,8 @@ BEGIN
         DELETE FROM tmp_cmd WHERE id = tc.id AND action = 1;
     END LOOP;
 
-    -- Check if command_gas is fullfiled
+    -- Check if command_gas is fulfilled
+    -- для определения не выполнена ли Command_gas полностью
     FOR tc IN (SELECT * FROM tmp_cmd WHERE action = 3 ORDER BY id) LOOP
         BEGIN
             SELECT command_gas_id INTO cgid FROM command WHERE id = tc.id;
@@ -70,7 +72,8 @@ BEGIN
         DELETE FROM tmp_cmd WHERE id = tc.id AND action = 3;
     END LOOP;
 
-    -- innerwarehouse transfers
+    -- Inner warehouse transfers
+    -- для внтурискладских передач
     FOR tc IN (SELECT * FROM tmp_cmd WHERE action = 5 ORDER BY id) LOOP
         PERFORM service.log2file(' trigger command_au_cis: inner repository_part transfer begin tmp.id=' || tc.id);
         SELECT * INTO crec FROM command WHERE id = tc.id;

@@ -12,28 +12,36 @@ DECLARE
 BEGIN
     PERFORM service.log2file('  триггер command_bu_cis_e - зашли ctype=' || NEW.command_type_id);
     -- Successful execution
+    -- команда успешно выполнилась
     IF (coalesce(OLD.command_rp_executed, 0) = 0) AND (coalesce(NEW.command_rp_executed, 0) <> 0) THEN
         -- Movement command
+        -- перемещение
         IF (NEW.command_type_id = 1) THEN
+            -- склад источник и приемник совпадают
             IF (NEW.rp_src_id = NEW.rp_dest_id) THEN
                 SELECT hi_level_type INTO cnt FROM cell
                     WHERE sname = NEW.crp_cell
                     AND repository_part_id = NEW.rp_src_id;
                 IF (cnt = obj_ask.CELL_TYPE_TRANSIT_1RP()) THEN
                     -- Inner warehouse transfer
+                    -- транзит внутренний
                     INSERT INTO tmp_cmd(id, action) VALUES (NEW.id, 5);
                 ELSE
+                    -- раз команда завершилась, то все зашибись
                     PERFORM trigger.finish_command(NEW);
                 END IF;
             ELSE -- rp_src_id <> rp_dest_id
-                IF (NEW.container_rp_id = NEW.rp_src_id) THEN
+                -- ячейка склада источника не совпадает с ячейкой склада-приемника
+                -- если выполнилась, значит уже в промежуточной ячейке
+                IF (NEW.container_rp_id = NEW.rp_src_id) THEN -- еще есть что делать
                     NEW.container_rp_id := NEW.rp_dest_id;
                     INSERT INTO tmp_cmd(id, action) VALUES (NEW.id, 1);
-                ELSE
+                ELSE -- команда уже вполнена
                     PERFORM trigger.finish_command(NEW);
                 END IF;
             END IF;
-        ELSIF (NEW.command_type_id = 19) THEN
+        ELSIF (NEW.command_type_id = 19) THEN -- верификация
+            -- надо дать еще одну команду:
             IF (NEW.state <> 2) THEN
                 PERFORM service.log2file('  триггер command_bu_cis_e - выполнилась команда верификации по складу');
                 cnt := 0;
@@ -64,7 +72,8 @@ BEGIN
                     NEW.state := 5;
                 END IF;
             END IF;
-        ELSIF (NEW.command_type_id = 23) THEN
+        ELSIF (NEW.command_type_id = 23) THEN -- тест механики
+            -- надо дать еще одну команду:
             IF (NEW.state <> 2) THEN
                 PERFORM service.log2file('  триггер command_bu_cis_e - выполнилась команда тест мех по складу');
                 NEW.priority := NEW.priority - 1;
@@ -116,7 +125,7 @@ BEGIN
     END IF;
     IF (NEW.state <> 5) THEN
         UPDATE command_gas
-            SET state = 3
+            SET state = 3 -- Start execution / начала выполняться
             WHERE id = NEW.command_gas_id
             AND state < 3;
     END IF;

@@ -24,6 +24,7 @@ BEGIN
         RETURN NEW;
     END LOOP;
     -- Validation for warehouse with 2 robots
+    -- проверяем для складов с двумя роботами, а может ли робот находиться тут
     IF (coalesce(OLD.current_track_id, 0) <> coalesce(NEW.current_track_id, 0)) THEN
         FOR rp IN (
             SELECT num_of_robots nor FROM repository_part
@@ -45,7 +46,9 @@ BEGIN
     END IF;
     CALL obj_robot.log(NEW.id,' тrbtr '||' проверка прошла');
     -- Unlock robots
-    IF (OLD.current_track_id IS NOT null) THEN -- Already working
+    -- снимаем блокировки
+    -- Already working
+    IF (OLD.current_track_id IS NOT null) THEN -- не начало работы
         CALL obj_robot.log(NEW.id, ' тrbtr ' || '   не начало работы, снимаем блокировки');
         SELECT npp INTO npp_old FROM track WHERE id = OLD.current_track_id;
         CALL obj_robot.log(NEW.id, ' тrbtr ' || '   npp1=' || npp_old);
@@ -70,19 +73,25 @@ BEGIN
                 npp_to_id := cirec.track_dest_id;
             END IF;
             IF (npp_to = cirec.track_npp_begin) THEN
+                -- начальный трек команды совпадает с конечным, никуда двигаться не надо
                 CALL obj_robot.log(NEW.id, ' тrbtr  начальный трек команды совпадает с конечным');
                 NEW.current_track_id := OLD.current_track_id;
             ELSE
+                -- начальный трек команды и конечный - разные, надо дальше анализировать
                 IF (obj_rpart.is_track_between(npp_new, cirec.track_npp_begin, npp_to, cirec.direction, NEW.repository_part_id) = 1) THEN
                     -- Robot is currently between starting point and destination
+                    -- трек, где сейчас робот, между начальным и целевым,
+                    -- но еще надо проверить, а не обратный ли отскок
                     IF (obj_rpart.is_track_between(npp_new, cirec.track_npp_begin, npp_old, cirec.direction, NEW.repository_part_id) = 1) THEN
                         -- Robot moved backwards in the last step
+                        -- обратный отскок елы палы
                         CALL obj_robot.log(NEW.id,' тrbtr обратный отскок ');
                         NEW.current_track_id := OLD.current_track_id;
                         npp_new := npp_old;
                     END IF;
                 ELSE
                     -- Robot went over
+                    -- промахнулись, разблокируем только часть правильную
                     CALL obj_robot.log(NEW.id,' тrbtr промахнулись, разблокируем только часть правильную ');
                     NEW.current_track_id := npp_to_id;
                     npp_new := npp_to;

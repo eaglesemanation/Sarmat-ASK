@@ -13,7 +13,7 @@ BEGIN
     IF (coalesce(OLD.state, 0) <> coalesce(NEW.state, 0)) THEN
         IF (NEW.state >= 3) THEN
             UPDATE command_gas
-                SET state = 1 -- Start execution
+                SET state = 1 -- Start execution / начала выполняться
                 WHERE id = NEW.command_gas_id and state<1;
         END IF;
         IF (NEW.state = 2) AND (OLD.state <> 2) OR

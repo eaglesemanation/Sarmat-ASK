@@ -23,6 +23,7 @@ BEGIN
     SELECT session_user INTO NEW.user_name;
 
     -- Default command type - 1 (move)
+    -- если не указан тип команды, то считаем, что перемещение
     IF (coalesce(NEW.command_type_id, 0) = 0) THEN
         NEW.command_type_id := 1;
     END IF;
@@ -32,6 +33,7 @@ BEGIN
     END IF;
 
     -- Default target warehouse is equal to source warehouse
+    -- если не указан склад-приемник, то делаем его равному складу источнику
     IF (coalesce(NEW.rp_dest_id, 0) = 0) THEN
         NEW.rp_dest_id := NEW.rp_src_id;
     END IF;
@@ -40,6 +42,7 @@ BEGIN
         SELECT nextval('SEQ_command') INTO NEW.id;
         NEW.date_time_create := LOCALTIMESTAMP;
 
+        -- проверка на статус новой команды
         IF (NEW.state <> 1) THEN
             RAISE EXCEPTION '%',
                 service.ml_get_rus_eng_val(
@@ -54,10 +57,14 @@ BEGIN
         ---------------------------------
         IF (NEW.command_type_id = 1) THEN
             -- Sanitizing client inputs
+            -- правим возможные ошибки программы-клиента
             NEW.cell_src_sname := trim(NEW.cell_src_sname);
             NEW.cell_dest_sname := trim(NEW.cell_dest_sname);
 
+            -- смотрим, правильно ли заданы условия команды
+
             -- Adding command is prohibited during calibration
+            -- проверяем, а не запущена ли команда юстировки
             SELECT count(*) INTO cnt FROM command
                 WHERE command_type_id = 19 AND state IN (0,1,3);
             IF (cnt <> 0) THEN
@@ -66,19 +73,13 @@ BEGIN
             END IF;
 
             -- If there is only one warehouse - use it as a default
+            -- проверка склада-источника
             IF (coalesce(NEW.rp_src_id, 0) = 0) THEN
                 SELECT count(*) into cnt from repository_part;
                 IF (cnt = 1) THEN
                     SELECT id INTO NEW.rp_src_id FROM repository_part;
                 END IF;
             END IF;
-            IF (coalesce(NEW.rp_dest_id, 0) = 0) THEN
-                SELECT count(*) INTO cnt FROM repository_part;
-                IF (cnt = 1) THEN
-                    SELECT id INTO NEW.rp_dest_id FROM repository_part;
-                END IF;
-            END IF;
-
             -- Check if set warehouse exists
             SELECT count(*) INTO cnt FROM repository_part WHERE id = coalesce(NEW.rp_src_id, 0);
             IF (cnt = 0) THEN
@@ -89,6 +90,16 @@ BEGIN
                     ) || ' ' || coalesce(NEW.rp_src_id, 0)
                     USING errcode = -20000 - 1;
             END IF;
+
+            -- If there is only one warehouse - use it as a default
+            -- проверка склада-приемника
+            IF (coalesce(NEW.rp_dest_id, 0) = 0) THEN
+                SELECT count(*) INTO cnt FROM repository_part;
+                IF (cnt = 1) THEN
+                    SELECT id INTO NEW.rp_dest_id FROM repository_part;
+                END IF;
+            END IF;
+            -- Check if set warehouse exists
             SELECT count(*) INTO cnt FROM repository_part WHERE id = coalesce(NEW.rp_dest_id,0);
             IF (cnt = 0) THEN
                 RAISE EXCEPTION '%',
@@ -100,12 +111,14 @@ BEGIN
             END IF;
 
             -- Checks for source cell
+            -- проверка ячейки-источника
+
             -- Check if cell exists
             SELECT count(*) INTO cnt FROM cell
                 WHERE sname = coalesce(NEW.cell_src_sname, '-')
                 AND hi_level_type <> 11
                 AND repository_part_id = NEW.rp_src_id;
-            IF (cnt = 0) THEN
+            IF (cnt = 0) THEN -- нет ячейки-источника
                 RAISE EXCEPTION '%',
                     service.ml_get_rus_eng_val(
                         'ERROR: Указана несуществующая ячейка-источник:',
@@ -113,20 +126,20 @@ BEGIN
                     ) || NEW.cell_src_sname || ' ' || NEW.rp_src_id
                     USING errcode = -20000 - 3;
             ELSE
-                -- Check if cell is not errored out
+                -- Check if cell has no errors
                 SELECT count(*) INTO cnt FROM cell
                     WHERE sname = coalesce(NEW.cell_src_sname, '-')
                     AND hi_level_type <> 11
                     AND is_error = 0
                     AND repository_part_id = NEW.rp_src_id;
-                IF (cnt = 0) THEN
+                IF (cnt = 0) THEN -- ошибочная ячейки-источника
                     RAISE EXCEPTION '%',
                         service.ml_get_rus_eng_val(
                             'ERROR: Ячейка-источник в ошибочном состоянии:',
                             'ERROR: Source cell is in error state:'
                         ) || NEW.cell_src_sname
                         USING errcode = -20000 - 6;
-                ELSE
+                ELSE -- есть, означиваем
                     SELECT id INTO NEW.cell_src_id FROM cell
                         WHERE sname = coalesce(NEW.cell_src_sname, '-')
                         AND repository_part_id = NEW.rp_src_id;
@@ -142,12 +155,13 @@ BEGIN
             END IF;
 
             -- Checks for destination cell
+            -- проверка ячейки-приемника
             -- Check if cell exists
             SELECT count(*) INTO cnt FROM cell
                 WHERE sname = coalesce(NEW.cell_dest_sname, '-')
                 AND hi_level_type <> 11
                 AND repository_part_id = NEW.rp_dest_id;
-            IF (cnt = 0) THEN
+            IF (cnt = 0) THEN -- нет ячейки-приемника
                 RAISE EXCEPTION '%',
                     service.ml_get_rus_eng_val(
                         'ERROR: Указана несуществующая ячейка-приемник:',
@@ -155,20 +169,20 @@ BEGIN
                     ) || NEW.cell_dest_sname
                     USING errcode = -20000 - 3;
             ELSE
-                -- Check if cell is not errored out
+                -- Check if cell has no errors
                 SELECT count(*) INTO cnt FROM cell
                     WHERE sname = coalesce(NEW.cell_dest_sname, '-')
                     AND hi_level_type <> 11
                     AND is_error = 0
                     AND repository_part_id = NEW.rp_dest_id;
-                IF (cnt = 0) THEN
+                IF (cnt = 0) THEN -- ошибочная ячейки-приемник
                     RAISE EXCEPTION '%',
                         service.ml_get_rus_eng_val(
                             'ERROR: Ячейка-приемник в ошибочном статусе:',
                             'ERROR: Destination cell is in error state:'
                         ) || NEW.cell_dest_sname
                         USING errcode = -20000 - 8;
-                ELSE
+                ELSE -- есть, означиваем
                     SELECT id INTO NEW.cell_dest_id FROM cell
                         WHERE sname = coalesce(NEW.cell_dest_sname, '-')
                         AND repository_part_id = NEW.rp_dest_id;
@@ -201,8 +215,11 @@ BEGIN
             NEW.track_dest_id := obj_rpart.get_track_id_by_cell_and_rp(NEW.rp_dest_id, NEW.cell_dest_sname);
 
             -- Command execution start
+            -- начало работы команды
+
             -- Case where source and destination are the same
-            IF NEW.rp_src_id = NEW.rp_dest_id THEN
+            -- случай, если склад-источник и приемник совпадают
+            IF NEW.rp_src_id = NEW.rp_dest_id THEN -- склад источник и приемник совпадают
                 FOR rpp IN (
                     SELECT id, repository_type rt, num_of_robots nor
                     FROM repository_part
@@ -210,7 +227,7 @@ BEGIN
                 ) LOOP
                     cnt := 0;
                     -- Linear track, 2 robots on track
-                    IF (rpp.rt = 0) AND (rpp.nor = 2) THEN
+                    IF (rpp.rt = 0) AND (rpp.nor = 2) THEN -- склад линейный, два робота на рельсе
                         e1 := service.is_cell_near_edge(NEW.cell_src_id);
                         e2 := service.is_cell_near_edge(NEW.cell_dest_id);
                         IF (e1 <> e2) AND (e1 <> 0) AND (e2 <> 0)
@@ -252,11 +269,13 @@ BEGIN
                         END IF;
                     END IF;
                     -- Cyclic track, 4 robots on track
-                    IF (rpp.rt = 1) AND (rpp.nor = 4) THEN
-                        IF (obj_rpart.calc_repair_robots(NEW.rp_src_id) > 0) THEN
+                    IF (rpp.rt = 1) AND (rpp.nor = 4) THEN -- склад кольцевой, 4 робота на рельсе
+                        IF (obj_rpart.calc_repair_robots(NEW.rp_src_id) > 0) THEN -- есть на ремонте роботы по подскладу
+                            -- находятся ли источник/приемник в шлейфе поломанного робота?
                             IF (obj_rpart.is_track_near_repair_robot(rpp.id, NEW.npp_src) = 1)
                                 OR (obj_rpart.is_track_near_repair_robot(NEW.npp_dest, rpp.id) = 1)
                             THEN
+                                -- есть ли ячейки на подскладе для внутреннего транзита
                                 IF (obj_rpart.is_exists_cell_type(rpp.id, obj_ask.CELL_TYPE_TRANSIT_1RP) = 1) THEN
                                     PERFORM service.log2file('пущаем внутренний транзит в триггере');
                                     cnt := obj_rpart.get_transit_1rp_cell(NEW.rp_src_id);
@@ -347,7 +366,9 @@ BEGIN
                 PERFORM service.cell_lock_by_cmd(NEW.cell_dest_id, NEW.id);
             -- ************************************
             -- Case where source and destination are different
+            -- склад-источник и склад-приемник разные
             ELSE
+                -- ищем как вывести контейнер из склада-источника
                 NEW.container_rp_id := NEW.rp_src_id;
                 sqlt := '
                     FROM cell
@@ -389,6 +410,7 @@ BEGIN
         -- Test.Mech
         ----------------------------------
         ELSIF NEW.command_type_id = 23 THEN
+            -- проверяем робота
             IF (NEW.robot_ip IS null) THEN
                 RAISE EXCEPTION 'ERROR: cmd Cell.Verify.X need not null robot_ip'
                     USING errcode = -20000 - 5;
@@ -400,19 +422,23 @@ BEGIN
             END IF;
             SELECT repository_part_id, id INTO NEW.rp_src_id, NEW.robot_id
                 FROM robot WHERE ip = NEW.robot_ip;
+            -- проверяем, а не запущена ли уже команда подобная не начатая
             SELECT count(*) INTO cnt FROM command
                 WHERE command_type_id = 23 AND state IN (0, 1);
             IF (cnt <> 0) THEN
                 RAISE EXCEPTION 'ERROR: already exists test commands in not running state!'
                     USING errcode = -20000 - 5;
             END IF;
+            -- проверяем, а не запущена ли уже команда подобная
             SELECT count(*) INTO cnt FROM command
                 WHERE robot_id = NEW.robot_id AND command_type_id = 23 AND state IN (0, 1, 3);
             IF (cnt <> 0) THEN
                 RAISE EXCEPTION 'ERROR: already exists commands fo robot with ip=% in 0,1,3 state!', NEW.robot_ip
                     USING errcode = -20000 - 5;
             END IF;
+            -- ячейки
             IF (NEW.cells IS null) THEN
+                -- не означены
                 cnt := 0;
                 FOR cl IN (
                     SELECT * FROM cell
@@ -434,6 +460,7 @@ BEGIN
                         USING errcode = -20000 - 5;
                 END IF;
             ELSE -- NEW.cells IS NOT null
+                -- есть ячейки
                 cell_a := NEW.cells;
                 LOOP
                     cnt := position(',' IN cell_a);
@@ -472,13 +499,14 @@ BEGIN
                     END IF;
                     EXIT WHEN cell_a IS null OR trim(cell_a) = '';
                 END LOOP;
-            END IF;
+            END IF; -- NEW.cells IS null
+            -- проверили, а есть ли ячейки
             SELECT count(*) INTO cnt FROM robot_cell_verify WHERE cmd_id = NEW.id;
             IF (cnt = 0) THEN
                 RAISE EXCEPTION 'ERROR: is''nt cell for testing!%', NEW.cells
                     USING errcode = -20000 - 5;
             END IF;
-            --  типа пусканули
+            -- типа пусканули
             FOR cl IN (
                 SELECT c.*, sh.track_id
                     FROM robot_cell_verify rcv
@@ -524,6 +552,7 @@ BEGIN
         -- Cell.Verify.X
         ----------------------------------
         ELSEIF NEW.command_type_id = 19 THEN
+            -- проверяем робота
             IF (NEW.robot_ip IS null) THEN
                 RAISE EXCEPTION 'ERROR: cmd Cell.Verify.X need not null robot_ip'
                     USING errcode = -20000 - 5;
@@ -536,12 +565,14 @@ BEGIN
             END IF;
             SELECT id, repository_part_id INTO NEW.robot_id, NEW.rp_src_id
                 FROM robot WHERE ip = NEW.robot_ip;
+            -- проверяем, а не запущена ли уже команда подобная не начатая
             SELECT count(*) INTO cnt FROM command
                 WHERE command_type_id = 19 AND state IN (0, 1);
             IF (cnt <> 0) THEN
                 RAISE EXCEPTION 'ERROR: already exists verify commands in not running state!'
                     USING errcode = -20000 - 5;
             END IF;
+            -- проверяем, а не запущена ли уже команда подобная
             SELECT count(*) INTO cnt FROM command
                 WHERE robot_id = NEW.robot_id
                 AND command_type_id = 19
@@ -551,7 +582,9 @@ BEGIN
                     NEW.robot_ip
                     USING errcode = -20000 - 5;
             END IF;
+            -- ячейки
             IF (NEW.cells IS null) THEN
+                -- не означены
                 cnt := 0;
                 FOR cl IN (
                     SELECT * FROM cell c
@@ -579,6 +612,7 @@ BEGIN
                         USING errcode = -20000 - 5;
                 END IF;
             ELSE -- NEW.cells IS NOT null
+                -- есть ячейки
                 cell_a := NEW.cells;
                 LOOP
                     cnt := position(',' IN cell_a);
@@ -623,13 +657,15 @@ BEGIN
                     END IF;
                     EXIT WHEN cell_a IS null OR trim(cell_a) = '';
                 END LOOP;
-            END IF;
+            END IF; -- NEW.cells IS null
+            -- проверили, а есть ли ячейки
             SELECT count(*) INTO cnt FROM robot_cell_verify WHERE cmd_id = NEW.id;
             IF (cnt = 0) THEN
                 RAISE EXCEPTION 'ERROR: is''nt cell for verify!'
                     USING errcode = -20000 - 5;
             END IF;
 
+            -- типа пусканули
             FOR cl IN (
                 SELECT c.*, sh.track_id
                     FROM robot_cell_verify rcv
@@ -662,7 +698,7 @@ $BODY$;
 ALTER FUNCTION command_bi_e() OWNER TO postgres;
 
 COMMENT ON FUNCTION command_bi_e()
-    IS 'Enormous function that does too much to describe in one paragraph';
+    IS 'Wide range of command verification before insertion. Probably should be split into separate parts';
 
 DROP TRIGGER IF EXISTS command_bi_e ON command;
 

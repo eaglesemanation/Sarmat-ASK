@@ -10,6 +10,7 @@ BEGIN
 END;
 $BODY$;
 ALTER FUNCTION obj_robot."ROBOT_STATE_REPAIR"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."ROBOT_STATE_REPAIR"() IS 'Состояние робота: В починке';
 
 CREATE OR REPLACE FUNCTION obj_robot.get_log_file_name(
     robot_id_ numeric)
@@ -24,7 +25,9 @@ BEGIN
 END;
 $BODY$;
 ALTER FUNCTION obj_robot.get_log_file_name(numeric) OWNER TO postgres;
-COMMENT ON FUNCTION obj_robot.get_log_file_name(numeric) IS 'Generates log name based on robot id and date';
+COMMENT ON FUNCTION obj_robot.get_log_file_name(numeric)
+    IS 'Generates log name based on robot id and date.
+получить имя файла лога';
 
 
 CREATE OR REPLACE PROCEDURE obj_robot.log(

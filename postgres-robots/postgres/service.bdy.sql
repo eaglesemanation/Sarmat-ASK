@@ -11,7 +11,8 @@ END;
 $BODY$;
 ALTER FUNCTION service.bkp_to_file_active() OWNER TO postgres;
 COMMENT ON FUNCTION service.bkp_to_file_active()
-    IS 'Imitation of variable from Oracle that disables/enables behaviour of bkp_to_file';
+    IS 'Imitation of variable from Oracle that disables/enables backuping with bkp_to_file
+писать в лог короткий бэкап?';
 
 
 CREATE OR REPLACE PROCEDURE service.log2filen(
@@ -28,7 +29,8 @@ BEGIN
 END;
 $BODY$;
 COMMENT ON PROCEDURE service.log2filen(text, text)
-    IS 'Add timestamped entry into file';
+    IS 'Add timestamped entry into file.
+записать строку в файл';
 
 
 CREATE OR REPLACE PROCEDURE service.log2file(
@@ -59,7 +61,8 @@ BEGIN
 END;
 $BODY$;
 COMMENT ON PROCEDURE service.log2file(text, text)
-    IS 'Adds timestamped entry into log file separating it into 250 characters lines';
+    IS 'Adds timestamped entry into log file separating it into 250 characters lines.
+записать строку в лог';
 
 
 CREATE OR REPLACE PROCEDURE service.bkp_to_file(
@@ -95,7 +98,8 @@ BEGIN
 END;
 $BODY$;
 COMMENT ON PROCEDURE service.bkp_to_file(text, text)
-    IS 'Adds timestamped entry into backup file separated into 250 char lines';
+    IS 'Adds timestamped entry into backup file separated into 250 char lines
+строку в журнал';
 
 
 CREATE OR REPLACE FUNCTION service.ml_get_rus_eng_val(
@@ -120,7 +124,8 @@ END;
 $BODY$;
 ALTER FUNCTION service.ml_get_rus_eng_val(text, text) OWNER TO postgres;
 COMMENT ON FUNCTION service.ml_get_rus_eng_val(text, text)
-    IS 'Multilanguage (internationalization) - returns string depending on language set in repository';
+    IS 'Multilanguage (i18n) - returns string depending on language set in repository
+мультиязычность - получить значение в зависимости от языка';
 
 
 CREATE OR REPLACE FUNCTION service.is_cell_full_check(
@@ -143,6 +148,8 @@ BEGIN
 END;
 $BODY$;
 ALTER FUNCTION service.is_cell_full_check() OWNER TO postgres;
+COMMENT ON FUNCTION service.is_cell_full_check()
+    IS 'ячейка полностью проверена?';
 
 
 CREATE OR REPLACE FUNCTION service.is_cell_near_edge(
@@ -177,7 +184,8 @@ END;
 $BODY$;
 ALTER FUNCTION service.is_cell_near_edge(bigint) OWNER TO postgres;
 COMMENT ON FUNCTION service.is_cell_near_edge(bigint)
-    IS 'If cell near beginning of line - returns 1, near end - returns 2, otherwise returns 0';
+    IS 'If cell near beginning of line - returns 1, near end - returns 2, otherwise returns 0
+ячейка возде края №№ треков?';
 
 
 CREATE OR REPLACE FUNCTION service.cell_acc_only_1_robot(
@@ -204,6 +212,7 @@ BEGIN
                     AND cs.track_npp NOT BETWEEN coalesce(work_npp_from, -1)
                     AND coalesce(work_npp_to, -1)
             ) LOOP
+                -- источник недостижим для робота tua.id
                 FOR rr IN (
                     SELECT * FROM robot r
                         WHERE r.repository_part_id = cd.repository_part_id
@@ -212,6 +221,7 @@ BEGIN
                         AND coalesce(work_npp_to, -1) >= 0
                         AND cd.track_npp NOT BETWEEN coalesce(work_npp_from, -1) AND coalesce(work_npp_to, -1)
                 ) LOOP
+                    -- цель недостижима для второго робота
                     RETURN 1;
                 END LOOP;
             END LOOP;
@@ -221,6 +231,9 @@ BEGIN
 END;
 $BODY$;
 ALTER FUNCTION service.cell_acc_only_1_robot(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION service.cell_acc_only_1_robot(bigint, bigint)
+    IS 'Check if cell is only accessible by 1 robot.
+ячейка достижима лишь для одного робота? (для линейных огурцов)';
 
 
 CREATE OR REPLACE FUNCTION service.is_cell_over_locked(
@@ -249,7 +262,9 @@ END;
 $BODY$;
 ALTER FUNCTION service.is_cell_over_locked(bigint)
     OWNER TO postgres;
-COMMENT ON FUNCTION service.is_cell_over_locked(bigint) IS 'Check if amount of locks on cell is over max';
+COMMENT ON FUNCTION service.is_cell_over_locked(bigint)
+    IS 'Check if amount of locks on cell is over max.
+не перезаблокирование ли ячейки командами?';
 
 
 CREATE OR REPLACE PROCEDURE service.cell_lock_by_cmd(

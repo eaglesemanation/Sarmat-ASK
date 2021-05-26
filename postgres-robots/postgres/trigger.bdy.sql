@@ -30,6 +30,7 @@ BEGIN
             UPDATE command_gas
                 SET state = 1
                 WHERE id = NEW.command_gas_id AND state < 1;
+            -- если команда не промежуточная, то выдаем на гора
             IF (NEW.is_intermediate = 0) THEN
                 PERFORM service.log2file('  триггер command_bu_cis_e - перед доб command_gas_out_container ');
                 INSERT INTO command_gas_out_container(
