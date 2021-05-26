@@ -276,7 +276,7 @@ BEGIN
     INSERT INTO cell_cmd_lock(cell_id, cmd_id) VALUES (cid, cmd_id_);
 END;
 $BODY$;
-COMMENT ON FUNCTION service.cell_lock_by_cmd(bigint, bigint)
+COMMENT ON PROCEDURE service.cell_lock_by_cmd(bigint, bigint)
     IS 'заблокировать ячейку командой';
 
 -- vim: ft=pgsql
