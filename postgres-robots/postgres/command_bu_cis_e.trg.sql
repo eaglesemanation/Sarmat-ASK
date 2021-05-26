@@ -23,14 +23,14 @@ BEGIN
                     -- Inner warehouse transfer
                     INSERT INTO tmp_cmd(id, action) VALUES (NEW.id, 5);
                 ELSE
-                    PERFORM service.command_bu_cis_e.finish_command(NEW);
+                    PERFORM trigger.finish_command(NEW);
                 END IF;
             ELSE -- rp_src_id <> rp_dest_id
                 IF (NEW.container_rp_id = NEW.rp_src_id) THEN
                     NEW.container_rp_id := NEW.rp_dest_id;
                     INSERT INTO tmp_cmd(id, action) VALUES (NEW.id, 1);
                 ELSE
-                    PERFORM service.command_bu_cis_e.finish_command(NEW);
+                    PERFORM trigger.finish_command(NEW);
                 END IF;
             END IF;
         ELSIF (NEW.command_type_id = 19) THEN
