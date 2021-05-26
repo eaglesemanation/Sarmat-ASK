@@ -27,3 +27,5 @@ CREATE TRIGGER robot_bu_crp_e
     ON robot
     FOR EACH ROW
     EXECUTE FUNCTION robot_bu_crp_e();
+
+-- vim: ft=pgsql

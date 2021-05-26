@@ -31,3 +31,5 @@ CREATE TRIGGER cell_au
     ON cell
     FOR EACH ROW
     EXECUTE FUNCTION cell_au();
+
+-- vim: ft=pgsql

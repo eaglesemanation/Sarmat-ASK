@@ -37,3 +37,5 @@ CREATE TRIGGER container_collection_ai_e
     ON container_collection
     FOR EACH ROW
     EXECUTE FUNCTION container_collection_ai_e();
+
+-- vim: ft=pgsql

@@ -48,3 +48,5 @@ CREATE TRIGGER container_aiu_some_e
     ON container
     FOR EACH ROW
     EXECUTE FUNCTION container_aiu_some_e();
+
+-- vim: ft=pgsql

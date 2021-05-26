@@ -30,3 +30,5 @@ CREATE TRIGGER robot_bu_state_e
     ON robot
     FOR EACH ROW
     EXECUTE FUNCTION robot_bu_state_e();
+
+-- vim: ft=pgsql

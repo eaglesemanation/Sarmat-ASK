@@ -28,3 +28,5 @@ CREATE TRIGGER robot_au_e
     ON robot
     FOR EACH ROW
     EXECUTE FUNCTION robot_au_e();
+
+-- vim: ft=pgsql

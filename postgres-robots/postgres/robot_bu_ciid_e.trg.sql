@@ -51,3 +51,5 @@ CREATE TRIGGER robot_bu_ciid_e
     ON robot
     FOR EACH ROW
     EXECUTE FUNCTION robot_bu_ciid_e();
+
+-- vim: ft=pgsql

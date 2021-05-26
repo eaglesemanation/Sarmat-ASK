@@ -23,3 +23,5 @@ CREATE TRIGGER command_ad_e
     ON command
     FOR EACH ROW
     EXECUTE FUNCTION command_ad_e();
+
+-- vim: ft=pgsql

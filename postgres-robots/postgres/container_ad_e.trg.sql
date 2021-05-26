@@ -34,3 +34,5 @@ CREATE TRIGGER container_ad_e
     ON container
     FOR EACH ROW
     EXECUTE FUNCTION container_ad_e();
+
+-- vim: ft=pgsql

@@ -50,4 +50,8 @@ BEGIN
     END IF;
 END;
 $BODY$;
-COMMENT ON PROCEDURE trigger.finish_command(record) IS 'Migrated inline procedure for command_bu_cis_e trigger';
+COMMENT ON PROCEDURE trigger.finish_command(record)
+    IS 'Migrated inline procedure for command_bu_cis_e trigger
+';
+
+-- vim: ft=pgsql

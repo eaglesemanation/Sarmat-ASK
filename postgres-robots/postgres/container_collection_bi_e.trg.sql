@@ -26,3 +26,5 @@ CREATE TRIGGER container_collection_bi_e
     ON container_collection
     FOR EACH ROW
     EXECUTE FUNCTION container_collection_bi_e();
+
+-- vim: ft=pgsql

@@ -602,3 +602,8 @@ BEGIN
 END;
 $BODY$;
 ALTER FUNCTION obj_rpart.get_transit_1rp_cell(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_transit_1rp_cell(bigint)
+    IS 'Returns available transit cell inside specified track
+получить id свободной транзитной ячейки для передач внутри одного огурца';
+
+-- vim: ft=pgsql

@@ -118,3 +118,5 @@ CREATE TRIGGER command_au_cis_e
     ON command
     FOR EACH ROW
     EXECUTE FUNCTION command_au_cis_e();
+
+-- vim: ft=pgsql

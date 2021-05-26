@@ -35,12 +35,16 @@ AS $BODY$
 DECLARE
     filename TEXT;
 BEGIN
-    filename := Get_Log_File_Name(robot_id_);
-    SELECT pg_catalog.pg_file_write(
+    filename := get_log_file_name(robot_id_);
+    PERFORM pg_catalog.pg_file_write(
         filename,
         to_char(LOCALTIMESTAMP,'HH24:MI:SS.MS') || ' ' || txt_ || E'\n',
         true
     );
 END;
 $BODY$;
-COMMENT ON PROCEDURE obj_robot.log(numeric, text) IS 'Adds timestamped entry into log for specified robot';
+COMMENT ON PROCEDURE obj_robot.log(numeric, text)
+    IS 'Adds timestamped entry into log for specified robot
+процедура ведения журнала';
+
+-- vim: ft=pgsql

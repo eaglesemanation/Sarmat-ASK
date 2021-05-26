@@ -37,3 +37,5 @@ CREATE TRIGGER robot_bu_wait_e
     ON public.robot
     FOR EACH ROW
     EXECUTE FUNCTION public.robot_bu_wait_e();
+
+-- vim: ft=pgsql

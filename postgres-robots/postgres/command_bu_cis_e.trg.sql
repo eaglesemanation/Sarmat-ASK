@@ -134,3 +134,5 @@ CREATE TRIGGER command_bu_cis_e
     ON command
     FOR EACH ROW
     EXECUTE FUNCTION command_bu_cis_e();
+
+-- vim: ft=pgsql

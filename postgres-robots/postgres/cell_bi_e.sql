@@ -22,3 +22,5 @@ CREATE TRIGGER cell_bi_e
     ON cell
     FOR EACH ROW
     EXECUTE FUNCTION cell_bi_e();
+
+-- vim: ft=pgsql

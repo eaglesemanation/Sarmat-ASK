@@ -59,3 +59,5 @@ CREATE TRIGGER cell_bu_notes_e
     ON cell
     FOR EACH ROW
     EXECUTE FUNCTION cell_bu_notes_e();
+
+-- vim: ft=pgsql

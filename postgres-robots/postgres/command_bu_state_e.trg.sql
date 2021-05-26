@@ -70,3 +70,5 @@ CREATE TRIGGER command_bu_state_e
     ON command
     FOR EACH ROW
     EXECUTE FUNCTION command_bu_state_e();
+
+-- vim: ft=pgsql

@@ -46,3 +46,5 @@ CREATE TRIGGER container_bu_firm_e
     ON container
     FOR EACH ROW
     EXECUTE FUNCTION container_bu_firm_e();
+
+-- vim: ft=pgsql

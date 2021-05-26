@@ -671,3 +671,5 @@ CREATE TRIGGER command_bi_e
     ON command
     FOR EACH ROW
     EXECUTE FUNCTION command_bi_e();
+
+-- vim: ft=pgsql

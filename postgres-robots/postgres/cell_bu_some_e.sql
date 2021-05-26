@@ -63,3 +63,5 @@ CREATE TRIGGER cell_bu_some_e
     ON cell
     FOR EACH ROW
     EXECUTE FUNCTION cell_bu_some_e();
+
+-- vim: ft=pgsql
