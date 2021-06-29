@@ -1,0 +1,110 @@
+CREATE OR REPLACE FUNCTION command_rp_bu_cis_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+    robt BIGINT;
+    rpp BIGINT;
+    cte BIGINT;
+    rid BIGINT;
+    nor BIGINT;
+    ctid BIGINT;
+    cirec RECORD;
+BEGIN
+    --manager.log_uni_step(:new.rp_id,5,17,'Триггер command_rp_bu_cis_e - начало ');
+    /*if nvl(:new.error_code_id,0)<>0  then
+    -- с ошибкой завершилась
+    //insert into tmp_cmd_rp(id,action) values(:new.id,1);
+    //:new.state:=2;
+    null;
+else*/
+    IF (coalesce(OLD.command_inner_executed, 0) = 0) AND (coalesce(NEW.command_inner_executed, 0) <> 0) THEN -- дочерняя команда успешно выполнилась
+        -- проверили, что выполнилась команда именно этого робота, а не робота-лентяя
+        IF (coalesce(NEW.command_inner_last_robot_id,0) = NEW.robot_id) THEN
+            -- ************************************
+            -- перемещение в пределах одного склада
+            -- ************************************
+            IF (NEW.command_type_id = 3) THEN
+                SELECT repository_type, cmd_transfer_enabled, num_of_robots
+                    INTO rpp, cte, nor
+                    FROM repository_part
+                    WHERE id = NEW.rp_id;
+                -- /////////////////////////////////////////////
+                -- склад линейный и 1 робот завершилась простая transfer
+                -- /////////////////////////////////////////////
+                IF (nor = 1) AND (rpp = 0) AND (cte = 1) THEN
+                    -- раз команда завершилась, то все зашибись
+                    NEW.date_time_end := LOCALTIMESTAMP;
+                    NEW.state := 5;
+                    NEW.command_inner_executed := 0;
+                    UPDATE command SET command_rp_executed = NEW.id, crp_cell = NEW.cell_dest_sname
+                        WHERE id = NEW.command_id;
+                -- /////////////////////////////////////////////
+                -- склад с несколькими роботами - надо разбирать дальше
+                -- /////////////////////////////////////////////
+                ELSE
+                    -- получаем робота, что выполнял команду
+                    rid := coalesce(NEW.command_inner_last_robot_id, 0);
+                    SELECT * INTO cirec FROM command_inner WHERE id = NEW.command_inner_executed;
+                    IF (coalesce(NEW.substate, 0) IN (0,1,2)) THEN -- только начали выполняться ? до куда надо еще не доехали
+                        IF (cirec.command_type_id = 4) THEN -- завершилась LOAD
+                            NEW.substate := 3;
+                            CALL service.cell_unlock_from_cmd(NEW.cell_src_id, NEW.command_id);
+                        END IF;
+                    ELSIF (coalesce(NEW.substate, 0) IN (3,4)) THEN -- все еще едем куда надо
+                        IF (cirec.command_type_id = 5) THEN -- завершилась UNLOAD
+                            CALL service.cell_unlock_from_cmd(NEW.cell_dest_id, NEW.command_id);
+                            CALL trigger.finish_crp();
+                        END IF;
+                    END IF;
+                    NEW.command_inner_executed := 0;
+                    NEW.command_inner_last_robot_id := 0;
+                END IF;
+            ---------------------------------------
+            -- перемещение для ремонта
+            ELSIF (NEW.command_type_id = 30) then
+                IF (coalesce(NEW.command_inner_executed, 0) > 0) THEN
+                    NEW.state := 5;
+                END IF;
+            ---------------------------------------
+            -- верификация ячейки
+            ELSIF (NEW.command_type_id = 20) THEN
+                -- получаем робота, что выполнял команду
+                rid := coalesce(NEW.command_inner_last_robot_id, 0);
+                SELECT * INTO cirec FROM command_inner WHERE id = NEW.command_inner_executed;
+                IF (cirec.command_type_id = 22) THEN -- savecur
+                    NEW.substate := 5;
+                    CALL trigger.finish_crp();
+                ELSIF (cirec.command_type_id = 21) THEN -- завершилась успешно checkx
+                    SELECT max(id) INTO ctid
+                        FROM robot_cell_verify
+                        WHERE robot_id = cirec.robot_id
+                            AND cell_id = NEW.cell_src_id;
+                    UPDATE robot_cell_verify SET vstate = 5 WHERE id = ctid;
+                    CALL service.cell_unlock_from_cmd(NEW.cell_src_id, NEW.command_id);
+                    NEW.substate := 3;
+                END IF;
+                NEW.command_inner_executed := 0;
+                NEW.command_inner_last_robot_id := 0;
+            END IF;
+        END IF;
+    END IF;
+    --end if;
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION command_rp_bu_cis_e() OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS command_rp_bu_cis_e ON command_rp;
+
+CREATE TRIGGER command_rp_bu_cis_e
+    BEFORE UPDATE OF command_inner_executed
+    ON command_rp
+    FOR EACH ROW
+    EXECUTE FUNCTION command_rp_bu_cis_e();
+
+-- vim: ft=pgsql

@@ -1,0 +1,131 @@
+CREATE OR REPLACE FUNCTION command_rp_bi_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+DECLARE
+    cs RECORD;
+    cd RECORD;
+    tt RECORD;
+    ci RECORD;
+    cnt BIGINT;
+BEGIN
+    NEW.user_name:=user;
+
+    IF (NEW.ID IS null) THEN
+        SELECT SEQ_command_rp.nextval INTO NEW.ID;
+        NEW.date_time_create := LOCALTIMESTAMP;
+        NEW.time_create := LOCALTIMESTAMP;
+    END IF;
+
+    -- для простого перемещения считаем идеальную цену
+    IF (NEW.command_type_id = 3) THEN
+        NEW.ideal_cost := service.calc_ideal_crp_cost(NEW.rp_id, NEW.cell_src_id, NEW.cell_dest_id);
+        -- проверяем, свободна ли ячейка-приемник, и есть ли что в ячейке-источнике
+        IF (service.is_cell_full_check = 1) THEN
+            FOR cs IN (SELECT * FROM cell WHERE id = NEW.cell_src_id) LOOP
+                IF (cs.is_full < 1) THEN
+                    RAISE EXCEPTION 'ERROR: cell-source % is empty', NEW.cell_src_sname
+                        USING errcode = -20000 - 6;
+                END IF;
+            END LOOP;
+            FOR cd IN (SELECT * FROM cell WHERE id = NEW.cell_dest_id) LOOP
+                IF (cd.is_full >= cd.max_full_size) THEN
+                    RAISE EXCEPTION 'ERROR: cell-destination % is overfull', NEW.cell_dest_sname
+                        USING errcode = -20000 - 6;
+                END IF;
+            END LOOP;
+        END IF;
+    -- **************************************
+    -- для перемещения робота проверки
+    ELSIF (NEW.command_type_id = 30) THEN
+        IF (coalesce(NEW.robot_id, 0) = 0) THEN
+            RAISE EXCEPTION 'Empty robot_id!'
+                USING errcode = -20070;
+        END IF;
+        IF (NEW.direction_1 IS null) THEN
+            RAISE EXCEPTION 'Empty direction!'
+                USING errcode = -20070;
+        END IF;
+        IF (NEW.cell_dest_sname IS null) THEN
+            RAISE EXCEPTION 'Empty cell_dest_sname!'
+                USING errcode = -20700;
+        END IF;
+
+        FOR tt IN (
+            SELECT c.track_npp, r.command_rp_id, r.command_inner_id,
+                r.command_inner_assigned_id, c.id cell_id, r.repository_part_id,
+                sh.track_id, r.state robot_state, rp.num_of_robots nor
+            FROM robot r
+            INNER JOIN cell c
+                ON c.repository_part_id = r.repository_part_id
+            INNER JOIN shelving sh
+                ON sh.id = c.shelving_id
+            INNER JOIN repository_part rp
+                ON rp.id = r.repository_part_id
+            WHERE r.id = NEW.robot_id
+            AND sname = NEW.cell_dest_sname
+        ) LOOP
+            IF (coalesce(tt.robot_state, 0) <> 0) THEN
+                RAISE EXCEPTION 'Robot must be free and ready!'
+                    USING errcode = -20070;
+            END IF;
+            IF (coalesce(tt.command_rp_id, 0) <> 0) THEN
+                RAISE EXCEPTION 'command_rp_id must be 0!'
+                    USING errcode = -20070;
+            END IF;
+            IF (coalesce(tt.command_inner_id, 0) <> 0) THEN
+                RAISE EXCEPTION 'command_inner_id must be 0!'
+                    USING errcode = -20070;
+            END IF;
+            IF (coalesce(tt.command_inner_assigned_id, 0) <> 0) THEN
+                RAISE EXCEPTION 'command_inner_assigned_id must be 0!'
+                    USING errcode = -20070;
+            END IF;
+            IF (tt.nor > 1) AND (obj_rpart.is_poss_to_lock(NEW.robot_id, tt.track_npp, NEW.direction_1) <> 1) THEN
+                RAISE EXCEPTION 'Impossible to lock to track_dest %!', tt.track_npp
+                    USING errcode = -20070;
+            END IF;
+            FOR ci IN (SELECT * FROM command_inner WHERE robot_id = NEW.robot_id AND state IN (0, 1)) LOOP
+                RAISE EXCEPTION 'There is cmd_inner id=% for robot!', ci.id
+                    USING errcode = -20070;
+            END LOOP;
+            NEW.rp_id := tt.repository_part_id;
+            NEW.cell_dest_id := tt.cell_id;
+            NEW.cell_src_sname := '-';
+            NEW.priority := 1;
+            NEW.command_id := -1;
+            IF (tt.nor > 1) THEN
+                --cnt:=manager.try_to_lock(NEW.robot_id, tt.track_npp, NEW.direction_1,NEW.id);
+                cnt := obj_rpart.try_track_lock(NEW.robot_id, tt.track_npp, NEW.direction_1, true, rbr);
+                IF (cnt <> tt.track_id) THEN
+                    RAISE EXCEPTION 'Try_to_lock bad answer %!', cnt
+                        USING errcode = -20070;
+                END IF;
+            END IF;
+            PERFORM obj_robot.set_command_inner(
+                NEW.robot_id, NEW.id, 1, 6, NEW.direction_1, null, NEW.cell_dest_sname,
+                'MOVE ' || NEW.cell_dest_sname || ';' || obj_rpart.get_cmd_dir_text(NEW.direction_1)
+            );
+            /*manager.set_command(NEW.robot_id, NEW.id, 1, 6, NEW.direction_1, Null,
+                NEW.cell_dest_sname,
+                'MOVE '||NEW.cell_dest_sname||';'||manager.get_cmd_dir_text(NEW.direction_1));   */
+
+        END LOOP;
+    END IF;
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION command_rp_bi_e() OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS command_rp_bi_e ON command_rp;
+
+CREATE TRIGGER command_rp_bi_e
+    BEFORE INSERT
+    ON command_rp
+    FOR EACH ROW
+    EXECUTE FUNCTION command_rp_bi_e();
+
+-- vim: ft=pgsql

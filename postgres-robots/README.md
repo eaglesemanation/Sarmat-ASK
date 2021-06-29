@@ -60,7 +60,7 @@
     - [ ] Shelving_Need_Redraw_Clear
     - [ ] Shelving_Need_Redraw_Clear
     - [ ] check_gdrest_consistance
-    - [ ] global_error_log
+    - [x] global_error_log
     - [ ] Set_Command
     - [ ] Gen_Cmd_Err_Rep
     - [ ] workload_info
@@ -92,7 +92,7 @@
     - [ ] is_rashod_shortage
     - [ ] Order_Content_Out_Doz_on_dfct
     - [ ] Cancel_Error_Cmd_Cont_Out
- 
+
 - obj_robot
     - [x] log
     - [ ] Is_Robot_Ready_For_Cmd
@@ -138,7 +138,7 @@
     - [ ] Problem_Resolve
     - [ ] Redirect_Robot_To_New_Cell
     - [ ] InitY_If_Ness
-    - [ ] Set_Command_Inner
+    - [x] set_command_inner
     - [ ] Cmd_RP_Cancel
 
 - obj_rpart
@@ -157,12 +157,12 @@
     - [ ] is_robot_lock_bad
     - [ ] is_rp_simple_1_robot
     - [x] is_track_between
-    - [ ] is_track_locked
+    - [x] is_track_locked
     - [ ] locked_
     - [ ] Is_Track_Locked_Around
     - [x] is_track_near_repair_robot
-    - [ ] is_track_npp_BAN_MOVE_TO
-    - [ ] Is_Track_Part_Between
+    - [x] is_track_npp_ban_move_to
+    - [x] is_track_part_between
     - [ ] is_way_free
     - [ ] is_way_locked
     - [ ] has_free_cell
@@ -174,18 +174,18 @@
     - [x] calc_repair_robots
     - [ ] calc_robot_nearest
     - [ ] calc_track_free_cell
-    - [ ] inc_spacing_of_robots
+    - [x] inc_spacing_of_robots
     - [ ] in
     - [ ] inc_npp
     - [ ] Get_Another_Direction
-    - [ ] get_another_robot_id
+    - [x] get_another_robot_id
     - [x] get_cell_id_by_name
     - [ ] Get_Cell_Name_By_Track_ID
     - [ ] Get_Cell_Name_By_Track_Npp
     - [ ] Get_Cell_Shelving_ID
     - [ ] Get_Cell_Track_Npp
     - [ ] get_container_cell_sname
-    - [ ] Get_Cmd_Dir_Text
+    - [x] get_cmd_dir_text
     - [ ] get_cmd_max_priority
     - [ ] Get_Cmd_RP_Min_NS_ID
     - [ ] Get_Cmd_RP_Min_NS_ID
@@ -203,7 +203,7 @@
     - [ ] get_track_id_by_cell_and_robot
     - [x] get_track_id_by_cell_and_rp
     - [ ] Get_Track_ID_By_Npp
-    - [ ] get_track_id_by_robot_and_npp
+    - [x] get_track_id_by_robot_and_npp
     - [x] get_track_npp_by_cell_and_rp
     - [ ] get_track_npp_by_npp
     - [x] get_track_npp_by_id
@@ -212,7 +212,7 @@
     - [ ] Check_Lock_Robot_Around
     - [ ] Check_New_Robot_Npp_Correct
     - [ ] Check_WPR_Lock
-    - [ ] Try_Track_Lock
+    - [x] try_track_lock
     - [ ] Try_Track_Lock_Robot_Around
     - [x] unlock_track
     - [ ] unlock_track_after_cmd_error
@@ -261,11 +261,11 @@
     - [ ] is_way_free_for_robot
     - [ ] add_shelving_need_to_redraw
     - [x] bkp_to_file
-    - [ ] calc_ideal_crp_cost
+    - [x] calc_ideal_crp_cost
     - [ ] cancel_all_verify_cmd
     - [x] cell_acc_only_1_robot
     - [x] cell_lock_by_cmd
-    - [ ] cell_unlock_from_cmd
+    - [x] cell_unlock_from_cmd
     - [ ] change_cc_qty
     - [ ] clear_form_opened
     - [ ] clearlogfile
@@ -322,11 +322,11 @@
     - [ ] command_inner_bu_problemr_e
     - [ ] command_inner_bu_status_e
     - [ ] command_inner_check_bi_e
-    - [ ] command_rp_ad_e
-    - [ ] command_rp_au_cis_e
-    - [ ] command_rp_bi_e
-    - [ ] command_rp_bu_calc_cost_e
-    - [ ] command_rp_bu_cis_e
+    - [x] command_rp_ad_e
+    - [x] command_rp_au_cis_e
+    - [x] command_rp_bi_e
+    - [x] command_rp_bu_calc_cost_e
+    - [x] command_rp_bu_cis_e
     - [x] container_ad_e
     - [x] container_aiu_e
     - [x] container_aiu_some_e

@@ -260,12 +260,33 @@ BEGIN
     END IF;
 END;
 $BODY$;
-ALTER FUNCTION service.is_cell_over_locked(bigint)
-    OWNER TO postgres;
+ALTER FUNCTION service.is_cell_over_locked(bigint) OWNER TO postgres;
 COMMENT ON FUNCTION service.is_cell_over_locked(bigint)
     IS 'Check if amount of locks on cell is over max.
 не перезаблокирование ли ячейки командами?';
 
+CREATE OR REPLACE PROCEDURE service.cell_unlock_from_cmd(
+    cid bigint,
+    cmd_id_ bigint)
+LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+BEGIN
+    CALL log2file('cell_unlock_from_cmd cmd_id=' || cmd_id_ || ' cid=' || cid);
+    SELECT count(*) INTO cnt
+        FROM cell_cmd_lock
+        WHERE cell_id = cid and cmd_id = cmd_id_;
+    IF (cnt = 0) THEN
+        CALL log2file('Unlock Error! Its not cell_lock w cell_id=' || cid || ' and cmd_id=' || cmd_id_);
+    ELSE
+        DELETE FROM cell_cmd_lock
+            WHERE cell_id = cid and cmd_id = cmd_id_;
+    END IF;
+END;
+$BODY$;
+COMMENT ON PROCEDURE service.cell_unlock_from_cmd(bigint, bigint)
+    IS 'разблокируем ячейку от команды';
 
 CREATE OR REPLACE PROCEDURE service.cell_lock_by_cmd(
     cid bigint,
@@ -278,5 +299,103 @@ END;
 $BODY$;
 COMMENT ON PROCEDURE service.cell_lock_by_cmd(bigint, bigint)
     IS 'заблокировать ячейку командой';
+
+
+CREATE OR REPLACE FUNCTION service.calc_ideal_crp_cost(
+    rp_id_ bigint,
+    csrc_id bigint,
+    cdest_id bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rpt BIGINT;
+    max_npp_ BIGINT;
+    res REAL;
+    tpos REAL;
+    t_start_m REAL;
+    t_stop_m REAL;
+    src_npp BIGINT;
+    dest_npp BIGINT;
+    tmp REAL;
+    cnpp BIGINT;
+    tt REAL;
+    res1 REAL; -- Clockwise cost
+    res2 REAL; -- Counterclockwise cost
+BEGIN
+    SELECT repository_type, max_npp INTO rpt, max_npp_
+        FROM repository_part WHERE id = rp_id_;
+    SELECT (avg(time_load) + avg(time_unload)) * 2, avg(time_targeting), avg(time_start_move), avg(time_stop_move)
+        INTO res, tpos, t_start_m, t_stop_m
+        FROM robot WHERE repository_part_id = rp_id_;
+    SELECT track_npp INTO src_npp FROM cell WHERE id = csrc_id;
+    SELECT track_npp INTO dest_npp FROM cell WHERE id = cdest_id;
+    -- Linear track
+    IF (rpt = 0) THEN -- линейный
+        IF (src_npp = dest_npp) THEN
+            RETURN round(res);
+        ELSIF (src_npp > dest_npp) THEN
+            SELECT sum(length / speed) INTO tmp
+                FROM track WHERE repository_part_id = rp_id_
+                AND npp BETWEEN dest_npp AND src_npp;
+            RETURN round(res + tmp + tpos + t_start_m + t_stop_m);
+        ELSIF (src_npp < dest_npp) THEN
+            SELECT sum(length / speed) INTO tmp
+                FROM track WHERE repository_part_id = rp_id_
+                AND npp BETWEEN src_npp AND dest_npp;
+            RETURN round(res + tmp + tpos + t_start_m + t_stop_m);
+        END IF;
+    -- Cyclic track
+    ELSE -- кольцевой
+        -- Clockwise
+        -- считаем по часовой
+        IF (src_npp = dest_npp) THEN
+            tpos := 0;
+            t_stop_m := 0;
+            t_start_m := 0;
+        END IF;
+        cnpp := src_npp;
+        tmp := 0;
+        LOOP
+            SELECT length / speed INTO tt FROM track
+                WHERE repository_part_id = rp_id_ AND npp = cnpp;
+            tmp := tmp + tt;
+            IF cnpp >= max_npp_ THEN
+                cnpp := 0;
+            ELSE
+                cnpp := cnpp + 1;
+            END IF;
+            EXIT WHEN cnpp = dest_npp;
+        END LOOP;
+        res1 := tmp;
+        -- Counterclockwise
+        -- считаем против часовой
+        cnpp := src_npp;
+        tmp := 0;
+        LOOP
+            SELECT length / speed INTO tt FROM track
+                WHERE repository_part_id=rp_id_ AND npp = cnpp;
+            tmp := tmp + tt;
+            IF (cnpp <= 0) THEN
+                cnpp := max_npp_;
+            ELSE
+                cnpp := cnpp - 1;
+            END IF;
+            EXIT WHEN cnpp = dest_npp;
+        END LOOP;
+        res2 := tmp;
+        IF (res2 < res1) THEN
+            RETURN round(res + res2 + tpos + t_start_m + t_stop_m);
+        ELSE
+            RETURN round(res + res1 + tpos + t_start_m + t_stop_m);
+        END IF;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION service.calc_ideal_crp_cost(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION service.calc_ideal_crp_cost(bigint, bigint, bigint)
+    IS 'посчитать идеальную цену команды перемещения контейнера';
 
 -- vim: ft=pgsql

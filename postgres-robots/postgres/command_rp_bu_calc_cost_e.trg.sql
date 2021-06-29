@@ -1,0 +1,74 @@
+CREATE OR REPLACE FUNCTION command_rp_bu_calc_cost_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+DECLARE
+    rr RECORD;
+    r RECORD;
+BEGIN
+    IF (OLD.calc_cost IS NULL) AND (NEW.calc_cost IS NOT NULL) THEN
+        CALL service.log2file('crp_id=' || NEW.id
+            || ' пытаемся установка calc_cost=' || NEW.calc_cost
+            || ' robot_id=' || NEW.robot_id
+            || ' dir=' || NEW.direction_1 || NEW.direction_2);
+        IF (NEW.robot_id IS NOT NULL) THEN
+            FOR rr IN (
+                SELECT * FROM robot
+                WHERE id = NEW.robot_id AND work_npp_from IS NOT NULL
+            ) LOOP
+                IF (NEW.npp_src < rr.work_npp_from)
+                    OR (NEW.npp_src > rr.work_npp_to)
+                    OR (NEW.npp_dest < rr.work_npp_from)
+                    OR (NEW.npp_dest > rr.work_npp_to)
+                THEN
+                    CALL service.log2file('  ERROR! ошибка логики пул');
+                    RAISE EXCEPTION 'Optimizer crash error bad robot pool on cmd %', NEW.id
+                        USING errcode = -20123;
+                END IF;
+            END LOOP;
+        END IF;
+        -- проверка на корректность работы оптимизатора
+        FOR rr IN (
+            SELECT repository_type FROM repository_part
+            WHERE id = NEW.rp_id
+                AND repository_type = 0
+                AND num_of_robots = 2
+        ) LOOP
+            IF (NEW.npp_dest > NEW.npp_src) AND (NEW.direction_2 = 0) THEN
+                CALL service.log2file('  ERROR! ошибка логики');
+                RAISE EXCEPTION 'Optimizer crash error npp_src<npp_dest dir2=0 on cmd %', NEW.id USING errcode = -20123;
+            END IF;
+            IF (NEW.npp_dest < NEW.npp_src) AND (NEW.direction_2 = 1) THEN
+                CALL service.log2file('  ERROR! ошибка логики');
+                RAISE EXCEPTION 'Optimizer crash error d<s d2=1 on cmd %', NEW.id USING errcode = -20123;
+            END IF;
+            FOR r IN (
+                SELECT * FROM robot
+                WHERE id = NEW.robot_id
+            ) LOOP
+                IF (r.current_track_npp > NEW.npp_src) AND (NEW.direction_1 = 1) THEN
+                    RAISE EXCEPTION 'Optimizer crash error cur_track_npp>npp_src and d1=1 on cmd % robot_id=%', NEW.id, NEW.robot_id USING errcode = -20123;
+                END IF;
+                IF (r.current_track_npp < NEW.npp_src) AND (NEW.direction_1 = 0) THEN
+                    RAISE EXCEPTION 'Optimizer crash error cur_track_npp<npp_src d1=0 on cmd %', NEW.id USING errcode = -20123;
+                END IF;
+            END LOOP;
+        END LOOP;
+    END IF;
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION command_rp_bu_calc_cost_e() OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS command_rp_bu_calc_cost_e ON command_rp;
+
+CREATE TRIGGER command_rp_bu_calc_cost_e
+    BEFORE UPDATE OF calc_cost
+    ON command_rp
+    FOR EACH ROW
+    EXECUTE FUNCTION command_rp_bu_calc_cost_e();
+
+-- vim: ft=pgsql

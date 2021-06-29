@@ -55,4 +55,21 @@ COMMENT ON PROCEDURE trigger.finish_command(record)
     IS 'Migrated inline procedure for command_bu_cis_e trigger
 ';
 
+CREATE OR REPLACE PROCEDURE trigger.finish_crp(
+	INOUT new record)
+LANGUAGE 'plpgsql'
+AS $BODY$
+BEGIN
+	CALL service.log2file('  триггер command_rp_bu_cis_e - пуск finish_crp');
+	NEW.state := 5;
+	NEW.substate := 5;
+	NEW.date_time_end := LOCALTIMESTAMP;
+	-- сообщили вверх, что выполнено
+	INSERT INTO tmp_cmd_rp(id, action) VALUES(NEW.id, 1);
+END;
+$BODY$;
+COMMENT ON PROCEDURE trigger.finish_crp(record)
+    IS 'Migrated inline procedure for command_rp_bu_cis_e trigger
+';
+
 -- vim: ft=pgsql
