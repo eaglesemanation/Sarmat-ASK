@@ -70,7 +70,7 @@ AS $BODY$
 DECLARE
     filename TEXT;
 BEGIN
-    filename := get_log_file_name();
+    filename := obj_ask.get_log_file_name();
     PERFORM pg_catalog.pg_file_write(
         filename,
         to_char(LOCALTIMESTAMP,'HH24:MI:SS.MS') || ' ' || txt_ || E'\n',
@@ -100,18 +100,18 @@ BEGIN
         rp_id__ := repository_part_id_;
     END IF;
     SELECT count(*) INTO cnt_ FROM error
-    WHERE date_time > CURRENT_DATE - 1 / (24*60)
-        AND error_type_id = error_type_
-        AND notes = errm_
-        AND coalesce(rp_id, 0) = coalesce(rp_id__, 0)
-        AND coalesce(robot_id, 0) = coalesce(robot_id_, 0);
-    IF cnt_=0 THEN
-        INSERT INTO error (date_time,error_type_id,rp_id,robot_id,notes)
-            VALUES (sysdate,error_type_,rp_id__,robot_id_,errm_);
+        WHERE date_part('minute', LOCALTIMESTAMP - date_time) < 1
+            AND error_type_id = error_type_
+            AND notes = errm_
+            AND coalesce(rp_id, 0) = coalesce(rp_id__, 0)
+            AND coalesce(robot_id, 0) = coalesce(robot_id_, 0);
+    IF (cnt_ = 0) THEN
+        INSERT INTO error (date_time, error_type_id, rp_id, robot_id, notes)
+            VALUES (LOCALTIMESTAMP, error_type_, rp_id__, robot_id_, errm_);
     END IF;
 EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS exception_msg_ = MESSAGE_TEXT;
-    CALL log('Ошибка формирования записи global_error_log:' || exception_msg_);
+    CALL obj_ask.log('Ошибка формирования записи global_error_log:' || exception_msg_);
 END;
 $BODY$;
 COMMENT ON PROCEDURE obj_ask.global_error_log(bigint, bigint, bigint, text)

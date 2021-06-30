@@ -7,6 +7,7 @@ AS $BODY$
 BEGIN
 	DELETE FROM command_inner WHERE command_rp_id = OLD.id;
 	UPDATE robot SET command_rp_id=null WHERE command_rp_id = OLD.id;
+    RETURN NEW;
 end;
 $BODY$;
 

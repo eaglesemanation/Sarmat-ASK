@@ -8,6 +8,7 @@ BEGIN
     IF (NEW.id IS null) THEN
         SELECT nextval('SEQ_cell') INTO NEW.id;
     END IF;
+    RETURN NEW;
 END;
 $BODY$;
 

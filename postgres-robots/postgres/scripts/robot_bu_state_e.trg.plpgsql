@@ -5,7 +5,7 @@ CREATE FUNCTION robot_bu_state_e()
     VOLATILE NOT LEAKPROOF
 AS $BODY$
 DECLARE
-    cnt NUMERIC;
+    -- cnt NUMERIC;
 BEGIN
     IF (coalesce(NEW.state, 0) <> coalesce(OLD.state, 0)) THEN
         CALL obj_robot.log(NEW.id, '  триггер robot_bu_state_e - сменился state с '

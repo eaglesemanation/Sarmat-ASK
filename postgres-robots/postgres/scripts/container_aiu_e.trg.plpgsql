@@ -5,7 +5,7 @@ CREATE OR REPLACE FUNCTION container_aiu_e()
     VOLATILE NOT LEAKPROOF
 AS $BODY$
 BEGIN
-    PERFORM service.bkp_to_file('container',
+    CALL service.bkp_to_file('container',
         NEW.id || ';' ||
         NEW.barcode || ';' ||
         NEW.type || ';' ||

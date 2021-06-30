@@ -11,7 +11,7 @@ BEGIN
     FOR tc IN (SELECT * FROM tmp_cmd_rp ORDER BY id) LOOP
         SELECT * INTO crec FROM command_rp WHERE id = tc.id;
         IF (crec.is_to_free = 0) THEN
-            PERFORM service.log2file('  триггер command_rp_au_cis_e - продолжаем завершение command_rp command_rp_executed=' || crec.id);
+            CALL service.log2file('  триггер command_rp_au_cis_e - продолжаем завершение command_rp command_rp_executed=' || crec.id);
             UPDATE command SET command_rp_executed = crec.id,
                 crp_cell = crec.cell_dest_sname,
                 error_code_id = crec.error_code_id

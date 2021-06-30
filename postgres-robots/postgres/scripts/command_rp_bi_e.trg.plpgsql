@@ -14,7 +14,7 @@ BEGIN
     NEW.user_name:=user;
 
     IF (NEW.ID IS null) THEN
-        SELECT SEQ_command_rp.nextval INTO NEW.ID;
+        SELECT nextval('seq_command_rp') INTO NEW.ID;
         NEW.date_time_create := LOCALTIMESTAMP;
         NEW.time_create := LOCALTIMESTAMP;
     END IF;
@@ -23,7 +23,7 @@ BEGIN
     IF (NEW.command_type_id = 3) THEN
         NEW.ideal_cost := service.calc_ideal_crp_cost(NEW.rp_id, NEW.cell_src_id, NEW.cell_dest_id);
         -- проверяем, свободна ли ячейка-приемник, и есть ли что в ячейке-источнике
-        IF (service.is_cell_full_check = 1) THEN
+        IF (service.is_cell_full_check() = 1) THEN
             FOR cs IN (SELECT * FROM cell WHERE id = NEW.cell_src_id) LOOP
                 IF (cs.is_full < 1) THEN
                     RAISE EXCEPTION 'ERROR: cell-source % is empty', NEW.cell_src_sname

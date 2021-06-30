@@ -5,14 +5,15 @@ CREATE OR REPLACE FUNCTION robot_bu_wait_e()
     VOLATILE NOT LEAKPROOF
 AS $BODY$
 DECLARE
-    rit RECORD;
+    rti BOOLEAN;
 BEGIN
-    FOR rit IN (
+    SELECT exists(
         SELECT * FROM robot_trigger_ignore
         WHERE robot_id = NEW.id
-    ) LOOP
+    ) INTO rti;
+    IF rti THEN
         RETURN NEW;
-    END LOOP;
+    END IF;
     IF (coalesce(NEW.wait_for_problem_resolve, 0) <> coalesce(OLD.wait_for_problem_resolve, 0)) THEN
         IF (coalesce(NEW.wait_for_problem_resolve, 0) = 1) THEN
             CALL obj_robot.log(NEW.id, 'Установили режим решения проблемы');

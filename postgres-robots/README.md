@@ -177,7 +177,7 @@
     - [x] inc_spacing_of_robots
     - [ ] in
     - [ ] inc_npp
-    - [ ] Get_Another_Direction
+    - [x] get_another_direction
     - [x] get_another_robot_id
     - [x] get_cell_id_by_name
     - [ ] Get_Cell_Name_By_Track_ID
@@ -231,7 +231,7 @@
     - [ ] get_2d_word_beg
     - [ ] get_3d_word_beg
     - [ ] get_another_gd
-    - [ ] get_another_robot_id
+    - [x] get_another_robot_id
     - [ ] get_cell_storage_state
     - [ ] get_cells_for_ustirovka
     - [ ] get_cells_for_ustirovka_short
@@ -249,14 +249,14 @@
     - [ ] get_rp_param_number
     - [ ] get_rp_param_string
     - [ ] get_sec
-    - [ ] get_ust_cell_dir
+    - [x] get_ust_cell_dir
     - [ ] is_cell_accept_enable
     - [ ] is_cell_cmd_locked
     - [x] is_cell_full_check
     - [x] is_cell_near_edge
     - [ ] is_cell_on_comp
     - [x] is_cell_over_locked
-    - [ ] is_free_way
+    - [x] is_free_way
     - [ ] is_hibernate
     - [ ] is_way_free_for_robot
     - [ ] add_shelving_need_to_redraw

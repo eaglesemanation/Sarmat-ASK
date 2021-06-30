@@ -5,12 +5,15 @@ CREATE OR REPLACE FUNCTION robot_bu_ciid_e()
     VOLATILE NOT LEAKPROOF
 AS $BODY$
 DECLARE
-    cnt NUMERIC;
-    rti RECORD;
+    rti BOOLEAN;
 BEGIN
-    FOR rti IN (SELECT * FROM robot_trigger_ignore WHERE robot_id = NEW.id) LOOP
+    SELECT exists(
+        SELECT * FROM robot_trigger_ignore
+        WHERE robot_id = NEW.id
+    ) INTO rti;
+    IF rti THEN
         RETURN NEW;
-    END LOOP;
+    END IF;
 
     IF (coalesce(OLD.command_inner_id, 0) <> coalesce(NEW.command_inner_id, 0))
         AND (coalesce(NEW.command_inner_id, 0) <> 0)

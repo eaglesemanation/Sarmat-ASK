@@ -6,7 +6,7 @@ CREATE OR REPLACE FUNCTION service.bkp_to_file_active(
     VOLATILE PARALLEL UNSAFE
 AS $BODY$
 BEGIN
-    RETURN 1;
+    RETURN true;
 END;
 $BODY$;
 ALTER FUNCTION service.bkp_to_file_active() OWNER TO postgres;
@@ -76,7 +76,7 @@ DECLARE
     entryPart TEXT;
     ns BIGINT;
 BEGIN
-    IF bkp_to_file_acitve() THEN
+    IF service.bkp_to_file_active() THEN
         RETURN;
     END IF;
     SELECT coalesce(no_shift, 0) INTO ns FROM repository;
@@ -120,12 +120,40 @@ BEGIN
             RETURN in_eng;
         END IF;
     END LOOP;
+    RETURN ''; -- Unreachable
 END;
 $BODY$;
 ALTER FUNCTION service.ml_get_rus_eng_val(text, text) OWNER TO postgres;
 COMMENT ON FUNCTION service.ml_get_rus_eng_val(text, text)
     IS 'Multilanguage (i18n) - returns string depending on language set in repository
 мультиязычность - получить значение в зависимости от языка';
+
+
+CREATE OR REPLACE FUNCTION service.get_another_robot_id(
+    rid bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+BEGIN
+    --test;
+    SELECT id INTO res
+        FROM robot
+        WHERE repository_part_id = (
+            SELECT repository_part_id
+                FROM robot
+                WHERE id = rid
+        )
+        AND id <> rid;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION service.get_another_robot_id(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION service.get_another_robot_id(bigint)
+    IS 'взять второй робот на огурце';
 
 
 CREATE OR REPLACE FUNCTION service.is_cell_full_check(
@@ -145,6 +173,7 @@ BEGIN
             RETURN 1;
         END IF;
     END LOOP;
+    RETURN 0; -- Unreachable
 END;
 $BODY$;
 ALTER FUNCTION service.is_cell_full_check() OWNER TO postgres;
@@ -200,7 +229,7 @@ DECLARE
     cs RECORD;
     cd RECORD;
     tua RECORD;
-    rr RECORD;
+    rr BOOLEAN;
 BEGIN
     FOR cs IN (SELECT * FROM cell WHERE id = src_) LOOP
         FOR cd IN (SELECT * FROM cell WHERE id = dst_) LOOP
@@ -213,17 +242,18 @@ BEGIN
                     AND coalesce(work_npp_to, -1)
             ) LOOP
                 -- источник недостижим для робота tua.id
-                FOR rr IN (
+                SELECT exists(
                     SELECT * FROM robot r
                         WHERE r.repository_part_id = cd.repository_part_id
                         AND r.id <> tua.id
                         AND coalesce(work_npp_from, -1) >= 0
                         AND coalesce(work_npp_to, -1) >= 0
                         AND cd.track_npp NOT BETWEEN coalesce(work_npp_from, -1) AND coalesce(work_npp_to, -1)
-                ) LOOP
+                ) INTO rr;
+                IF rr THEN
                     -- цель недостижима для второго робота
                     RETURN 1;
-                END LOOP;
+                END IF;
             END LOOP;
         END LOOP;
     END LOOP;
@@ -234,7 +264,6 @@ ALTER FUNCTION service.cell_acc_only_1_robot(bigint, bigint) OWNER TO postgres;
 COMMENT ON FUNCTION service.cell_acc_only_1_robot(bigint, bigint)
     IS 'Check if cell is only accessible by 1 robot.
 ячейка достижима лишь для одного робота? (для линейных огурцов)';
-
 
 CREATE OR REPLACE FUNCTION service.is_cell_over_locked(
     cid bigint)
@@ -265,6 +294,55 @@ COMMENT ON FUNCTION service.is_cell_over_locked(bigint)
     IS 'Check if amount of locks on cell is over max.
 не перезаблокирование ли ячейки командами?';
 
+CREATE OR REPLACE FUNCTION service.is_free_way(
+    rid bigint,
+    rnpp bigint,
+    gnpp bigint,
+    dir bigint,
+    maxnpp bigint,
+    rpid bigint)
+    RETURNS boolean
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    ctr BIGINT;
+    has_pregr BOOLEAN;
+    lid BIGINT;
+BEGIN
+    ctr := rnpp;
+    has_pregr := false;
+    LOOP
+        SELECT locked_by_robot_id INTO lid
+            FROM track
+            WHERE repository_part_id = rpid
+                AND npp = ctr;
+        IF (lid NOT IN (rid,0)) THEN
+            has_pregr := true;
+        END IF;
+        EXIT WHEN has_pregr OR ctr = gnpp;
+        IF (dir = 1) THEN
+            IF (ctr = maxnpp) THEN
+                ctr := 0;
+            ELSE
+                ctr := ctr + 1;
+            END IF;
+        ELSE
+            IF (ctr = 0) THEN
+                ctr := maxnpp;
+            ELSE
+                ctr := ctr - 1;
+            END IF;
+        END IF;
+    END LOOP;
+    RETURN NOT has_pregr;
+END;
+$BODY$;
+ALTER FUNCTION service.is_free_way(bigint, bigint, bigint, bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION service.is_free_way(bigint, bigint, bigint, bigint, bigint, bigint)
+    IS 'путь свободен?';
+
 CREATE OR REPLACE PROCEDURE service.cell_unlock_from_cmd(
     cid bigint,
     cmd_id_ bigint)
@@ -273,12 +351,12 @@ AS $BODY$
 DECLARE
     cnt BIGINT;
 BEGIN
-    CALL log2file('cell_unlock_from_cmd cmd_id=' || cmd_id_ || ' cid=' || cid);
+    CALL service.log2file('cell_unlock_from_cmd cmd_id=' || cmd_id_ || ' cid=' || cid);
     SELECT count(*) INTO cnt
         FROM cell_cmd_lock
         WHERE cell_id = cid and cmd_id = cmd_id_;
     IF (cnt = 0) THEN
-        CALL log2file('Unlock Error! Its not cell_lock w cell_id=' || cid || ' and cmd_id=' || cmd_id_);
+        CALL service.log2file('Unlock Error! Its not cell_lock w cell_id=' || cid || ' and cmd_id=' || cmd_id_);
     ELSE
         DELETE FROM cell_cmd_lock
             WHERE cell_id = cid and cmd_id = cmd_id_;
@@ -299,7 +377,6 @@ END;
 $BODY$;
 COMMENT ON PROCEDURE service.cell_lock_by_cmd(bigint, bigint)
     IS 'заблокировать ячейку командой';
-
 
 CREATE OR REPLACE FUNCTION service.calc_ideal_crp_cost(
     rp_id_ bigint,
@@ -392,10 +469,93 @@ BEGIN
             RETURN round(res + res1 + tpos + t_start_m + t_stop_m);
         END IF;
     END IF;
+    RETURN -1; -- Unreachable
 END;
 $BODY$;
 ALTER FUNCTION service.calc_ideal_crp_cost(bigint, bigint, bigint) OWNER TO postgres;
 COMMENT ON FUNCTION service.calc_ideal_crp_cost(bigint, bigint, bigint)
     IS 'посчитать идеальную цену команды перемещения контейнера';
+
+CREATE OR REPLACE FUNCTION service.get_ust_cell_dir(
+    rid bigint,
+    gtid bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rnpp BIGINT;
+    rpid BIGINT;
+    gnpp BIGINT;
+    maxnpp BIGINT;
+    d1 BIGINT;
+    d0 BIGINT;
+    ano_rid BIGINT;
+    is_ano_r_busy BOOLEAN;
+    cnt BIGINT;
+BEGIN
+    BEGIN
+        ano_rid := service.get_another_robot_id(rid);
+        SELECT count(*) INTO cnt
+            FROM command
+            WHERE robot_id = ano_rid
+                AND state IN (0,1,3);
+        is_ano_r_busy := (cnt<>0);
+    EXCEPTION WHEN others THEN
+        is_ano_r_busy := false;
+    END;
+    SELECT current_track_npp, repository_part_id
+        INTO rnpp, rpid
+        FROM robot
+        WHERE id = rid;
+    SELECT npp
+        INTO gnpp
+        FROM track
+        WHERE id = gtid;
+    SELECT max_npp
+        INTO maxnpp
+        FROM repository_part
+        WHERE id = rpid;
+    IF (gnpp = rnpp) THEN
+        RETURN 0;
+    ELSIF (gnpp > rnpp) THEN -- цель более текущего
+        d1 := gnpp - rnpp;
+        d0 := rnpp + (maxnpp - gnpp);
+    ELSE -- текущее более цели
+        d0 := rnpp - gnpp;
+        d1 := gnpp + (maxnpp - rnpp);
+    END IF;
+    IF (d1 < d0) THEN
+        IF NOT is_ano_r_busy THEN
+            RETURN 1;
+        ELSE -- робот второй тоже работает - смотрим, а нельзя ли объехать
+            IF service.is_free_way(rid, rnpp, gnpp, 1, maxnpp, rpid) THEN
+                RETURN 1;
+            ELSIF service.is_free_way(rid,rnpp,gnpp,0,maxnpp,rpid) THEN
+                RETURN 0;
+            ELSE
+                RETURN 1;
+            END IF;
+        END IF;
+    ELSE
+        IF NOT is_ano_r_busy THEN
+            RETURN 0;
+        ELSE -- робот второй тоже работает - смотрим, а нельзя ли объехать
+            IF service.is_free_way(rid,rnpp,gnpp,0,maxnpp,rpid) THEN
+                RETURN 0;
+            ELSIF service.is_free_way(rid,rnpp,gnpp,1,maxnpp,rpid) THEN
+                RETURN 1;
+            ELSE
+                RETURN 1;
+            END IF;
+        END IF;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION service.get_ust_cell_dir(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION service.get_ust_cell_dir(bigint, bigint)
+    IS 'взять направление для юстировки';
+
 
 -- vim: ft=pgsql

@@ -23,7 +23,7 @@ AS $BODY$
 DECLARE
     filename TEXT;
 BEGIN
-    filename := get_log_file_name(rp_id_);
+    filename := obj_rpart.get_log_file_name(rp_id_);
     PERFORM pg_catalog.pg_file_write(
         filename,
         to_char(LOCALTIMESTAMP, 'HH24:MI:SS.MS') || ' ' || txt_ || E'\n',
@@ -34,6 +34,26 @@ $BODY$;
 COMMENT ON PROCEDURE obj_rpart.log(numeric, text)
     IS 'Logs timestamped entry into file specific to current sub warehouse.
 процедура ведения журнала';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_another_direction(
+    direction_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    IF (direction_ = 1) THEN
+        RETURN 0;
+    ELSE
+        RETURN 1;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_another_direction(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_another_direction(bigint)
+    IS 'получить иное, чем указанное, направление движения робота';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.get_cmd_dir_text(
@@ -57,13 +77,13 @@ COMMENT ON FUNCTION obj_rpart.get_cmd_dir_text(bigint)
 
 
 CREATE OR REPLACE PROCEDURE obj_rpart.get_next_npp(
-    rp_type numeric,
-    max_npp numeric,
-    cur_npp numeric,
-    npp_to numeric,
-    dir numeric,
-    INOUT next_npp numeric,
-    INOUT is_loop_end numeric)
+    rp_type bigint,
+    max_npp bigint,
+    cur_npp bigint,
+    npp_to bigint,
+    dir bigint,
+    INOUT next_npp bigint,
+    INOUT is_loop_end bigint)
 LANGUAGE 'plpgsql'
 AS $BODY$
 BEGIN
@@ -104,7 +124,7 @@ BEGIN
     END IF;
 END;
 $BODY$;
-COMMENT ON PROCEDURE obj_rpart.get_next_npp(numeric, numeric, numeric, numeric, numeric, numeric, numeric)
+COMMENT ON PROCEDURE obj_rpart.get_next_npp(bigint, bigint, bigint, bigint, bigint, bigint, bigint)
     IS 'Get next track number in set direction.
 взять следующий № трека по направлению (и высчитать, не пришди ли уже куда надо)';
 
@@ -201,7 +221,7 @@ BEGIN
         AND r.id = rid_
     ) LOOP
         IF (ro_.num_of_robots > 0) THEN
-            npp_to_ar := add_track_npp(ro_.rpid, npp_to_, ro_.num_of_robots * (ro_.spacing_of_robots * 2 + 1), dir_);
+            npp_to_ar := obj_rpart.add_track_npp(ro_.rpid, npp_to_, ro_.num_of_robots * (ro_.spacing_of_robots * 2 + 1), dir_);
         ELSE
             npp_to_ar := npp_to_;
         END IF;
@@ -216,31 +236,30 @@ COMMENT ON FUNCTION obj_rpart.correct_npp_to_track_order(bigint, bigint, bigint,
 
 
 CREATE OR REPLACE PROCEDURE obj_rpart.add_check_point(
-    rp_id_ numeric,
-    sorb_ numeric,
-    robot_id_ numeric,
-    dir_ numeric,
-    track_npp_ numeric)
+    rp_id_ bigint,
+    sorb_ bigint,
+    robot_id_ bigint,
+    dir_ bigint,
+    track_npp_ bigint)
 LANGUAGE 'plpgsql'
 AS $BODY$
 DECLARE
-    tr_ NUMERIC;
+    tr_ BIGINT;
     ci RECORD;
 BEGIN
     FOR ci IN (
         SELECT * FROM command_inner
-        WHERE robot_id=robot_id_
+        WHERE robot_id = robot_id_
         AND STATE IN (0,1,3,4)
         AND coalesce(check_point, -1) >= 0
     ) LOOP
-        SELECT add_track_npp(rp_id_, tr_npp_ ,sorb_, get_another_direction(dir_))
-            INTO tr_;
-        INSERT INTO command_inner_checkpoint(command_inner_id,npp)
+        tr_ := obj_rpart.add_track_npp(rp_id_, track_npp_, sorb_, obj_rpart.get_another_direction(dir_));
+        INSERT INTO command_inner_checkpoint(command_inner_id, npp)
             VALUES(ci.id, tr_);
     END LOOP;
 END;
 $BODY$;
-COMMENT ON PROCEDURE obj_rpart.add_check_point(numeric, numeric, numeric, numeric, numeric)
+COMMENT ON PROCEDURE obj_rpart.add_check_point(bigint, bigint, bigint, bigint, bigint)
     IS 'Adds checkpoint for robot if it''s supported
 добавить промежуточную точку для робота, если он поддерживает';
 
@@ -265,38 +284,38 @@ COMMENT ON FUNCTION obj_rpart.get_track_npp_by_id(numeric)
 
 
 CREATE OR REPLACE PROCEDURE obj_rpart.unlock_track(
-    robot_id_ numeric,
-    rp_id_ numeric,
-    npp_from_ numeric,
-    npp_to_ numeric,
-    dir_ numeric)
+    robot_id_ bigint,
+    rp_id_ bigint,
+    npp_from_ bigint,
+    npp_to_ bigint,
+    dir_ bigint)
 LANGUAGE 'plpgsql'
 AS $BODY$
 DECLARE
     rrp RECORD;
     ord RECORD;
     errmm TEXT;
-    npp1_ NUMERIC;
-    npp2_ NUMERIC;
-    npp2 NUMERIC;
-    tr_npp NUMERIC;
-    tr_id NUMERIC;
-    tr_locked_by_robot_id NUMERIC;
+    npp1_ BIGINT;
+    npp2_ BIGINT;
+    npp2 BIGINT;
+    tr_npp BIGINT;
+    tr_id BIGINT;
+    tr_locked_by_robot_id BIGINT;
 BEGIN
     FOR rrp IN (
         SELECT rp.id rpid_, spacing_of_robots sorb, max_npp, repository_type rpt, num_of_robots
             FROM repository_part rp
             WHERE rp.id = rp_id_
     ) LOOP
-        CALL log(rrp.rpid_, 'unlock_track: пришла npp_from_=' || npp_from_ || '; npp_to_=' || npp_to_ || '; direction=' || dir_ || '; robot.id=' || robot_id_);
+        CALL obj_rpart.log(rrp.rpid_, 'unlock_track: пришла npp_from_=' || npp_from_ || '; npp_to_=' || npp_to_ || '; direction=' || dir_ || '; robot.id=' || robot_id_);
         IF (npp_from_ = npp_to_) THEN
-            CALL log(rrp.rpid_, '  нет смысла сразу npp_from_=' || npp_from_ || '; npp_to_=' || npp_to_ || '; direction=' || dir_ || '; robot.id=' || robot_id_);
+            CALL obj_rpart.log(rrp.rpid_, '  нет смысла сразу npp_from_=' || npp_from_ || '; npp_to_=' || npp_to_ || '; direction=' || dir_ || '; robot.id=' || robot_id_);
             RETURN;
         END IF;
         -- FIXME: confusing naming
-        npp2 := add_track_npp(rrp.rpid_, npp_to_, 1, get_another_direction(dir_));
-        npp1_ := add_track_npp(rrp.rpid_, npp_from_, rrp.sorb, get_another_direction(dir_));
-        npp2_ := add_track_npp(rrp.rpid_, npp2, rrp.sorb, get_another_direction(dir_));
+        npp2 := obj_rpart.add_track_npp(rrp.rpid_, npp_to_, 1, obj_rpart.get_another_direction(dir_));
+        npp1_ := obj_rpart.add_track_npp(rrp.rpid_, npp_from_, rrp.sorb, obj_rpart.get_another_direction(dir_));
+        npp2_ := obj_rpart.add_track_npp(rrp.rpid_, npp2, rrp.sorb, obj_rpart.get_another_direction(dir_));
         IF (rrp.rpt = 0) AND (npp_to_ <= rrp.sorb) AND (dir_ = 1) THEN
             null;
         ELSEIF (rrp.rpt = 0) AND (npp_to_ >= rrp.max_npp - rrp.sorb) AND (dir_ = 0) THEN
@@ -310,7 +329,7 @@ BEGIN
                     WHERE npp = tr_npp AND repository_part_id = rrp.rpid_;
                 IF coalesce(tr_locked_by_robot_id, 0) NOT IN (robot_id_, 0) THEN
                     errmm := 'ERROR - Ошибка ошибка разблокировки трека ' || tr_npp || '! locked by ' || coalesce(tr_locked_by_robot_id,0);
-                    CALL log(rrp.rpid_, errmm);
+                    CALL obj_rpart.log(rrp.rpid_, errmm);
                     RAISE EXCEPTION '%', errmm USING errcode = -20012;
                 END IF;
                 UPDATE track SET locked_by_robot_id = 0 WHERE id = tr_id;
@@ -323,30 +342,30 @@ BEGIN
                         AND repository_part_id = rrp.rpid_
                         ORDER BY id
                 ) LOOP
-                    CALL log(rrp.rpid_,'  есть заявка =' || ord.id || ' - освобождаем');
+                    CALL obj_rpart.log(rrp.rpid_,'  есть заявка =' || ord.id || ' - освобождаем');
                     UPDATE track SET locked_by_robot_id = ord.robot_id WHERE id = tr_id;
-                    CALL add_check_point(ord.repository_part_id, rrp.sorb, ord.robot_id, ord.direction, tr_npp);
+                    CALL obj_rpart.add_check_point(ord.repository_part_id, rrp.sorb, ord.robot_id, ord.direction, tr_npp);
                     -- Order is fulfilled
                     IF ord.npp_from = ord.npp_to THEN -- нет нужды в этой заявке - удаляем ее
                         DELETE FROM track_order WHERE id = ord.id;
-                        CALL log(rrp.rpid_,'  уже все выбрано по заявке - удаляем');
+                        CALL obj_rpart.log(rrp.rpid_,'  уже все выбрано по заявке - удаляем');
                     -- Still fulfilling
                     ELSE -- еще есть нужда в заявке - уменьшаем ее размер
                         IF ord.npp_from = tr_npp THEN
-                            CALL log(rrp.rpid_,'  уменьшаем заявку трек ' || tr_npp);
-                            npp1_ := add_track_npp(rrp.rpid_, tr_npp, 1, ord.direction);
+                            CALL obj_rpart.log(rrp.rpid_,'  уменьшаем заявку трек ' || tr_npp);
+                            npp1_ := obj_rpart.add_track_npp(rrp.rpid_, tr_npp, 1, ord.direction);
                             UPDATE track_order SET npp_from=npp1_ WHERE id = ord.id;
                         END IF;
                     END IF;
                 END LOOP;
-                CALL get_next_npp(rrp.rpt, rrp.max_npp, tr_npp, npp2_, dir_, tr_npp, is_loop_exit);
+                CALL obj_rpart.get_next_npp(rrp.rpt, rrp.max_npp, tr_npp, npp2_, dir_, tr_npp, is_loop_exit);
                 EXIT WHEN is_loop_exit = 1;
             END LOOP;
         END IF;
     END LOOP;
 END;
 $BODY$;
-COMMENT ON PROCEDURE obj_rpart.unlock_track(numeric, numeric, numeric, numeric, numeric)
+COMMENT ON PROCEDURE obj_rpart.unlock_track(bigint, bigint, bigint, bigint, bigint)
     IS 'Unlocks track by fulfilling track orders.
 вызывается из триггера при смене текущего трека; нужно передавать rp_id_, чтобы не было мутации';
 
@@ -509,7 +528,7 @@ DECLARE
 BEGIN
     SELECT count(*) INTO cnt_ FROM robot
         WHERE repository_part_id = rpid_
-        AND state = obj_robot.ROBOT_STATE_REPAIR();
+        AND state = obj_robot."ROBOT_STATE_REPAIR"();
     RETURN cnt_;
 END;
 $BODY$;
@@ -728,12 +747,12 @@ DECLARE
 BEGIN
     FOR rr IN (
         SELECT * FROM robot
-        WHERE state = obj_robot.ROBOT_STATE_REPAIR()
+        WHERE state = obj_robot."ROBOT_STATE_REPAIR"()
         AND repository_part_id = rp_id_
     ) LOOP
-        d1 := calc_distance_by_dir(rp_id_, npp_, rr.current_track_npp, 0);
-        d2 := calc_distance_by_dir(rp_id_ , npp_, rr.current_track_npp, 1);
-        md := get_rp_spacing_of_robots(rp_id_) * (get_rp_num_of_robots(rp_id_) - 1) * 2 +(get_rp_num_of_robots(rp_id_) - 1);
+        d1 := obj_rpart.calc_distance_by_dir(rp_id_, npp_, rr.current_track_npp, 0);
+        d2 := obj_rpart.calc_distance_by_dir(rp_id_ , npp_, rr.current_track_npp, 1);
+        md := obj_rpart.get_rp_spacing_of_robots(rp_id_) * (obj_rpart.get_rp_num_of_robots(rp_id_) - 1) * 2 +(obj_rpart.get_rp_num_of_robots(rp_id_) - 1);
         IF (d1 <= md) OR (d2 <= md) THEN
             RETURN 1;
         END IF;
@@ -773,7 +792,7 @@ COMMENT ON FUNCTION obj_rpart.get_another_robot_id(bigint)
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.is_track_npp_ban_move_to(
-    rid_ bigint,
+    rp_id_ bigint,
     npp_ bigint)
     RETURNS bigint
     LANGUAGE 'plpgsql'
@@ -913,7 +932,7 @@ DECLARE
 BEGIN
     is_dest_npp_reached := false;
     FOR r IN (SELECT * FROM robot WHERE id = robot_id_) LOOP
-        PERFORM log(r.repository_part_id, ' is_track_locked robot_id_=' || robot_id_ || ' npp_d=' || npp_d || ' dir=' || dir);
+        CALL obj_rpart.log(r.repository_part_id, ' is_track_locked robot_id_=' || robot_id_ || ' npp_d=' || npp_d || ' dir=' || dir);
         FOR rp IN (
             SELECT repository_type, id, max_npp, spacing_of_robots sorb, num_of_robots
                 FROM repository_part rp
@@ -929,9 +948,9 @@ BEGIN
                 RETURN 1; -- там же и стоим
             END IF;
             -- считаем максимум сколько нужно хапануть
-            dnppsorb := add_track_npp(rp.id, npp_d,rp.sorb, dir);
-            IF (is_track_npp_ban_move_to(rp.id, npp_d) = 1) THEN
-                dnppsorb := add_track_npp(rp.id, dnppsorb, 1, dir);
+            dnppsorb := obj_rpart.add_track_npp(rp.id, npp_d,rp.sorb, dir);
+            IF (obj_rpart.is_track_npp_ban_move_to(rp.id, npp_d) = 1) THEN
+                dnppsorb := obj_rpart.add_track_npp(rp.id, dnppsorb, 1, dir);
             END IF;
             LOOP
                 IF cnpp=npp_d THEN
@@ -971,7 +990,7 @@ BEGIN
                 IF (ll <> r.id) AND (maybe_locked_ = 0) THEN -- ошибка
                     RETURN 0; -- путь не готов - ОШИБКА!!!
                 ELSIF (ll NOT IN (r.id, 0)) AND (maybe_locked_ = 1) THEN
-                    return 0; -- путь не готов - ОШИБКА!!!
+                    RETURN 0; -- путь не готов - ОШИБКА!!!
                 END IF;
             END LOOP;
         END LOOP;
@@ -1002,14 +1021,14 @@ DECLARE
     nor_ BIGINT;
 BEGIN
     FOR r IN (SELECT * FROM robot WHERE id = rid_) LOOP
-        PERFORM log(r.repository_part_id, 'Пришла заявка на трек от робота ' || rid_
+        CALL obj_rpart.log(r.repository_part_id, 'Пришла заявка на трек от робота ' || rid_
             || ' NPP_FROM=' || NPP_FROM_
             || ' NPP_TO=' || NPP_TO_
             || ' dir=' || dir_
             || ' robot_stop_id_=' || robot_stop_id_);
         -- первым делом проверяем, а нет ли уже заявки от этого же робота
         FOR tt IN (SELECT * FROM track_order WHERE repository_part_id = r.repository_part_id AND rid_ = robot_id) LOOP
-            PERFORM log(r.repository_part_id, 'ERROR - попытка заявки, когда уже есть заявка от робота ' || rid_
+            CALL obj_rpart.log(r.repository_part_id, 'ERROR - попытка заявки, когда уже есть заявка от робота ' || rid_
                 || ' NPP_FROM=' || tt.NPP_FROM
                 || ' NPP_TO=' || tt.NPP_TO
                 || ' DIRECTION=' || tt.DIRECTION
@@ -1019,20 +1038,20 @@ BEGIN
         SELECT count(*) INTO cnt FROM track_order WHERE repository_part_id = r.repository_part_id;
         SELECT num_of_robots INTO nor_ FROM repository_part WHERE id = r.repository_part_id;
         IF (cnt >= nor_ - 1) THEN
-            PERFORM log(r.repository_part_id, 'ERROR - слишком много заявок по подскладу, отбой!');
+            CALL obj_rpart.log(r.repository_part_id, 'ERROR - слишком много заявок по подскладу, отбой!');
             RETURN false;
         END IF;
         FOR tt IN (SELECT * FROM track_order WHERE repository_part_id = r.repository_part_id) LOOP
             IF (robot_stop_id_ = tt.robot_stop_id) THEN
-                PERFORM log(r.repository_part_id, 'ERROR - попытка второй заявки на одного мешающего робота');
+                CALL obj_rpart.log(r.repository_part_id, 'ERROR - попытка второй заявки на одного мешающего робота');
                 RETURN false;
             END IF;
             IF (robot_stop_id_ = tt.robot_id) THEN
-                PERFORM log(r.repository_part_id, 'ERROR - попытка ранее инициировавшего заявку робота выставить мешающим');
+                CALL obj_rpart.log(r.repository_part_id, 'ERROR - попытка ранее инициировавшего заявку робота выставить мешающим');
                 RETURN false;
             END IF;
-            IF (tt.direction <> dir_) AND is_track_part_between(tt.id, npp_from_, npp_to_, dir_) THEN
-                PERFORM log(r.repository_part_id, 'ERROR - попытка добавить встречную мешающую заявку');
+            IF (tt.direction <> dir_) AND obj_rpart.is_track_part_between(tt.id, npp_from_, npp_to_, dir_) THEN
+                CALL obj_rpart.log(r.repository_part_id, 'ERROR - попытка добавить встречную мешающую заявку');
                 RETURN false;
             END IF;
         END LOOP;
@@ -1056,16 +1075,17 @@ CREATE OR REPLACE FUNCTION obj_rpart.is_exists_cell_type(
     VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
-    cc RECORD;
+    res BOOLEAN;
 BEGIN
-    FOR cc IN (
+    SELECT exists(
         SELECT * FROM cell
         WHERE repository_part_id = rp_id_
         AND hi_level_type = ct_
         AND is_error = 0
-    ) LOOP
+    ) INTO res;
+    IF res THEN
         RETURN 1;
-    END LOOP;
+    END IF;
     RETURN 0;
 END;
 $BODY$;
@@ -1092,7 +1112,7 @@ BEGIN
             AND coalesce(blocked_by_ci_id, 0) = 0
             AND service.is_cell_over_locked(id) = 0
             AND coalesce(is_error, 0) = 0
-            AND hi_level_type = obj_ask.CELL_TYPE_TRANSIT_1RP
+            AND hi_level_type = obj_ask."CELL_TYPE_TRANSIT_1RP"()
     ) LOOP
         RETURN ncl.id;
     END LOOP;
@@ -1136,7 +1156,7 @@ CREATE OR REPLACE FUNCTION obj_rpart.try_track_lock(
     VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
-    rp RECORD;
+    rp_ RECORD;
     to_ RECORD;
     tr RECORD;
     tor RECORD;
@@ -1154,54 +1174,54 @@ DECLARE
 BEGIN
     -- Assume there are no barriers
     barrier_robot_id := 0; -- типа ничего не мешает
-    FOR rp IN (
+    FOR rp_ IN (
         SELECT rp.id, num_of_robots, spacing_of_robots, repository_type, max_npp, r.current_track_npp
             FROM robot r
             INNER JOIN repository_part rp
                 ON r.repository_part_id = rp.id
             WHERE r.id = rid_
     ) LOOP
-        DELETE FROM tmp_track_lock WHERE rp_id = rp.id;
-        PERFORM log(rp.id, 'Try_Track_Lock robot=' || rid_
-            || ' робот находится c_npp=' || rp.current_track_npp
+        DELETE FROM tmp_track_lock WHERE rp_id = rp_.id;
+        CALL obj_rpart.log(rp_.id, 'Try_Track_Lock robot=' || rid_
+            || ' робот находится c_npp=' || rp_.current_track_npp
             || ' npp_to_=' || npp_to_
             || ' dir_=' || dir_);
-        IF (is_track_locked(rid_, npp_to_, dir_, 0, 1) = 1) THEN
-            PERFORM log(rp.id,'  уже заблокировано, нет смысла блокировать');
+        IF (obj_rpart.is_track_locked(rid_, npp_to_, dir_, 0, 1) = 1) THEN
+            CALL obj_rpart.log(rp_.id,'  уже заблокировано, нет смысла блокировать');
             result := npp_to_;
             RETURN;
         END IF;
-        IF (rp.current_track_npp = npp_to_) THEN
-            PERFORM log(rp.id,'  находится робот там же, куда нужно дойти. Бред какой-то');
+        IF (rp_.current_track_npp = npp_to_) THEN
+            CALL obj_rpart.log(rp_.id,'  находится робот там же, куда нужно дойти. Бред какой-то');
             result := npp_to_;
             RETURN;
         END IF;
-        npp_from_sorb__ := add_track_npp(rp.id, rp.current_track_npp, rp.spacing_of_robots + 1, dir_);
-        npp_to_sorb__ := add_track_npp(rp.id, npp_to_, rp.spacing_of_robots, dir_);
-        IF (is_track_npp_ban_move_to(rp.id, npp_to_) = 1) THEN
-            PERFORM log(rp.id, '  попали на BAN_MOVE_TO, увеличиваем npp_to_sorb__ на 1 в сторону ' || dir_);
-            npp_to_sorb__ := add_track_npp(rp.id, npp_to_sorb__, 1, dir_);
+        npp_from_sorb__ := obj_rpart.add_track_npp(rp_.id, rp_.current_track_npp, rp_.spacing_of_robots + 1, dir_);
+        npp_to_sorb__ := obj_rpart.add_track_npp(rp_.id, npp_to_, rp_.spacing_of_robots, dir_);
+        IF (obj_rpart.is_track_npp_ban_move_to(rp_.id, npp_to_) = 1) THEN
+            CALL obj_rpart.log(rp_.id, '  попали на BAN_MOVE_TO, увеличиваем npp_to_sorb__ на 1 в сторону ' || dir_);
+            npp_to_sorb__ := obj_rpart.add_track_npp(rp_.id, npp_to_sorb__, 1, dir_);
         END IF;
         npp_cur__ := npp_from_sorb__;
         -- для блокировки around или на 1 секцию
-        distance__ := calc_distance_by_dir(rp.id, rp.current_track_npp, npp_to_, dir_);
-        npp_to_was_locked__ := (npp_to_ = rp.current_track_npp) OR (distance__ <= rp.spacing_of_robots);
+        distance__ := obj_rpart.calc_distance_by_dir(rp_.id, rp_.current_track_npp, npp_to_, dir_);
+        npp_to_was_locked__ := (npp_to_ = rp_.current_track_npp) OR (distance__ <= rp_.spacing_of_robots);
         npp_old__ := -1;
-        PERFORM log(rp.id, '  npp_from_sorb__=' || npp_from_sorb__ || ' npp_to_sorb__=' || npp_to_sorb__);
+        CALL obj_rpart.log(rp_.id, '  npp_from_sorb__=' || npp_from_sorb__ || ' npp_to_sorb__=' || npp_to_sorb__);
         -- а теперь проверяем заявки, если нужно
         IF (NOT ignore_buf_track_order) THEN
             cnt_ := 0;
-            FOR to_ IN (SELECT * FROM track_order WHERE repository_part_id = rp.id ORDER BY id) LOOP
+            FOR to_ IN (SELECT * FROM track_order WHERE repository_part_id = rp_.id ORDER BY id) LOOP
                 EXIT WHEN (cnt_ = 0) AND (to_.robot_id = rid_); -- если самая свежая заявка от текущего робота, то ему все пофиг
                 IF (to_.robot_id <> rid_) AND (to_.robot_stop_id <> rid_) THEN
-                    npp_to_ar := correct_npp_to_track_order(rid_, to_.robot_id, dir_, npp_to_sorb__);
-                    IF (is_track_locked(rid_, npp_to_, dir_, 0) = 0)
+                    npp_to_ar := obj_rpart.correct_npp_to_track_order(rid_, to_.robot_id, dir_, npp_to_sorb__);
+                    IF (obj_rpart.is_track_locked(rid_, npp_to_, dir_, 0) = 0)
                         AND (
-                            is_track_part_between(rp.id, npp_from_sorb__, npp_to_ar, dir_)
-                            OR is_track_part_between(rp.id, npp_from_sorb__, npp_to_, dir_) -- это нужно чтобы избежать перехлеста при блокировки с 44 по 42 по часовой
+                            obj_rpart.is_track_part_between(rp_.id, npp_from_sorb__, npp_to_ar, dir_)
+                            OR obj_rpart.is_track_part_between(rp_.id, npp_from_sorb__, npp_to_, dir_) -- это нужно чтобы избежать перехлеста при блокировки с 44 по 42 по часовой
                         )
                     THEN
-                        PERFORM log(rp.id, '  отмена запроса на блокировку трека, т.к. требуемый участок уже в заявке по цепочке');
+                        CALL obj_rpart.log(rp_.id, '  отмена запроса на блокировку трека, т.к. требуемый участок уже в заявке по цепочке');
                         result := npp_old__;
                         RETURN;
                     END IF;
@@ -1211,10 +1231,10 @@ BEGIN
         END IF;
         LOOP
             --Log(rp.id,'  loop npp_cur__='||npp_cur__);
-            FOR tr IN (SELECT * FROM track WHERE repository_part_id = rp.id AND npp = npp_cur__) LOOP
+            FOR tr IN (SELECT * FROM track WHERE repository_part_id = rp_.id AND npp = npp_cur__) LOOP
                 IF (tr.locked_by_robot_id = 0) THEN
                     --update track set locked_by_robot_id=rid_ where id=tr.id;
-                    INSERT INTO tmp_track_lock(npp, rp_id) VALUES (npp_cur__, rp.id);
+                    INSERT INTO tmp_track_lock(npp, rp_id) VALUES (npp_cur__, rp_.id);
                     -- освобождаем заявку с трека
                     FOR tor IN (
                         SELECT * FROM track_order
@@ -1222,21 +1242,21 @@ BEGIN
                         AND npp_from = npp_cur__
                         AND npp_from <> npp_to
                     ) LOOP
-                        npp_tmp__ := add_track_npp(rp.id, npp_cur__, 1, get_another_direction(dir_));
-                        PERFORM log(rp.id,'  освободили кусок заявки track_order ' || tor.id
-                            || ' робота ' ||tor.robot_id
-                            || ' на трек с ' ||tor.npp_from
-                            || ' на трек с  ' ||npp_tmp__);
+                        npp_tmp__ := obj_rpart.add_track_npp(rp_.id, npp_cur__, 1, obj_rpart.get_another_direction(dir_));
+                        CALL obj_rpart.log(rp_.id,'  освободили кусок заявки track_order ' || tor.id
+                            || ' робота ' || tor.robot_id
+                            || ' на трек с ' || tor.npp_from
+                            || ' на трек с  ' || npp_tmp__);
                         UPDATE track_order SET npp_from = npp_tmp__ WHERE robot_id = rid_;
                     END LOOP;
                     -- удаляем всю заявку
                     FOR tor IN (
                         SELECT * FROM track_order
                         WHERE robot_id = rid_
-                        AND npp_from = npp_cur__
-                        AND npp_from = npp_to
+                            AND npp_from = npp_cur__
+                            AND npp_from = npp_to
                     ) LOOP
-                        PERFORM log(rp.id, '  удалили заявку track_order ' || tor.id
+                        CALL obj_rpart.log(rp_.id, '  удалили заявку track_order ' || tor.id
                             || ' робота ' || tor.robot_id
                             || ' на трек с ' || tor.npp_from
                             || ' по ' || tor.npp_to
@@ -1246,23 +1266,23 @@ BEGIN
                 ELSIF (tr.locked_by_robot_id <> rid_) THEN
                     barrier_robot_id := tr.locked_by_robot_id;
                     IF (npp_old__ < 0) THEN
-                        PERFORM log(rp.id, '  ERROR - заблокировано другим роботом');
-                        ft := form_track_order(rid_, npp_from_sorb__, npp_to_sorb__, dir_, tr.locked_by_robot_id);
+                        CALL obj_rpart.log(rp_.id, '  ERROR - заблокировано другим роботом');
+                        ft := obj_rpart.form_track_order(rid_, npp_from_sorb__, npp_to_sorb__, dir_, tr.locked_by_robot_id);
                         IF (NOT ft) AND (NOT ignore_buf_track_order) THEN
                             result := -1;
                             RETURN;
                         END IF;
-                        PERFORM track_lock_prim(rp.id, rid_);
+                        CALL obj_rpart.track_lock_prim(rp_.id, rid_);
                         result := npp_old__;
                         RETURN;
                     ELSE
-                        ft := form_track_order(rid_, tr.npp, npp_to_sorb__, dir_, tr.locked_by_robot_id);
+                        ft := obj_rpart.form_track_order(rid_, tr.npp, npp_to_sorb__, dir_, tr.locked_by_robot_id);
                         IF (NOT ft) AND (NOT ignore_buf_track_order) THEN
                             result := -1;
                             RETURN;
                         END IF;
-                        PERFORM track_lock_prim(rp.id, rid_);
-                        npp_old__ := add_track_npp(rp.id, npp_old__, rp.spacing_of_robots, get_another_direction(dir_));
+                        CALL obj_rpart.track_lock_prim(rp_.id, rid_);
+                        npp_old__ := obj_rpart.add_track_npp(rp_.id, npp_old__, rp_.spacing_of_robots, obj_rpart.get_another_direction(dir_));
                         result := npp_old__;
                         RETURN;
                     END IF;
@@ -1273,14 +1293,14 @@ BEGIN
             END IF;
             npp_old__ := npp_cur__;
             EXIT WHEN npp_cur__ = npp_to_sorb__ AND npp_to_was_locked__;
-            npp_cur__ := add_track_npp(rp.id, npp_cur__, 1, dir_);
-            PERFORM log(rp.id, '  tr.npp_cur__=' || npp_cur__);
+            npp_cur__ := obj_rpart.add_track_npp(rp_.id, npp_cur__, 1, dir_);
+            CALL obj_rpart.log(rp_.id, '  tr.npp_cur__=' || npp_cur__);
         END LOOP;
-        PERFORM track_lock_prim(rp.id, rid_);
+        CALL obj_rpart.track_lock_prim(rp_.id, rid_);
         -- удаляем заявки на трек, если были, раз сюда дошли, то
         FOR tt IN (SELECT * FROM track_order WHERE robot_id = rid_) LOOP
             DELETE FROM track_order WHERE robot_id = rid_;
-            PERFORM log(rp.id, '  удалили заявку track_order ' || tt.id
+            CALL obj_rpart.log(rp_.id, '  удалили заявку track_order ' || tt.id
                 || ' робота ' || tt.robot_id
                 || ' на трек с ' || tt.npp_from
                 || ' по ' || tt.npp_to
@@ -1311,35 +1331,35 @@ CREATE OR REPLACE FUNCTION obj_rpart.is_poss_to_lock(
 AS $BODY$
 DECLARE
     r1 RECORD;
-    r2 RECORD;
+    -- r2 RECORD;
     track_id_dest BIGINT;
     rp_id_ BIGINT;
     sorb BIGINT;
     max_npp_ BIGINT;
     rpt BIGINT;
     nr BIGINT;
-    anroid BIGINT;
-    is_in_dest BIGINT;
+    -- anroid BIGINT;
+    -- is_in_dest BIGINT;
     cur_track_id BIGINT;
     npp1 BIGINT;
     npp1r BIGINT;
     npp2 BIGINT;
     npp2r BIGINT;
     track_id_dest_pl_sor BIGINT;
-    track_npp_dest_pl_sor BIGINT;
+    -- track_npp_dest_pl_sor BIGINT;
     tr_npp BIGINT;
     tr_id BIGINT;
     is_loop_exit BIGINT;
     tr_locked_by_robot_id BIGINT;
     ret_track_id BIGINT;
-    npp_ret BIGINT;
+    -- npp_ret BIGINT;
 BEGIN
     -- зачитываем нужные значения, инициализируем данные, пишем логи
     SELECT * INTO r1 FROM robot WHERE id = robot_id_;
     SELECT t.id, rp.id, spacing_of_robots, max_npp, repository_type, num_of_robots
         INTO track_id_dest, rp_id_, sorb, max_npp_, rpt, nr
         FROM track t, repository_part rp
-        WHERE t.npp=track_npp_dest and repository_part_id=rp.id and rp.id=r1.repository_part_id;
+        WHERE t.npp = track_npp_dest AND repository_part_id = rp.id AND rp.id = r1.repository_part_id;
     IF (/*rpt=0*/ nr = 1) THEN
         -- для склада с одним роботом
         IF (r1.current_track_npp = track_npp_dest) THEN
@@ -1348,39 +1368,39 @@ BEGIN
             RETURN track_id_dest;
         END IF;
     END IF;
-    anroid := get_another_robot_id(robot_id_);
-    SELECT * INTO r2 FROM robot WHERE id = anroid;
-    is_in_dest := 0;
+    -- anroid := obj_rpart.get_another_robot_id(robot_id_);
+    -- SELECT * INTO r2 FROM robot WHERE id = anroid;
+    -- is_in_dest := 0;
     cur_track_id := r1.current_track_id;
     IF (track_id_dest = cur_track_id) THEN
         RETURN 1;
     END IF;
 
     npp1 := r1.current_track_npp;
-    npp1r := inc_spacing_of_robots(npp1, direction_, sorb, rp_id_); -- убрали +1
+    npp1r := obj_rpart.inc_spacing_of_robots(npp1, direction_, sorb, rp_id_); -- убрали +1
     npp2 := track_npp_dest;
-    npp2r := inc_spacing_of_robots(npp2, direction_, sorb, rp_id_);
+    npp2r := obj_rpart.inc_spacing_of_robots(npp2, direction_, sorb, rp_id_);
 
-    track_id_dest_pl_sor := get_track_id_by_robot_and_npp(robot_id_, npp2r);
-    track_npp_dest_pl_sor := npp2r;
+    track_id_dest_pl_sor := obj_rpart.get_track_id_by_robot_and_npp(robot_id_, npp2r);
+    -- track_npp_dest_pl_sor := npp2r;
 
     tr_npp := npp1r;
     LOOP
-        tr_id := get_track_id_by_robot_and_npp(robot_id_, tr_npp);
+        tr_id := obj_rpart.get_track_id_by_robot_and_npp(robot_id_, tr_npp);
         SELECT locked_by_robot_id INTO tr_locked_by_robot_id FROM track WHERE id=tr_id;
         IF (coalesce(tr_locked_by_robot_id, 0) = 0) then
             --update track set locked_by_robot_id=r1.id where id=tr_id;
             ret_track_id := tr_id;
-            npp_ret := tr_npp;
+            -- npp_ret := tr_npp;
         -- заблокировано кем то иным
         ELSIF (coalesce(tr_locked_by_robot_id, 0) <> r1.id) THEN
             RETURN 0;
         ELSE -- этим же роботом и заблокировано
             ret_track_id := tr_id;
-            npp_ret := tr_npp;
+            -- npp_ret := tr_npp;
         END IF;
-        CALL get_next_npp(rpt, max_npp_, tr_npp, npp2r, direction_, tr_npp, is_loop_exit);
-        EXIT WHEN is_loop_exit=1;
+        CALL obj_rpart.get_next_npp(rpt, max_npp_, tr_npp, npp2r, direction_, tr_npp, is_loop_exit);
+        EXIT WHEN is_loop_exit = 1;
     END LOOP;
 
     IF (ret_track_id = track_id_dest_pl_sor) THEN

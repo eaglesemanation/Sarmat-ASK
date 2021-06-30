@@ -20,18 +20,18 @@ BEGIN
     -- Inter warehouse transfers
     -- для межскладских передач
     FOR tc IN (SELECT * FROM tmp_cmd WHERE action = 1 ORDER BY id) LOOP
-        PERFORM service.log2file(' trigger command_au_cis: Between repository_part transfer begin tmp.id=' || tc.id);
+        CALL service.log2file(' trigger command_au_cis: Between repository_part transfer begin tmp.id=' || tc.id);
         SELECT * INTO crec FROM command WHERE id = tc.id;
-        PERFORM service.log2file(' trigger command_au_cis: crec.id=' || crec.id);
+        CALL service.log2file(' trigger command_au_cis: crec.id=' || crec.id);
         SELECT count(*) INTO cnt FROM command_rp WHERE command_id = crec.id AND state = 5;
-        PERFORM service.log2file(' trigger command_au_cis: cnt='||cnt);
+        CALL service.log2file(' trigger command_au_cis: cnt='||cnt);
         IF (cnt > 1) THEN
             FOR crp IN (SELECT * FROM command_rp WHERE command_id = crec.id AND state = 5) LOOP
-                PERFORM service.log2file('     command_au_cis: crp.id=' || crp.id);
+                CALL service.log2file('     command_au_cis: crp.id=' || crp.id);
             END LOOP;
         END IF;
         SELECT max(id) INTO crp_id FROM command_rp WHERE command_id = crec.id AND state=5;
-        PERFORM service.log2file('     command_au_cis: max crp.id=' || crp_id);
+        CALL service.log2file('     command_au_cis: max crp.id=' || crp_id);
         SELECT cell_dest_sname INTO cdn FROM command_rp WHERE command_id = crec.id AND state = 5 AND id = crp_id;
         INSERT INTO command_rp (
             command_type_id, rp_id, cell_src_sname, cell_dest_sname, priority, state, command_id,
@@ -61,10 +61,10 @@ BEGIN
                     ON cp.cmd_gas_id = c.cmd_gas_id AND cp.container_id=c.container_id
                 WHERE c.cmd_gas_id = cgid;
             SELECT quantity INTO sumqr FROM command_gas WHERE id = cgid;
-            PERFORM service.log2file(' trigger command_au_cis: правим quantity_out=' || sumq || ' у cg_cmd=' || cgid);
+            CALL service.log2file(' trigger command_au_cis: правим quantity_out=' || sumq || ' у cg_cmd=' || cgid);
             UPDATE command_gas SET quantity_out = sumq WHERE id = cgid;
             IF (sumq >= sumqr) THEN
-                PERFORM service.log2file(' trigger command_au_cis: правим state=5 у cg_cmd=' || cgid);
+                CALL service.log2file(' trigger command_au_cis: правим state=5 у cg_cmd=' || cgid);
                 UPDATE command_gas SET state = 5 WHERE id = cgid;
             END IF;
         EXCEPTION WHEN others THEN
@@ -75,9 +75,9 @@ BEGIN
     -- Inner warehouse transfers
     -- для внтурискладских передач
     FOR tc IN (SELECT * FROM tmp_cmd WHERE action = 5 ORDER BY id) LOOP
-        PERFORM service.log2file(' trigger command_au_cis: inner repository_part transfer begin tmp.id=' || tc.id);
+        CALL service.log2file(' trigger command_au_cis: inner repository_part transfer begin tmp.id=' || tc.id);
         SELECT * INTO crec FROM command WHERE id = tc.id;
-        PERFORM service.log2file(' trigger command_au_cis: crec.id='||crec.id);
+        CALL service.log2file(' trigger command_au_cis: crec.id='||crec.id);
         FOR cl IN (
             SELECT c.*, sh.track_id
             FROM cell c

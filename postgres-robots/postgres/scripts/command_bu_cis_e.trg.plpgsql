@@ -6,11 +6,11 @@ CREATE OR REPLACE FUNCTION command_bu_cis_e()
 AS $BODY$
 DECLARE
     cnt BIGINT;
-    cell_comm TEXT;
+    -- cell_comm TEXT;
     cl RECORD;
     cd RECORD;
 BEGIN
-    PERFORM service.log2file('  триггер command_bu_cis_e - зашли ctype=' || NEW.command_type_id);
+    CALL service.log2file('  триггер command_bu_cis_e - зашли ctype=' || NEW.command_type_id);
     -- Successful execution
     -- команда успешно выполнилась
     IF (coalesce(OLD.command_rp_executed, 0) = 0) AND (coalesce(NEW.command_rp_executed, 0) <> 0) THEN
@@ -22,13 +22,13 @@ BEGIN
                 SELECT hi_level_type INTO cnt FROM cell
                     WHERE sname = NEW.crp_cell
                     AND repository_part_id = NEW.rp_src_id;
-                IF (cnt = obj_ask.CELL_TYPE_TRANSIT_1RP()) THEN
+                IF (cnt = obj_ask."CELL_TYPE_TRANSIT_1RP"()) THEN
                     -- Inner warehouse transfer
                     -- транзит внутренний
                     INSERT INTO tmp_cmd(id, action) VALUES (NEW.id, 5);
                 ELSE
                     -- раз команда завершилась, то все зашибись
-                    PERFORM trigger.finish_command(NEW);
+                    NEW := trigger.finish_command(NEW);
                 END IF;
             ELSE -- rp_src_id <> rp_dest_id
                 -- ячейка склада источника не совпадает с ячейкой склада-приемника
@@ -37,13 +37,13 @@ BEGIN
                     NEW.container_rp_id := NEW.rp_dest_id;
                     INSERT INTO tmp_cmd(id, action) VALUES (NEW.id, 1);
                 ELSE -- команда уже вполнена
-                    PERFORM trigger.finish_command(NEW);
+                    NEW := trigger.finish_command(NEW);
                 END IF;
             END IF;
         ELSIF (NEW.command_type_id = 19) THEN -- верификация
             -- надо дать еще одну команду:
             IF (NEW.state <> 2) THEN
-                PERFORM service.log2file('  триггер command_bu_cis_e - выполнилась команда верификации по складу');
+                CALL service.log2file('  триггер command_bu_cis_e - выполнилась команда верификации по складу');
                 cnt := 0;
                 FOR cl IN (
                     SELECT c.*, sh.track_id
@@ -75,7 +75,7 @@ BEGIN
         ELSIF (NEW.command_type_id = 23) THEN -- тест механики
             -- надо дать еще одну команду:
             IF (NEW.state <> 2) THEN
-                PERFORM service.log2file('  триггер command_bu_cis_e - выполнилась команда тест мех по складу');
+                CALL service.log2file('  триггер command_bu_cis_e - выполнилась команда тест мех по складу');
                 NEW.priority := NEW.priority - 1;
                 IF (NEW.priority > 0) THEN
                     FOR cl IN (
@@ -91,15 +91,15 @@ BEGIN
                     ) LOOP
                         FOR cd IN (
                             SELECT c.*, sh.track_id
-                            FROM robot_cell_verify rcv
-                            INNER JOIN cell c
-                                ON rcv.cell_id = c.id
-                            INNER JOIN shelving sh
-                                ON c.shelving_id = sh.id
-                            WHERE cmd_id = NEW.id
-                            AND is_full = 0
-                            AND cell.id <> cl.id
-                            ORDER BY random()
+                                FROM robot_cell_verify rcv
+                                INNER JOIN cell c
+                                    ON rcv.cell_id = c.id
+                                INNER JOIN shelving sh
+                                    ON c.shelving_id = sh.id
+                                WHERE cmd_id = NEW.id
+                                AND is_full = 0
+                                AND c.id <> cl.id
+                                ORDER BY random()
                         ) LOOP
                             INSERT INTO command_rp (
                                 command_type_id, rp_id, cell_src_sname, cell_dest_sname,
@@ -111,8 +111,8 @@ BEGIN
                                 (SELECT track_id FROM shelving WHERE id = cd.shelving_id),
                                 cl.id, cd.id, cl.track_npp,cd.track_npp, cl.container_id
                             );
-                            PERFORM service.cell_lock_by_cmd(cl.id, NEW.id);
-                            PERFORM service.cell_lock_by_cmd(cd.id, NEW.id);
+                            CALL service.cell_lock_by_cmd(cl.id, NEW.id);
+                            CALL service.cell_lock_by_cmd(cd.id, NEW.id);
                             EXIT;
                         END LOOP;
                         EXIT;

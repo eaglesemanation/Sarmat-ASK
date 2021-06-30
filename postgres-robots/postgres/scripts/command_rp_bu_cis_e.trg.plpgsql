@@ -23,7 +23,7 @@ BEGIN
 else*/
     IF (coalesce(OLD.command_inner_executed, 0) = 0) AND (coalesce(NEW.command_inner_executed, 0) <> 0) THEN -- дочерняя команда успешно выполнилась
         -- проверили, что выполнилась команда именно этого робота, а не робота-лентяя
-        IF (coalesce(NEW.command_inner_last_robot_id,0) = NEW.robot_id) THEN
+        IF (coalesce(NEW.command_inner_last_robot_id, 0) = NEW.robot_id) THEN
             -- ************************************
             -- перемещение в пределах одного склада
             -- ************************************
@@ -57,7 +57,7 @@ else*/
                     ELSIF (coalesce(NEW.substate, 0) IN (3,4)) THEN -- все еще едем куда надо
                         IF (cirec.command_type_id = 5) THEN -- завершилась UNLOAD
                             CALL service.cell_unlock_from_cmd(NEW.cell_dest_id, NEW.command_id);
-                            CALL trigger.finish_crp();
+                            NEW := trigger.finish_crp(NEW);
                         END IF;
                     END IF;
                     NEW.command_inner_executed := 0;
@@ -77,7 +77,7 @@ else*/
                 SELECT * INTO cirec FROM command_inner WHERE id = NEW.command_inner_executed;
                 IF (cirec.command_type_id = 22) THEN -- savecur
                     NEW.substate := 5;
-                    CALL trigger.finish_crp();
+                    NEW := trigger.finish_crp(NEW);
                 ELSIF (cirec.command_type_id = 21) THEN -- завершилась успешно checkx
                     SELECT max(id) INTO ctid
                         FROM robot_cell_verify
