@@ -8,7 +8,7 @@ DECLARE
     cmdrp RECORD;
     cmdi RECORD;
     rr RECORD;
-    is_ci BOOLEAN;
+    -- is_ci BOOLEAN;
 BEGIN
     IF (coalesce(OLD.state, 0) <> coalesce(NEW.state, 0)) THEN
         IF (NEW.state >= 3) THEN
@@ -30,7 +30,7 @@ BEGIN
                 ) LOOP
                     IF (cmdi.command_type_id <> 4) THEN
                         RAISE EXCEPTION 'It''s possible to cancel only active <Load> command!'
-                            USING errcode = -20123;
+                            USING errcode = 50123;
                     END IF;
                     FOR rr IN (
                         SELECT * FROM robot
@@ -38,7 +38,7 @@ BEGIN
                     ) LOOP
                         IF (coalesce(rr.wait_for_problem_resolve, 0) = 0) THEN
                             RAISE EXCEPTION 'It''s possible to cancel command only in <wait_for_problem_resolve_state>!'
-                                USING errcode = -20123;
+                                USING errcode = 50123;
                         END IF;
                     END LOOP;
                     UPDATE command_inner SET state = 2

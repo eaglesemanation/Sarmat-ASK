@@ -11,15 +11,15 @@ BEGIN
         WHERE container_id = OLD.id AND coalesce(quantity, 0) <> 0;
     IF (OLD.location <> 0) THEN
         RAISE EXCEPTION 'It''s not allowed to delete container in ASK!'
-            USING errcode = -20003;
+            USING errcode = 50003;
     END IF;
     IF (cnt <> 0) THEN
         RAISE EXCEPTION 'It''s not allowed to delete container with not epmty content!'
-            USING errcode = -20003;
+            USING errcode = 50003;
     ELSE
         DELETE FROM container_content WHERE container_id = OLD.id;
     END IF;
-    RETURN null;
+    RETURN OLD;
 END;
 $BODY$;
 

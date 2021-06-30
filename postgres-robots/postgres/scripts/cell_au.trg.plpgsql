@@ -14,9 +14,10 @@ BEGIN
             FROM cell WHERE emp_id=tmp.par;
         IF cnt > 1 THEN
             RAISE EXCEPTION 'Для одного сотрудника возможны ячейки лишь на одном складе!'
-                USING errcode = -20123;
+                USING errcode = 50123;
         END IF;
     END LOOP;
+    RETURN NEW;
 END;
 $BODY$;
 

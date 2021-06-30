@@ -7,7 +7,7 @@ AS $BODY$
 BEGIN
     DELETE FROM command_rp WHERE command_id = OLD.id;
     DELETE FROM cell_cmd_lock WHERE cmd_id = OLD.id;
-    RETURN NEW;
+    RETURN OLD;
 END;
 $BODY$;
 

@@ -5,24 +5,25 @@ CREATE OR REPLACE FUNCTION robot_bu_ctrack_e()
     VOLATILE NOT LEAKPROOF
 AS $BODY$
 DECLARE
-    rit RECORD;
+    rit BOOLEAN;
     rp RECORD;
-    st RECORD;
-    npp_old NUMERIC;
-    npp_new NUMERIC;
-    npp_to NUMERIC;
-    npp_to_id NUMERIC;
-    cirec command_inner%ROWTYPE;
+    st BOOLEAN;
+    npp_old BIGINT;
+    npp_new BIGINT;
+    npp_to BIGINT;
+    npp_to_id BIGINT;
+    cirec command_inner;
     errm TEXT;
 BEGIN
     CALL obj_robot.log(NEW.id, 'триггер robot_bu_ctrack_e, :old.current_track_id='
                          || OLD.current_track_id || ' :new.current_track_id='
                          || NEW.current_track_id);
-    FOR rit IN (
+    SELECT exists(
         SELECT * FROM robot_trigger_ignore WHERE robot_id = NEW.id
-    ) LOOP
+    ) INTO rit;
+    IF rit THEN
         RETURN NEW;
-    END LOOP;
+    END IF;
     -- Validation for warehouse with 2 robots
     -- проверяем для складов с двумя роботами, а может ли робот находиться тут
     IF (coalesce(OLD.current_track_id, 0) <> coalesce(NEW.current_track_id, 0)) THEN
@@ -31,16 +32,17 @@ BEGIN
             WHERE id = NEW.repository_part_id
         ) LOOP
             IF (rp.nor = 2) THEN
-                FOR st IN (
+                SELECT exists(
                     SELECT * FROM track
                     WHERE id = NEW.current_track_id AND locked_by_robot_id <> NEW.id
-                ) LOOP
+                ) INTO st;
+                IF st THEN
                     errm := 'Robot ' || NEW.id || ' is on invalid track npp ' || obj_rpart.get_track_npp_by_id(NEW.Current_track_id)
                         || ' old npp was ' || obj_rpart.get_track_npp_by_id(OLD.Current_track_id);
                     CALL obj_robot.log(NEW.id, ' тrbtr ' || errm);
                     RAISE EXCEPTION '%', errm
-                        USING errcode = -20123;
-                END LOOP;
+                        USING errcode = 50123;
+                END IF;
             END IF;
         END LOOP;
     END IF;

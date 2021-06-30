@@ -13,7 +13,7 @@ DECLARE
     ccd RECORD;
     cl RECORD;
     cnt BIGINT;
-    error_name TEXT;
+    -- error_name TEXT;
     sqlt TEXT;
     cell_a TEXT;
     cell_cur TEXT;
@@ -49,7 +49,7 @@ BEGIN
                     'ERROR: При добавлении новой команды ее состояние должно быть=1, а не ',
                     'ERROR: New command state must be "1", but not '
                 ) || NEW.state
-                USING errcode = -20000 - 5;
+                USING errcode = 50005;
         END IF;
 
         ---------------------------------
@@ -69,7 +69,7 @@ BEGIN
                 WHERE command_type_id = 19 AND state IN (0,1,3);
             IF (cnt <> 0) THEN
                 RAISE EXCEPTION 'ERROR: already exists verify commands in running state!'
-                    USING errcode = -20000 - 5;
+                    USING errcode = 50005;
             END IF;
 
             -- If there is only one warehouse - use it as a default
@@ -88,7 +88,7 @@ BEGIN
                         'ERROR: Указан несуществующий склад-источник',
                         'ERROR: Source warehouse doesn''t exist!'
                     ) || ' ' || coalesce(NEW.rp_src_id, 0)
-                    USING errcode = -20000 - 1;
+                    USING errcode = 50001;
             END IF;
 
             -- If there is only one warehouse - use it as a default
@@ -107,7 +107,7 @@ BEGIN
                         'ERROR: Указан несуществующий склад-приемник',
                         'ERROR: Destination warehouse doesn''t exist!'
                     )
-                    USING errcode = -20000 - 2;
+                    USING errcode = 50002;
             END IF;
 
             -- Checks for source cell
@@ -124,7 +124,7 @@ BEGIN
                         'ERROR: Указана несуществующая ячейка-источник:',
                         'ERROR: Source cell doesn''t exist:'
                     ) || NEW.cell_src_sname || ' ' || NEW.rp_src_id
-                    USING errcode = -20000 - 3;
+                    USING errcode = 50003;
             ELSE
                 -- Check if cell has no errors
                 SELECT count(*) INTO cnt FROM cell
@@ -138,7 +138,7 @@ BEGIN
                             'ERROR: Ячейка-источник в ошибочном состоянии:',
                             'ERROR: Source cell is in error state:'
                         ) || NEW.cell_src_sname
-                        USING errcode = -20000 - 6;
+                        USING errcode = 50006;
                 ELSE -- есть, означиваем
                     SELECT id INTO NEW.cell_src_id FROM cell
                         WHERE sname = coalesce(NEW.cell_src_sname, '-')
@@ -148,7 +148,7 @@ BEGIN
                     FOR cs IN (SELECT * FROM cell WHERE id = NEW.cell_src_id) LOOP
                         IF (cs.is_full < 1) THEN
                             RAISE EXCEPTION 'ERROR: cell-source % is empty', NEW.cell_src_sname
-                                USING errcode = -20000 - 6;
+                                USING errcode = 50006;
                         END IF;
                     END LOOP;
                 END IF;
@@ -167,7 +167,7 @@ BEGIN
                         'ERROR: Указана несуществующая ячейка-приемник:',
                         'ERROR: Destination cell doesn''t exist:'
                     ) || NEW.cell_dest_sname
-                    USING errcode = -20000 - 3;
+                    USING errcode = 50003;
             ELSE
                 -- Check if cell has no errors
                 SELECT count(*) INTO cnt FROM cell
@@ -181,17 +181,17 @@ BEGIN
                             'ERROR: Ячейка-приемник в ошибочном статусе:',
                             'ERROR: Destination cell is in error state:'
                         ) || NEW.cell_dest_sname
-                        USING errcode = -20000 - 8;
+                        USING errcode = 50008;
                 ELSE -- есть, означиваем
                     SELECT id INTO NEW.cell_dest_id FROM cell
                         WHERE sname = coalesce(NEW.cell_dest_sname, '-')
                         AND repository_part_id = NEW.rp_dest_id;
                 END IF;
-                IF (service.is_cell_full_check = 1) THEN
+                IF (service.is_cell_full_check() = 1) THEN
                     FOR cd IN (SELECT * FROM cell WHERE id = NEW.cell_dest_id) LOOP
                         IF (cd.is_full >= cd.max_full_size) THEN
                             RAISE EXCEPTION 'ERROR: cell-destination % is overfull', NEW.cell_dest_sname
-                                USING errcode = -20000 - 6;
+                                USING errcode = 50006;
                         END IF;
                     END LOOP;
                 END IF;
@@ -234,7 +234,7 @@ BEGIN
                             OR (e1 <> 0 OR e2 <> 0)
                             AND service.cell_acc_only_1_robot(NEW.cell_src_id, NEW.cell_dest_id) = 1
                         THEN
-                            PERFORM service.log2file('пущаем транзит в триггере');
+                            CALL service.log2file('пущаем транзит в триггере');
                             cnt := obj_rpart.get_transit_1rp_cell(NEW.rp_src_id);
                             IF (cnt = 0) THEN
                                 RAISE EXCEPTION '%',
@@ -242,14 +242,14 @@ BEGIN
                                         'ERROR: Нет свободных транзитных ячеек!',
                                         'ERROR: No free transit cells!'
                                     )
-                                    USING errcode = -20000 - 8;
+                                    USING errcode = 50008;
                             ELSE
                                 FOR cd IN (
                                     SELECT c.*, sh.track_id
                                         FROM cell c
                                         INNER JOIN shelving sh
                                             ON c.shelving_id=sh.id
-                                        WHERE cell.id = cnt
+                                        WHERE c.id = cnt
                                 ) LOOP
                                     INSERT INTO command_rp (
                                         command_type_id, rp_id, cell_src_sname, cell_dest_sname,
@@ -263,7 +263,7 @@ BEGIN
                                         NEW.npp_src, cd.track_npp,
                                         NEW.container_id
                                     );
-                                    PERFORM service.cell_lock_by_cmd(cd.id, NEW.id);
+                                    CALL service.cell_lock_by_cmd(cd.id, NEW.id);
                                 END LOOP;
                             END IF;
                         END IF;
@@ -276,8 +276,8 @@ BEGIN
                                 OR (obj_rpart.is_track_near_repair_robot(NEW.npp_dest, rpp.id) = 1)
                             THEN
                                 -- есть ли ячейки на подскладе для внутреннего транзита
-                                IF (obj_rpart.is_exists_cell_type(rpp.id, obj_ask.CELL_TYPE_TRANSIT_1RP) = 1) THEN
-                                    PERFORM service.log2file('пущаем внутренний транзит в триггере');
+                                IF (obj_rpart.is_exists_cell_type(rpp.id, obj_ask."CELL_TYPE_TRANSIT_1RP"()) = 1) THEN
+                                    CALL service.log2file('пущаем внутренний транзит в триггере');
                                     cnt := obj_rpart.get_transit_1rp_cell(NEW.rp_src_id);
                                     IF (cnt = 0) THEN
                                         RAISE EXCEPTION '%',
@@ -285,7 +285,7 @@ BEGIN
                                                 'ERROR: Нет свободных транзитных ячеек!',
                                                 'ERROR: No free transit cells!'
                                             )
-                                            USING errcode = -20000 - 8;
+                                            USING errcode = 50008;
                                     ELSE
                                         FOR cd IN (
                                             SELECT c.*, sh.track_id
@@ -306,7 +306,7 @@ BEGIN
                                                 NEW.npp_src, cd.track_npp,
                                                 NEW.container_id
                                             );
-                                            PERFORM service.cell_lock_by_cmd(cd.id, NEW.id);
+                                            CALL service.cell_lock_by_cmd(cd.id, NEW.id);
                                         END LOOP;
                                     END IF;
                                 END IF;
@@ -338,9 +338,9 @@ BEGIN
                             'ERROR: Ячейка-источник занята другой командой!',
                             'ERROR: Source cell locked by another cmd!'
                         )
-                        USING errcode = -20000 - 8;
+                        USING errcode = 50008;
                 END LOOP;
-                PERFORM service.cell_lock_by_cmd(NEW.cell_src_id, NEW.id);
+                CALL service.cell_lock_by_cmd(NEW.cell_src_id, NEW.id);
                 FOR ccl IN (
                     SELECT count(*) cc
                     FROM cell_cmd_lock
@@ -358,12 +358,12 @@ BEGIN
                                         'ERROR: Ячейка-приемник занята другой/другими командами!',
                                         'ERROR: Destination cell locked by another cmds!'
                                     )
-                                    USING errcode = -20000 - 8;
+                                    USING errcode = 50008;
                             END IF;
                         END LOOP;
                     END IF;
                 END LOOP;
-                PERFORM service.cell_lock_by_cmd(NEW.cell_dest_id, NEW.id);
+                CALL service.cell_lock_by_cmd(NEW.cell_dest_id, NEW.id);
             -- ************************************
             -- Case where source and destination are different
             -- склад-источник и склад-приемник разные
@@ -402,8 +402,8 @@ BEGIN
                     NEW.track_src_id, NEW.cell_src_id, NEW.cell_dest_id,
                     NEW.npp_src, NEW.npp_dest, NEW.container_id
                 );
-                PERFORM service.cell_lock_by_cmd(NEW.cell_dest_id, NEW.id);
-                PERFORM service.cell_lock_by_cmd(NEW.cell_src_id, NEW.id);
+                CALL service.cell_lock_by_cmd(NEW.cell_dest_id, NEW.id);
+                CALL service.cell_lock_by_cmd(NEW.cell_src_id, NEW.id);
             END IF;
 
         ----------------------------------
@@ -413,12 +413,12 @@ BEGIN
             -- проверяем робота
             IF (NEW.robot_ip IS null) THEN
                 RAISE EXCEPTION 'ERROR: cmd Cell.Verify.X need not null robot_ip'
-                    USING errcode = -20000 - 5;
+                    USING errcode = 50005;
             END IF;
             SELECT count(*) INTO cnt FROM robot WHERE ip = NEW.robot_ip;
             IF (cnt = 0) THEN
                 RAISE EXCEPTION 'ERROR: robot with ip=% not found!', NEW.robot_ip
-                    USING errcode = -20000 - 5;
+                    USING errcode = 50005;
             END IF;
             SELECT repository_part_id, id INTO NEW.rp_src_id, NEW.robot_id
                 FROM robot WHERE ip = NEW.robot_ip;
@@ -427,14 +427,14 @@ BEGIN
                 WHERE command_type_id = 23 AND state IN (0, 1);
             IF (cnt <> 0) THEN
                 RAISE EXCEPTION 'ERROR: already exists test commands in not running state!'
-                    USING errcode = -20000 - 5;
+                    USING errcode = 50005;
             END IF;
             -- проверяем, а не запущена ли уже команда подобная
             SELECT count(*) INTO cnt FROM command
                 WHERE robot_id = NEW.robot_id AND command_type_id = 23 AND state IN (0, 1, 3);
             IF (cnt <> 0) THEN
                 RAISE EXCEPTION 'ERROR: already exists commands fo robot with ip=% in 0,1,3 state!', NEW.robot_ip
-                    USING errcode = -20000 - 5;
+                    USING errcode = 50005;
             END IF;
             -- ячейки
             IF (NEW.cells IS null) THEN
@@ -457,7 +457,7 @@ BEGIN
                 IF (cnt = 0) THEN
                     RAISE EXCEPTION 'ERROR: there are not appropriate cells for robot ip=%!',
                         NEW.robot_ip
-                        USING errcode = -20000 - 5;
+                        USING errcode = 50005;
                 END IF;
             ELSE -- NEW.cells IS NOT null
                 -- есть ячейки
@@ -465,8 +465,9 @@ BEGIN
                 LOOP
                     cnt := position(',' IN cell_a);
                     IF (cnt <> 0) THEN
-                        cell_cur := trim(substring(cell_a, 1, cnt - 1));
-                        cell_a := substring(cell_a, cnt + 1);
+                        -- FIXME: BIGINT to INT conversion, possible loss of data
+                        cell_cur := trim(substring(cell_a, 1, cnt::int - 1));
+                        cell_a := substring(cell_a, cnt::int + 1);
                     ELSE
                         cell_cur := trim(cell_a);
                         cell_a := null;
@@ -476,7 +477,7 @@ BEGIN
                         AND sname = cell_cur;
                     IF (cnt = 0) THEN
                         RAISE EXCEPTION 'ERROR: cell % not found!', cell_cur
-                            USING errcode = -20000 - 5;
+                            USING errcode = 50005;
                     ELSE
                         SELECT count(*) INTO cnt FROM cell
                             WHERE repository_part_id = NEW.rp_src_id
@@ -504,7 +505,7 @@ BEGIN
             SELECT count(*) INTO cnt FROM robot_cell_verify WHERE cmd_id = NEW.id;
             IF (cnt = 0) THEN
                 RAISE EXCEPTION 'ERROR: is''nt cell for testing!%', NEW.cells
-                    USING errcode = -20000 - 5;
+                    USING errcode = 50005;
             END IF;
             -- типа пусканули
             FOR cl IN (
@@ -527,7 +528,7 @@ BEGIN
                             ON c.shelving_id = sh.id
                         WHERE cmd_id = NEW.id
                         AND is_full = 0
-                        AND cell.id <> cl.id
+                        AND c.id <> cl.id
                         ORDER BY random()
                 ) LOOP
                     INSERT INTO command_rp (
@@ -540,8 +541,8 @@ BEGIN
                         (SELECT track_id FROM shelving WHERE id = cd.shelving_id),
                         cl.id, cd.id, cl.track_npp,cd.track_npp, cl.container_id
                     );
-                    PERFORM service.cell_lock_by_cmd(cl.id, NEW.id);
-                    PERFORM service.cell_lock_by_cmd(cd.id, NEW.id);
+                    CALL service.cell_lock_by_cmd(cl.id, NEW.id);
+                    CALL service.cell_lock_by_cmd(cd.id, NEW.id);
                     EXIT;
                 END LOOP;
                 EXIT;
@@ -555,13 +556,13 @@ BEGIN
             -- проверяем робота
             IF (NEW.robot_ip IS null) THEN
                 RAISE EXCEPTION 'ERROR: cmd Cell.Verify.X need not null robot_ip'
-                    USING errcode = -20000 - 5;
+                    USING errcode = 50005;
             END IF;
             SELECT count(*) INTO cnt FROM robot WHERE ip = NEW.robot_ip;
             IF (cnt = 0) THEN
                 RAISE EXCEPTION 'ERROR: robot with ip=% not found!',
                     NEW.robot_ip
-                    USING errcode = -20000 - 5;
+                    USING errcode = 50005;
             END IF;
             SELECT id, repository_part_id INTO NEW.robot_id, NEW.rp_src_id
                 FROM robot WHERE ip = NEW.robot_ip;
@@ -570,7 +571,7 @@ BEGIN
                 WHERE command_type_id = 19 AND state IN (0, 1);
             IF (cnt <> 0) THEN
                 RAISE EXCEPTION 'ERROR: already exists verify commands in not running state!'
-                    USING errcode = -20000 - 5;
+                    USING errcode = 50005;
             END IF;
             -- проверяем, а не запущена ли уже команда подобная
             SELECT count(*) INTO cnt FROM command
@@ -580,7 +581,7 @@ BEGIN
             IF (cnt <> 0) THEN
                 RAISE EXCEPTION 'ERROR: already exists commands fo robot with ip=% in 0,1,3 state!',
                     NEW.robot_ip
-                    USING errcode = -20000 - 5;
+                    USING errcode = 50005;
             END IF;
             -- ячейки
             IF (NEW.cells IS null) THEN
@@ -609,7 +610,7 @@ BEGIN
                 IF (cnt = 0) THEN
                     RAISE EXCEPTION 'ERROR: all cells are good for robot ip=%!',
                         NEW.robot_ip
-                        USING errcode = -20000 - 5;
+                        USING errcode = 50005;
                 END IF;
             ELSE -- NEW.cells IS NOT null
                 -- есть ячейки
@@ -617,8 +618,9 @@ BEGIN
                 LOOP
                     cnt := position(',' IN cell_a);
                     IF (cnt <> 0) THEN
-                        cell_cur := trim(substring(cell_a, 1, cnt-1));
-                        cell_a := substring(cell_a, cnt+1);
+                        -- FIXME: Conversion from BIGINT to INT, possible data loss
+                        cell_cur := trim(substring(cell_a, 1, cnt::int - 1));
+                        cell_a := substring(cell_a, cnt::int + 1);
                     ELSE
                         cell_cur := trim(cell_a);
                         cell_a := null;
@@ -628,7 +630,7 @@ BEGIN
                         AND sname = cell_cur;
                     IF (cnt = 0) THEN
                         RAISE EXCEPTION 'ERROR: cell % not found!', cell_cur
-                            USING errcode = -20000 - 5;
+                            USING errcode = 50005;
                     ELSE
                         SELECT count(*) INTO cnt FROM cell
                             WHERE repository_part_id = NEW.rp_src_id
@@ -662,7 +664,7 @@ BEGIN
             SELECT count(*) INTO cnt FROM robot_cell_verify WHERE cmd_id = NEW.id;
             IF (cnt = 0) THEN
                 RAISE EXCEPTION 'ERROR: is''nt cell for verify!'
-                    USING errcode = -20000 - 5;
+                    USING errcode = 50005;
             END IF;
 
             -- типа пусканули

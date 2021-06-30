@@ -93,12 +93,12 @@ LANGUAGE 'plpgsql'
 AS $BODY$
 DECLARE
     rob_rec__ RECORD;
-    ci_rec__ RECORD;
-    cc RECORD;
+    ci_rec__ command_inner;
+    cc BOOLEAN;
     ciid__ BIGINT;
     cnt__ BIGINT;
     errmm__ TEXT;
-    lpfix__ TEXT;
+    -- lpfix__ TEXT;
     rp_id__ BIGINT;
     nomr__ BIGINT;
     npp_rd__ BIGINT;
@@ -118,23 +118,23 @@ BEGIN
     IF (cnt__ <> 0) THEN
         errmm__ := 'ERROR постановки команды - назначается новая, а есть еще старая ';
         CALL obj_robot.log(robot_id_, errmm__);
-        RAISE EXCEPTION '%', errmm__ USING errcode = -20003;
+        RAISE EXCEPTION '%', errmm__ USING errcode = 50003;
     END IF;
     IF (rob_rec__.state <> 0) THEN
         errmm__ := 'ERROR постановки команды для робота ' || robot_id_ || ' - робот занят!';
         CALL obj_robot.log(robot_id_, errmm__);
-        RAISE EXCEPTION '%', errmm__ USING errcode = -20012;
+        RAISE EXCEPTION '%', errmm__ USING errcode = 50012;
     END IF;
     IF (coalesce(rob_rec__.command_inner_assigned_id, 0) <> 0) THEN
         errmm__ := 'ERROR постановки команды для робота ' || robot_id_ ||
             ' - уже закреплена но не запущена команда ' || rob_rec__.command_inner_assigned_id;
         CALL obj_robot.log(robot_id_, errmm__);
-        RAISE EXCEPTION '%', errmm__ USING errcode = -20012;
+        RAISE EXCEPTION '%', errmm__ USING errcode = 50012;
     END IF;
     IF (cell_src_sname_ IS NULL) AND (cell_dest_sname_ IS NULL) THEN
         errmm__ := 'ERROR постановки команды для робота ' || robot_id_ || ' - пустые и источник и приемник!';
         CALL obj_robot.log(robot_id_, errmm__);
-        RAISE EXCEPTION '%', errmm__ USING errcode = -20012;
+        RAISE EXCEPTION '%', errmm__ USING errcode = 50012;
     END IF;
     rob_rec__.state := 1;
     ci_rec__.command_type_id := cmd_inner_type_;
@@ -174,7 +174,7 @@ BEGIN
         IF (rob_rec__.platform_busy = 0) THEN
             UPDATE robot SET wait_for_problem_resolve = 1 WHERE id = robot_id_;
             errmm__ := '  ERROR for robot=' || robot_id_ || ' rob_rec.platform_busy=0';
-            CALL obj_ask.global_error_log(obj_ask.ERROR_TYPE_ROBOT(), rp_id__, robot_id_, errmm__);
+            CALL obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), rp_id__, robot_id_, errmm__);
             CALL obj_robot.log(robot_id_, errmm__);
             RETURN;
             --raise_application_error (-20012, 'Неовзможно дать команду unload при пустой плафторме');
@@ -183,7 +183,7 @@ BEGIN
         IF (rob_rec__.platform_busy = 1) THEN
             UPDATE robot SET wait_for_problem_resolve = 1 WHERE id = robot_id_;
             errmm__ := '  ERROR for robot=' || robot_id_ || ' rob_rec.platform_busy=1';
-            CALL obj_ask.global_error_log(obj_ask.ERROR_TYPE_ROBOT(), rp_id__, robot_id_, errmm__);
+            CALL obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), rp_id__, robot_id_, errmm__);
             CALL obj_robot.log(robot_id_, errmm__);
             RETURN;
         END IF;
@@ -201,37 +201,39 @@ BEGIN
             errmm__ := 'ERROR - Ошибка постановки команды для робота ' || robot_id_
                         || ' - команды ' || cmd_text_
                         || ' - незаблокирован трек до секции ' || npp_rd__ || '!';
-            CALL obj_ask.global_error_log(obj_ask.ERROR_TYPE_ROBOT_RP(), rp_id__, robot_id_, errmm__);
+            CALL obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT_RP"(), rp_id__, robot_id_, errmm__);
             CALL obj_robot.log(robot_id_, errmm__);
-            RAISE EXCEPTION '%', errmm__ USING errcode = -20012;
+            RAISE EXCEPTION '%', errmm__ USING errcode = 50012;
         END IF;
     END IF;
     -- проверка для LOAD/UNLOAD
     IF (service.is_cell_full_check() = 1) THEN
-        IF (cmd_inner_type_ = CMD_LOAD_TYPE_ID()) THEN
-            FOR cc IN (
+        IF (cmd_inner_type_ = obj_robot."CMD_LOAD_TYPE_ID"()) THEN
+            SELECT exists(
                 SELECT * FROM cell
                 WHERE id = ci_rec__.cell_src_id AND is_full = 0
-            ) LOOP
+            ) INTO cc;
+            IF cc THEN
                 errmm__ := 'ERROR - Ошибка постановки команды для робота ' || robot_id_
                             || ' - команды ' || cmd_text_
                             || ' - ячейка - источник для LOAD пуста!';
-                CALL obj_ask.global_error_log(obj_ask.ERROR_TYPE_ROBOT(), rp_id__, robot_id_, errmm__);
+                CALL obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), rp_id__, robot_id_, errmm__);
                 CALL obj_robot.log(robot_id_, errmm__);
-                RAISE EXCEPTION '%', errmm__ USING errcode = -20012;
-            END LOOP;
-        ELSIF (cmd_inner_type_ = CMD_UNLOAD_TYPE_ID()) THEN
-            FOR cc IN (
+                RAISE EXCEPTION '%', errmm__ USING errcode = 50012;
+            END IF;
+        ELSIF (cmd_inner_type_ = obj_robot."CMD_UNLOAD_TYPE_ID"()) THEN
+            SELECT exists(
                 SELECT * FROM cell
                 WHERE id = ci_rec__.cell_dest_id AND is_full >= max_full_size
-            ) LOOP
+            ) INTO cc;
+            IF cc THEN
                 errmm__ := 'ERROR - Ошибка постановки команды для робота ' || robot_id_
                             || ' - команды ' || cmd_text_
                             || ' - ячейка - приемник для UNLOAD переполнена!';
-                CALL obj_ask.global_error_log(obj_ask.ERROR_TYPE_ROBOT(), rp_id__, robot_id_, errmm__);
+                CALL obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), rp_id__, robot_id_, errmm__);
                 CALL obj_robot.log(robot_id_, errmm__);
-                RAISE EXCEPTION '%', errmm__ USING errcode = -20012;
-            END LOOP;
+                RAISE EXCEPTION '%', errmm__ USING errcode = 50012;
+            END IF;
         END IF;
     END IF;
     INSERT INTO command_inner (command_type_id, rp_id,

@@ -301,6 +301,7 @@ DECLARE
     tr_npp BIGINT;
     tr_id BIGINT;
     tr_locked_by_robot_id BIGINT;
+    is_loop_exit BIGINT;
 BEGIN
     FOR rrp IN (
         SELECT rp.id rpid_, spacing_of_robots sorb, max_npp, repository_type rpt, num_of_robots
@@ -330,7 +331,7 @@ BEGIN
                 IF coalesce(tr_locked_by_robot_id, 0) NOT IN (robot_id_, 0) THEN
                     errmm := 'ERROR - Ошибка ошибка разблокировки трека ' || tr_npp || '! locked by ' || coalesce(tr_locked_by_robot_id,0);
                     CALL obj_rpart.log(rrp.rpid_, errmm);
-                    RAISE EXCEPTION '%', errmm USING errcode = -20012;
+                    RAISE EXCEPTION '%', errmm USING errcode = 50012;
                 END IF;
                 UPDATE track SET locked_by_robot_id = 0 WHERE id = tr_id;
                 -- Fulfil orders and delete them

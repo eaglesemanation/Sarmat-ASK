@@ -16,11 +16,11 @@ BEGIN
             IF (cfchi = 0) THEN
                 IF (coalesce(NEW.is_full, 0) < 0) THEN
                     RAISE EXCEPTION 'Cell fullnes must be positive number! Cell ID=%', NEW.id
-                        USING errcode = -20033;
+                        USING errcode = 50033;
                 END IF;
                 IF (coalesce(NEW.is_full, 0) > NEW.max_full_size) THEN
                     RAISE EXCEPTION 'Cell fullnes must be less then max_full_sixe! Cell ID=%', NEW.id
-                        USING errcode = -20033;
+                        USING errcode = 50033;
                 END IF;
             END IF;
         END IF;
@@ -52,6 +52,7 @@ BEGIN
         INSERT INTO tmp_check_cell (cell_id, action, par)
             VALUES (NEW.id, 1, NEW.emp_id);
     END IF;
+    RETURN NEW;
 END;
 $BODY$;
 

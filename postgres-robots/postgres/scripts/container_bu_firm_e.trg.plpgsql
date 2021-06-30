@@ -6,15 +6,20 @@ CREATE OR REPLACE FUNCTION container_bu_firm_e()
 AS $BODY$
 DECLARE
     cc RECORD;
-    errr RECORD;
+    errr BOOLEAN;
 BEGIN
     IF (coalesce(NEW.firm_id, 0) <> coalesce(OLD.firm_id, 0)) AND (coalesce(OLD.firm_id, 0) <> 0) THEN
         FOR cc IN (SELECT * FROM container_content WHERE container_id = NEW.id AND quantity > 0) LOOP
             -- а не запрещена ли такая операция?
-            FOR errr IN (SELECT * FROM firm_gd WHERE firm_id = OLD.firm_id AND quantity_reserved > 0) LOOP
+            SELECT exists(
+                SELECT * FROM firm_gd
+                    WHERE firm_id = OLD.firm_id
+                    AND quantity_reserved > 0
+            ) INTO errr;
+            IF errr THEN
                 RAISE EXCEPTION 'Запрещено менять фирму у контейнера, по товарам которой идет отбор в настоящее время!'
-                    USING errcode = -20123;
-            END LOOP;
+                    USING errcode = 50123;
+            END IF;
             -- Remove from original firm
             -- со старой фирмы убираем
             UPDATE firm_gd SET quantity = quantity - cc.quantity

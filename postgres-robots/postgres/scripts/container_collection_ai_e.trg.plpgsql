@@ -16,7 +16,7 @@ BEGIN
                 WHERE state = 0 AND container_id = cc.container_id AND id <> tcc.id;
             IF (cnt > 0) THEN
                 RAISE EXCEPTION 'Нельзя дублировать состав сборки по контейнеру!'
-                    USING errcode = -20123;
+                    USING errcode = 50123;
             END IF;
         END LOOP;
     END LOOP;
