@@ -338,8 +338,8 @@
     - [x] firm_bd_e
     - [x] firm_gd_bi_e
     - [x] firm_gd_bu_qty_e
-    - [ ] gd_party_aiu_e
-    - [ ] gd_party_bu_qty_e
+    - [x] gd_party_aiu_e
+    - [x] gd_party_bu_qty_e
     - [x] good_desc_ad_e
     - [x] good_desc_au_e
     - [x] good_desc_bd_e

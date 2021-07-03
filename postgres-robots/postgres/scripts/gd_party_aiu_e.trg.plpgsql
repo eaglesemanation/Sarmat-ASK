@@ -1,0 +1,31 @@
+CREATE OR REPLACE FUNCTION gd_party_aiu_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+BEGIN
+    CALL service.bkp_to_file('gd_party', NEW.id || ';'
+        || NEW.gd_id || ';'
+        || NEW.pname || ';'
+        || NEW.qty ||';'
+        || NEW.qty_reserved || ';'
+        || NEW.qty_doc || ';'
+        || NEW.id_out
+    );
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION gd_party_aiu_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS gd_party_aiu_e ON gd_party;
+
+CREATE TRIGGER gd_party_aiu_e
+    AFTER INSERT OR DELETE
+    ON gd_party
+    FOR EACH ROW
+    EXECUTE FUNCTION gd_party_aiu_e();
+
+-- vim: ft=pgsql
