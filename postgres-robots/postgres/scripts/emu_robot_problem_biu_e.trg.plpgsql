@@ -1,0 +1,127 @@
+CREATE OR REPLACE FUNCTION emu_robot_problem_biu_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+    ttt emu_robot_problem_tttype;
+    t emu_robot_problem_type;
+BEGIN
+    IF (TG_OP = 'INSERT') THEN
+        SELECT nextval('seq_emu') INTO NEW.id;
+        NEW.date_time_create := LOCALTIMESTAMP;
+    END IF;
+
+    SELECT count(*) INTO cnt
+        FROM emu_robot_problem_tttype
+        WHERE id = NEW.tttype_id;
+    IF cnt = 0 THEN
+        RAISE EXCEPTION 'Обязательно указать тип начала формирования проблемы!'
+            USING errcode = 50123;
+    END IF;
+    SELECT count(*) INTO cnt
+        FROM emu_robot_problem_type
+        WHERE id = NEW.type_id;
+    IF cnt = 0 THEN
+        RAISE EXCEPTION 'Обязательно указать тип проблемы!'
+            USING errcode = 50123;
+    END IF;
+
+    FOR ttt IN (
+        SELECT *
+            FROM emu_robot_problem_tttype
+            WHERE id = NEW.tttype_id
+    ) LOOP
+        IF (ttt.need_rstate = 1) THEN
+            IF (NEW.rstate_trigger IS null) THEN
+                RAISE EXCEPTION 'Для данного типа проблемы обязательно указать состояние робота!'
+                    USING errcode = 50123;
+            END IF;
+        END IF;
+        IF (ttt.may_cmd = 0) THEN
+            IF NOT (NEW.cmd_trigger IS null) THEN
+                RAISE EXCEPTION 'Для данного типа проблемы нельзя задавать текст команды!'
+                    USING errcode = 50123;
+            END IF;
+        END IF;
+        IF (ttt.may_date_time_begin = 0) THEN
+            IF NOT (NEW.date_time_begin IS null) THEN
+                RAISE EXCEPTION 'Для данного типа проблемы нельзя задавать дату-время!'
+                    USING errcode = 50123;
+            END IF;
+        END IF;
+        IF (ttt.may_track_npp = 0) THEN
+            IF NOT (NEW.track_npp_trigger IS null) THEN
+                RAISE EXCEPTION 'Для данного типа проблемы нельзя задавать № трека для условия!'
+                    USING errcode = 50123;
+            END IF;
+        END IF;
+    END LOOP;
+
+    FOR t IN (
+        SELECT *
+            FROM emu_robot_problem_type
+            WHERE id = NEW.type_id
+    ) LOOP
+        IF (t.need_error_code = 1) THEN
+            IF (NEW.error_code IS null) THEN
+                RAISE EXCEPTION 'Для данного типа проблемы требуется код ошибки!'
+                    USING errcode = 50123;
+            END IF;
+        END IF;
+        IF (t.need_error_msg = 1) THEN
+            IF (NEW.error_msg IS null) THEN
+                RAISE EXCEPTION 'Для данного типа проблемы требуется текст ошибки!'
+                    USING errcode = 50123;
+            END IF;
+        END IF;
+        IF (t.may_be_cmd_current = 0) THEN
+            IF NOT (NEW.cmd_current IS null) THEN
+                RAISE EXCEPTION 'Для данного типа проблемы нельзя указывать значение текущей команды!'
+                    USING errcode = 50123;
+            END IF;
+        END IF;
+        IF (t.need_robot_state = 1) THEN
+            IF (NEW.set_robot_state IS null) THEN
+                RAISE EXCEPTION 'Для данного типа проблемы требуется состояние робота!'
+                    USING errcode = 50123;
+            END IF;
+        END IF;
+        IF (t.need_platform_busy = 1) THEN
+            IF (NEW.set_platform_busy IS null) THEN
+                RAISE EXCEPTION 'Для данного типа проблемы требуется состояние платформы!'
+                    USING errcode = 50123;
+            END IF;
+        END IF;
+        IF (t.may_track_npp = 0) THEN
+            IF NOT (NEW.set_track_npp IS null) THEN
+                RAISE EXCEPTION 'Для данного типа проблемы нельзя указывать задаваемое значение секции!'
+                    USING errcode = 50123;
+            END IF;
+        END IF;
+        IF (t.may_cmd_answer = 0) THEN
+            IF NOT (NEW.set_cmd_answer IS null) THEN
+                RAISE EXCEPTION 'Для данного типа проблемы нельзя указывать задаваемое значение ответа на команду!'
+                    USING errcode = 50123;
+            END IF;
+        END IF;
+    END LOOP;
+
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION emu_robot_problem_biu_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS emu_robot_problem_biu_e ON emu_robot_problem;
+
+CREATE TRIGGER emu_robot_problem_biu_e
+    BEFORE INSERT OR UPDATE
+    ON emu_robot_problem
+    FOR EACH ROW
+    EXECUTE FUNCTION emu_robot_problem_biu_e();
+
+-- vim: ft=pgsql

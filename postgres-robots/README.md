@@ -334,7 +334,7 @@
     - [x] container_bu_firm_e
     - [x] container_collection_ai_e
     - [x] container_collection_bi_e
-    - [ ] emu_robot_problem_biu_e
+    - [x] emu_robot_problem_biu_e
     - [x] firm_bd_e
     - [x] firm_gd_bi_e
     - [x] firm_gd_bu_qty_e
