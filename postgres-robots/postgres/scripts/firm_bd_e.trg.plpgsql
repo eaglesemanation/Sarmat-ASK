@@ -1,0 +1,33 @@
+CREATE OR REPLACE FUNCTION firm_bd_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+BEGIN
+    SELECT count(*) INTO cnt
+        FROM firm_gd
+        WHERE firm_id = OLD.id
+            AND (coalesce(quantity, 0) + coalesce(quantity_reserved, 0)) > 0;
+    IF cnt>0 THEN
+        RAISE EXCEPTION 'Нельзя удалять клиента, по которому числятся остатки!'
+            USING errcode = 50123;
+    END IF;
+    RETURN OLD;
+END;
+$BODY$;
+
+ALTER FUNCTION firm_bd_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS firm_bd_e ON firm;
+
+CREATE TRIGGER firm_bd_e
+    BEFORE DELETE
+    ON firm
+    FOR EACH ROW
+    EXECUTE FUNCTION firm_bd_e();
+
+-- vim: ft=pgsql
