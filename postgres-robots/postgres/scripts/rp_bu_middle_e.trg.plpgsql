@@ -1,0 +1,76 @@
+CREATE OR REPLACE FUNCTION rp_bu_middle_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+DECLARE
+    cnpp BIGINT;
+    cside BIGINT;
+    cnt_assigned BIGINT;
+    tt track;
+BEGIN
+    IF coalesce(NEW.middle_npp, 0) <> coalesce(OLD.middle_npp, 0) THEN
+        cnpp := NEW.middle_npp;
+        cside := 0;
+        cnt_assigned := 0;
+        LOOP
+            EXIT WHEN cnt_assigned > NEW.max_npp + 1;
+            IF (cnt_assigned > (NEW.max_npp + 1) / 2) THEN
+                cside := 1;
+            END IF;
+            UPDATE track
+                SET side = cside
+                WHERE repository_part_id = NEW.id
+                    AND npp = cnpp;
+            cnt_assigned := cnt_assigned + 1;
+            IF (cnpp >= NEW.max_npp) THEN
+                cnpp := 0;
+            ELSE
+                cnpp := cnpp + 1;
+            END IF;
+        END LOOP;
+        FOR tt IN (
+            SELECT *
+                FROM track
+                WHERE repository_part_id = NEW.id
+        ) LOOP
+            IF (NEW.middle_npp > tt.npp) THEN
+                IF NEW.middle_npp - tt.npp > 1 + tt.npp + (NEW.max_npp - NEW.middle_npp) THEN
+                    UPDATE track
+                        SET distance_from_middle = 1 + tt.npp + (NEW.max_npp - NEW.middle_npp)
+                        WHERE id = tt.id;
+                ELSE
+                    UPDATE track
+                        SET distance_from_middle = NEW.middle_npp - tt.npp
+                        WHERE id = tt.id;
+                END IF;
+            ELSE
+                IF tt.npp - NEW.middle_npp > 1 + NEW.max_npp - tt.npp + NEW.middle_npp THEN
+                    UPDATE track
+                        SET distance_from_middle = 1 + NEW.max_npp - tt.npp + NEW.middle_npp
+                        WHERE id = tt.id;
+                ELSE
+                    UPDATE track
+                        SET distance_from_middle = tt.npp - NEW.middle_npp
+                        WHERE id = tt.id;
+                END IF;
+            END IF;
+        END LOOP;
+    END IF;
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION rp_bu_middle_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS rp_bu_middle_e ON repository_part;
+
+CREATE TRIGGER rp_bu_middle_e
+    BEFORE UPDATE OF middle_npp
+    ON repository_part
+    FOR EACH ROW
+    EXECUTE FUNCTION rp_bu_middle_e();
+
+-- vim: ft=pgsql

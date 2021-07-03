@@ -351,9 +351,9 @@
     - [x] robot_bu_ctrack_e
     - [x] robot_bu_state_e
     - [x] robot_bu_wait_e
-    - [ ] rp_ad_e
-    - [ ] rp_bi_e
-    - [ ] rp_bu_middle_e
+    - [x] rp_ad_e
+    - [x] rp_bi_e
+    - [x] rp_bu_middle_e
     - [ ] shelving_ad_e
     - [x] shnd_bi_e
     - [ ] track_ad_e

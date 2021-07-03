@@ -1,0 +1,29 @@
+CREATE OR REPLACE FUNCTION rp_ad_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+BEGIN
+    DELETE FROM track
+        WHERE repository_part_id = OLD.id;
+    --delete from cell where repository_part_id=:old.id;
+    DELETE FROM robot
+        WHERE repository_part_id = OLD.id;
+    --delete from shelving where repository_part_id=:old.id;
+    RETURN OLD;
+END;
+$BODY$;
+
+ALTER FUNCTION rp_ad_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS rp_ad_e ON repository_part;
+
+CREATE TRIGGER rp_ad_e
+    AFTER DELETE
+    ON repository_part
+    FOR EACH ROW
+    EXECUTE FUNCTION rp_ad_e();
+
+-- vim: ft=pgsql
