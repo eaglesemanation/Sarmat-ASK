@@ -1,0 +1,40 @@
+CREATE OR REPLACE FUNCTION good_desc_bd_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+DECLARE
+    dc BOOLEAN;
+BEGIN
+    IF (OLD.quantity > 0) OR (OLD.quantity_reserved > 0) THEN
+        RAISE EXCEPTION '%', service.ml_get_rus_eng_val(
+            'Нельзя удалять товар, по которому числится ненулевое кол-во!',
+            'It is impossible to remove the goods on which the non-zero quantity is registered!'
+        ) USING errcode = 50123;
+    END IF;
+    SELECT exists(
+        SELECT * FROM doc_content WHERE good_id = OLD.good_desc_id
+    ) INTO dc;
+    IF dc THEN
+        RAISE EXCEPTION '%', service.ml_get_rus_eng_val(
+            'Нельзя удалять товар, по которому есть состав документов!',
+            'It is impossible to remove the goods on which there is a structure of documents!'
+        ) USING errcode = 50123;
+    END IF;
+    RETURN OLD;
+END;
+$BODY$;
+
+ALTER FUNCTION good_desc_bd_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS good_desc_bd_e ON good_desc;
+
+CREATE TRIGGER good_desc_bd_e
+    BEFORE DELETE
+    ON good_desc
+    FOR EACH ROW
+    EXECUTE FUNCTION good_desc_bd_e();
+
+-- vim: ft=pgsql

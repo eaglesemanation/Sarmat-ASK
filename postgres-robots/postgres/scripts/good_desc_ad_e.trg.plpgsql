@@ -1,0 +1,27 @@
+CREATE OR REPLACE FUNCTION good_desc_ad_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+BEGIN
+    DELETE FROM container_content
+        WHERE good_desc_id = OLD.id;
+    DELETE FROM firm_gd
+        WHERE gd_id = OLD.id;
+    RETURN OLD;
+END;
+$BODY$;
+
+ALTER FUNCTION good_desc_ad_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS good_desc_ad_e ON good_desc;
+
+CREATE TRIGGER good_desc_ad_e
+    AFTER DELETE
+    ON good_desc
+    FOR EACH ROW
+    EXECUTE FUNCTION good_desc_ad_e();
+
+-- vim: ft=pgsql

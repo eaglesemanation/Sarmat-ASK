@@ -1,0 +1,69 @@
+CREATE OR REPLACE FUNCTION good_desc_au_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+BEGIN
+    IF coalesce(NEW.quantity, 0) <> coalesce(OLD.quantity, 0) then
+        INSERT INTO log (action, comments, good_desc_id, old_value, new_value)
+            VALUES (
+                36,
+                'Quantity was changed from ' || OLD.quantity || ' to ' || NEW.quantity,
+                NEW.id,
+                OLD.quantity,
+                NEW.quantity
+            );
+    END IF;
+    IF coalesce(NEW.quantity_reserved, 0) <> coalesce(OLD.quantity_reserved, 0) THEN
+        INSERT INTO log (action, comments, good_desc_id, old_value, new_value)
+            VALUES (
+                37,
+                'quantity_reserved was changed from ' || OLD.quantity_reserved || ' to ' || NEW.quantity_reserved,
+                NEW.id,
+                OLD.quantity_reserved,
+                NEW.quantity_reserved
+            );
+    END IF;
+    IF coalesce(NEW.id, '-') <> coalesce(OLD.id, '-') THEN
+        INSERT INTO log (action, comments, good_desc_id)
+            VALUES (
+                6037,
+                'GD.ID was changed from ' || OLD.ID || ' to ' || NEW.ID,
+                NEW.id
+            );
+        UPDATE container_content
+            SET good_desc_id = NEW.id
+            WHERE good_desc_id = OLD.id;
+        UPDATE firm_gd
+            SET gd_id = NEW.id
+            WHERE gd_id = OLD.id;
+        UPDATE command_gas
+            SET good_desc_id = NEW.id
+            WHERE good_desc_id IS NOT null
+                AND good_desc_id = OLD.id;
+        UPDATE command_order
+            SET good_desc_id = NEW.id
+            WHERE good_desc_id IS NOT null
+                AND good_desc_id = OLD.id;
+        UPDATE command_gas_container_content
+            SET gd_id = NEW.id
+            WHERE gd_id IS NOT null
+                AND gd_id = OLD.id;
+    END IF;
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION good_desc_au_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS good_desc_au_e ON good_desc;
+
+CREATE TRIGGER good_desc_au_e
+    AFTER UPDATE
+    ON good_desc
+    FOR EACH ROW
+    EXECUTE FUNCTION good_desc_au_e();
+
+-- vim: ft=pgsql
