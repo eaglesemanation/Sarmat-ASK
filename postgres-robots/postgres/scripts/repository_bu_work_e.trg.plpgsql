@@ -1,0 +1,26 @@
+CREATE OR REPLACE FUNCTION repository_bu_work_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+BEGIN
+    IF (OLD.is_work = 0) AND (NEW.is_work = 1) THEN -- нужна проверка
+        null;
+    END IF;
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION repository_bu_work_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS repository_bu_work_e ON repository;
+
+CREATE TRIGGER repository_bu_work_e
+    BEFORE UPDATE OF is_work
+    ON repository
+    FOR EACH ROW
+    EXECUTE FUNCTION repository_bu_work_e();
+
+-- vim: ft=pgsql

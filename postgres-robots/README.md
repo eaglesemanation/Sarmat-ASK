@@ -344,7 +344,7 @@
     - [x] good_desc_au_e
     - [x] good_desc_bd_e
     - [x] good_desc_bi_e
-    - [ ] repository_bu_work_e
+    - [x] repository_bu_work_e
     - [x] robot_au_e
     - [x] robot_bu_ciid_e
     - [x] robot_bu_crp_e
