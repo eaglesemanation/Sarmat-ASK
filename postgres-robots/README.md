@@ -355,4 +355,5 @@
     - [ ] rp_bi_e
     - [ ] rp_bu_middle_e
     - [ ] shelving_ad_e
+    - [x] shnd_bi_e
     - [ ] track_ad_e
