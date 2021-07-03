@@ -40,6 +40,118 @@ $BODY$;
 ALTER FUNCTION obj_robot."ROBOT_STATE_REPAIR"() OWNER TO postgres;
 COMMENT ON FUNCTION obj_robot."ROBOT_STATE_REPAIR"() IS 'Состояние робота: В починке';
 
+CREATE OR REPLACE FUNCTION obj_robot."PR_UNLOAD_RETRY"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 5;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."PR_UNLOAD_RETRY"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."PR_UNLOAD_RETRY"() IS 'Варианты решения проблемы: повторить команду UNLOAD';
+
+CREATE OR REPLACE FUNCTION obj_robot."PR_UNLOAD_HANDLE"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 6;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."PR_UNLOAD_HANDLE"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."PR_UNLOAD_HANDLE"() IS 'Варианты решения проблемы: UNLOAD выполнена вручную';
+
+CREATE OR REPLACE FUNCTION obj_robot."PR_UNLOAD_MARK_BAD_REDIRECT"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 14;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."PR_UNLOAD_MARK_BAD_REDIRECT"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."PR_UNLOAD_MARK_BAD_REDIRECT"() IS 'Варианты решения проблемы: UNLOAD - пометить целевую ячейку как плохую и перенаправить контейнер в другую ячейку';
+
+CREATE OR REPLACE FUNCTION obj_robot."PR_UNLOAD_INDICATE_REDIRECT"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 15;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."PR_UNLOAD_INDICATE_REDIRECT"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."PR_UNLOAD_INDICATE_REDIRECT"() IS 'Варианты решения проблемы: UNLOAD - Указать какой контейнер находится в ячейке и перенаправить текущий контейнер в другую ячейку';
+
+CREATE OR REPLACE FUNCTION obj_robot."PR_LOAD_RETRY"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 1;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."PR_LOAD_RETRY"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."PR_LOAD_RETRY"() IS 'Варианты решения проблемы: повторить LOAD';
+
+CREATE OR REPLACE FUNCTION obj_robot."PR_LOAD_HANDLE"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 2;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."PR_LOAD_HANDLE"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."PR_LOAD_HANDLE"() IS 'Варианты решения проблемы: LOAD выполнена вручную';
+
+CREATE OR REPLACE FUNCTION obj_robot."PR_LOAD_CELL_EMPTY"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 16;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."PR_LOAD_CELL_EMPTY"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."PR_LOAD_CELL_EMPTY"() IS 'Варианты решения проблемы: LOAD - целевая ячейка пуста';
+
+CREATE OR REPLACE FUNCTION obj_robot."PR_LOAD_CELL_BAD"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 18;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."PR_LOAD_CELL_BAD"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."PR_LOAD_CELL_BAD"() IS 'Варианты решения проблемы: LOAD - Контейнер в целевой ячейке заклинило';
+
 CREATE OR REPLACE FUNCTION obj_robot.get_log_file_name(
     robot_id_ numeric)
     RETURNS text
@@ -59,7 +171,7 @@ COMMENT ON FUNCTION obj_robot.get_log_file_name(numeric)
 
 
 CREATE OR REPLACE PROCEDURE obj_robot.log(
-    robot_id_ numeric,
+    robot_id_ bigint,
     txt_ text)
 LANGUAGE 'plpgsql'
 AS $BODY$
@@ -74,9 +186,169 @@ BEGIN
     );
 END;
 $BODY$;
-COMMENT ON PROCEDURE obj_robot.log(numeric, text)
+COMMENT ON PROCEDURE obj_robot.log(bigint, text)
     IS 'Adds timestamped entry into log for specified robot
 процедура ведения журнала';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_inner_npp_dest(
+    IN cid_ bigint,
+    IN is_use_cp_ bigint DEFAULT 0)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    res_ BIGINT;
+    ci__ command_inner;
+    chp command_inner_checkpoint;
+BEGIN
+    FOR ci__ IN (
+        SELECT *
+            FROM command_inner
+            WHERE id = cid_
+    ) LOOP
+        IF (is_use_cp_ = 1)
+            AND (ci__.check_point IS NOT null)
+        THEN -- есть промежуточные точки
+            res_ := ci__.check_point;
+            FOR chp IN (
+                SELECT *
+                    FROM command_inner_checkpoint
+                    WHERE command_inner_id = cid_
+                    ORDER BY id DESC
+            ) LOOP
+                res_ := chp.npp;
+                EXIT;
+            END LOOP;
+            RETURN res_;
+        ELSE
+            IF (ci__.command_type_id = obj_robot."CMD_LOAD_TYPE_ID"()) THEN
+                RETURN ci__.npp_src;
+            ELSE
+                RETURN ci__.npp_dest;
+            END IF;
+        END IF;
+    END LOOP;
+    RETURN -1;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_inner_npp_dest(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_inner_npp_dest(bigint, bigint)
+    IS 'получить № целевого трека команды робота';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_inner_last_checkpoint(
+    IN cmd_inner_id_ bigint,
+    IN in_status_ bigint DEFAULT null)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    ci command_inner;
+    chp command_inner_checkpoint;
+BEGIN
+    FOR ci IN (
+        SELECT *
+            FROM command_inner
+            WHERE id = cmd_inner_id_
+                AND check_point IS NOT null
+    ) LOOP
+        FOR chp IN (
+            SELECT *
+                FROM command_inner_checkpoint
+                WHERE cmd_inner_id_ = command_inner_id
+                    AND status = coalesce(in_status_, status)
+                ORDER BY id DESC
+        ) LOOP
+            RETURN chp.npp;
+        END LOOP;
+        RETURN ci.check_point;
+    END LOOP;
+    RETURN -1;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_inner_last_checkpoint(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_inner_last_checkpoint(bigint, bigint)
+    IS 'возвращает NPP последней промежуточной точки команды, или -1 если нет такой';
+
+
+CREATE FUNCTION obj_robot.get_cmd_text_another_dir(IN ct text)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    res TEXT;
+BEGIN
+    IF position('CCW' IN ct) > 0 THEN
+        res := replace(ct, 'CCW', '');
+    ELSE
+        res := replace(ct, ';;', ';CCW;');
+    END IF;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_text_another_dir(text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_text_another_dir(text)
+    IS 'возвращает текст команды робота с иным направлением движения по/против часовой стрелке';
+
+
+CREATE FUNCTION obj_robot.get_cmd_text_wo_cp(IN ct_ text)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    lp_ BIGINT;
+    sc_ BIGINT;
+    ncitext TEXT;
+BEGIN
+    ncitext := ct_;
+    lp_ := position('cp' IN ncitext);
+    IF (lp_ > 0) THEN
+        sc_ := position(';' IN ncitext);
+        IF (sc_ <= 0) THEN
+            -- FIXME: Casting from BIGINT to INT, possible data loss
+            RETURN trim(substring(ncitext FROM 1 FOR lp_::int - 1));
+        ELSE
+            RETURN trim(substring(ncitext FROM 1 FOR lp_::int - 1)) || substring(ncitext FROM sc_::int);
+        END IF;
+    ELSE -- и так нет
+        RETURN ncitext;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_text_wo_cp(text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_text_wo_cp(text)
+    IS 'исключает ''cp=NNN'' из текста команды';
+
+
+CREATE FUNCTION obj_robot.get_cmd_text_new_cp(
+    IN ct_ text,
+    IN new_cp_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    lp_ BIGINT;
+    ncitext TEXT;
+BEGIN
+    ncitext := obj_robot.get_cmd_text_wo_cp(ct_); -- убрали, если было
+    lp_ := position(';' IN ncitext);
+    IF (new_cp_ IS null) THEN
+        RAISE EXCEPTION 'Нельзя менять промежуточную секцию на пустоту!'
+            USING errcode = 50003;
+    END IF;
+    IF (lp_ > 0) THEN -- есть ;
+        -- FIXME: Casting from BIGINT to INT, possible data loss
+        RETURN trim(substring(ncitext FROM 1 FOR lp_::int - 1)) || ' cp=' || new_cp_ || substring(ncitext FROM lp_::int);
+    ELSE -- нет ';', просто лупим в конец
+        RETURN ncitext || ' cp=' || new_cp_;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_text_new_cp(text, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_text_new_cp(text, bigint)
+    IS 'заменяет ''cp=NNN'' в тексте команды на другую секцию';
+
 
 CREATE OR REPLACE PROCEDURE obj_robot.set_command_inner(
     robot_id_ bigint,
@@ -254,5 +526,49 @@ $BODY$;
 COMMENT ON PROCEDURE obj_robot.set_command_inner(bigint, bigint, bigint, bigint, bigint, text, text, text, bigint, bigint)
 IS 'выдаем роботу простую команду типа load/Unload/Move';
 
+CREATE OR REPLACE PROCEDURE obj_robot.redirect_robot_to_new_cell(
+    robot_id_ bigint,
+    cmd_rp_id_ bigint,
+    container_id_ bigint,
+    ci_npp_dest_ bigint,
+    ci_cell_dest_id_ bigint)
+LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr robot;
+    cellrec cell;
+    direction_ BIGINT;
+BEGIN
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE id = robot_id_
+                AND platform_busy = 1
+    ) LOOP
+        IF obj_rpart.has_free_cell_by_cnt(container_id_, rr.repository_part_id) > 0 -- есть еще место на складе
+            AND ci_npp_dest_ = rr.current_track_npp  -- чтоб точно быть уверенным, что дело именно в этом
+            AND obj_rpart.is_poss_ass_new_unload_cell(ci_cell_dest_id_, robot_id_) = 1 -- а можно ли выгрузить в какую-нить другую ячейку  принципе?
+        THEN
+            CALL obj_rpart.try_assign_new_unload_cell(ci_cell_dest_id_, robot_id_, cellrec, direction_);
+            IF (cellrec.track_npp IS NOT null) THEN
+                UPDATE robot
+                    SET state = 0, command_inner_id = null, cmd_error_descr = null
+                    WHERE id = robot_id_;
+                --update command_inner set state=2, error_code_id=error_code  where id=cirec.id;
+                --update cell set is_error=1 where id=cirec.cell_dest_id;
+                CALL obj_rpart.change_cmd_rp_goal(cmd_rp_id_, cellrec.id);
+                UPDATE command_rp
+                    SET substate = 3, direction_2 = direction_
+                    WHERE id = cmd_rp_id_;
+                RETURN;
+            END IF;
+        END IF;
+    END LOOP;
+    RAISE EXCEPTION 'Невозможно перенаправить робота в другую ячейку!'
+        USING errcode = 50003;
+END;
+$BODY$;
+COMMENT ON PROCEDURE obj_robot.redirect_robot_to_new_cell(bigint, bigint, bigint, bigint, bigint)
+    IS 'перенаправить робота в новую целевую ячейку (Unload)';
 
 -- vim: ft=pgsql

@@ -156,6 +156,130 @@ COMMENT ON FUNCTION service.get_another_robot_id(bigint)
     IS 'взять второй робот на огурце';
 
 
+CREATE OR REPLACE PROCEDURE service.mark_cell_as_free(
+    cid bigint,
+    container_id_ bigint,
+    robot_id_ bigint)
+LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    crec cell;
+    sn TEXT;
+    cmd_id_ BIGINT DEFAULT 0;
+BEGIN
+    CALL service.log2file('mark_cell_as_free ' || cid || ' ' || container_id_ || ' ' || robot_id_);
+    SELECT * INTO crec FROM cell WHERE id = cid;
+    BEGIN
+        SELECT command_id INTO cmd_id_
+            FROM command_rp
+            WHERE id = (
+                SELECT command_rp_id FROM robot WHERE id = robot_id_
+            );
+    EXCEPTION WHEN others THEN
+        null;
+    END;
+    IF (cmd_id_ <> 0) THEN -- есть команда, от имени которой разблокировать
+        CALL service.cell_unlock_from_cmd(cid, cmd_id_);
+    END IF;
+    UPDATE cell
+        SET is_full = is_full - 1,
+            blocked_by_ci_id = 0,
+            container_id = 0
+        WHERE id = cid;
+    UPDATE container
+        SET cell_id = 0,
+            robot_id = robot_id_,
+            location = 3
+        WHERE id = container_id_;
+    UPDATE robot
+        SET container_id = container_id_
+        WHERE id = robot_id_;
+    IF (crec.hi_level_type = 7) THEN
+        CALL service.add_shelving_need_to_redraw(crec.shelving_id);
+        sn := crec.sname;
+        SELECT * INTO crec
+            FROM cell
+            WHERE sname = sn
+                AND hi_level_type = 8;
+        IF (cmd_id_ <> 0) THEN -- есть команда, от имени которой разблокировать
+            CALL service.cell_unlock_from_cmd(crec.id, cmd_id_);
+        END IF;
+        UPDATE cell
+            SET is_full = is_full - 1,
+                blocked_by_ci_id = 0,
+                container_id = 0
+            WHERE id = crec.id;
+    END IF;
+    CALL service.add_shelving_need_to_redraw(crec.shelving_id);
+END;
+$BODY$;
+COMMENT ON PROCEDURE service.mark_cell_as_free(bigint, bigint, bigint)
+    IS 'пометить ячейку как свободную';
+
+
+CREATE OR REPLACE PROCEDURE service.mark_cell_as_full(
+    cid bigint,
+    container_id_ bigint,
+    robot_id_ bigint)
+LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    crec cell;
+    sn TEXT;
+BEGIN
+    SELECT * INTO crec FROM cell WHERE id = cid;
+    UPDATE cell
+        SET is_full = is_full + 1,
+            blocked_by_ci_id = 0,
+            container_id = container_id_
+        WHERE id = cid;
+    UPDATE container
+        SET cell_id = cid,
+            robot_id = 0,
+            location = 1
+        WHERE id = container_id_;
+    UPDATE robot
+        SET container_id = 0
+        WHERE id = robot_id_;
+    IF (crec.hi_level_type = 8) THEN
+        CALL service.add_shelving_need_to_redraw(crec.shelving_id);
+        sn := crec.sname;
+        SELECT * INTO crec
+            FROM cell
+            WHERE sname = sn
+                AND hi_level_type = 7;
+        UPDATE cell
+            SET is_full = is_full + 1,
+                blocked_by_ci_id = 0,
+                container_id = container_id_
+            WHERE id = crec.id;
+        UPDATE container
+            SET cell_id = crec.id,
+                location = 1
+            WHERE id = container_id_;
+    END IF;
+    CALL service.add_shelving_need_to_redraw(crec.shelving_id);
+END;
+$BODY$;
+COMMENT ON PROCEDURE service.mark_cell_as_full(bigint, bigint, bigint)
+    IS 'пометить ячейку как полную';
+
+
+CREATE OR REPLACE PROCEDURE service.add_shelving_need_to_redraw(
+    shelving_id_ bigint)
+LANGUAGE 'plpgsql'
+AS $BODY$
+BEGIN
+    INSERT INTO shelving_need_to_redraw (shelving_id)
+        VALUES (shelving_id_);
+EXCEPTION WHEN others THEN
+    null;
+END;
+$BODY$;
+COMMENT ON PROCEDURE service.add_shelving_need_to_redraw(bigint)
+    IS 'добавить стеллаж к списку для перерисования';
+
+
 CREATE OR REPLACE FUNCTION service.is_cell_full_check(
     )
     RETURNS bigint
@@ -294,6 +418,32 @@ COMMENT ON FUNCTION service.is_cell_over_locked(bigint)
     IS 'Check if amount of locks on cell is over max.
 не перезаблокирование ли ячейки командами?';
 
+
+CREATE OR REPLACE FUNCTION service.is_cell_cmd_locked(
+    cid bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+    cfull BIGINT;
+BEGIN
+    SELECT count(*) INTO cnt FROM cell_cmd_lock WHERE cell_id = cid;
+    SELECT is_full INTO cfull FROM cell WHERE id = cid;
+    IF cnt < cfull OR cnt = 0 THEN
+        RETURN 0;
+    ELSE
+        RETURN 1;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION service.is_cell_cmd_locked(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION service.is_cell_cmd_locked(bigint)
+    IS 'заблокирована ли ячейка командой?';
+
+
 CREATE OR REPLACE FUNCTION service.is_free_way(
     rid bigint,
     rnpp bigint,
@@ -365,6 +515,69 @@ END;
 $BODY$;
 COMMENT ON PROCEDURE service.cell_unlock_from_cmd(bigint, bigint)
     IS 'разблокируем ячейку от команды';
+
+CREATE OR REPLACE PROCEDURE service.unlock_all_not_ness(IN rid bigint)
+LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr RECORD;
+    ct BIGINT;
+    cnt BIGINT;
+BEGIN
+    FOR rr IN (
+        SELECT r.id, r.current_track_npp npp,
+            rp.max_npp, repository_type rt,
+            rp.id rp_id, rp.spacing_of_robots sor
+        FROM robot r
+        INNER JOIN repository_part rp
+            ON r.repository_part_id = rp.id
+        WHERE r.id = rid
+    ) LOOP
+        -- разблокируем все, занятое текущим роботом
+        UPDATE track SET locked_by_robot_id = 0 WHERE locked_by_robot_id = rid;
+        -- блокируем вперед
+        ct := rr.npp;
+        cnt := 0;
+        LOOP
+            UPDATE track SET locked_by_robot_id = rid
+                WHERE npp = ct
+                AND repository_part_id = rr.rp_id;
+            cnt := cnt + 1;
+            IF (ct >= rr.max_npp) THEN
+                IF (rr.rt = 1) THEN
+                    ct := 0;
+                ELSE
+                    EXIT;
+                END IF;
+            ELSE
+                ct := ct + 1;
+            END IF;
+            EXIT WHEN cnt > rr.sor;
+        END LOOP;
+        -- блокируем назад
+        ct := rr.npp;
+        cnt := 0;
+        LOOP
+            UPDATE track SET locked_by_robot_id = rid
+                WHERE npp = ct
+                AND repository_part_id = rr.rp_id;
+            cnt := cnt + 1;
+            IF (ct <= 0) THEN
+                IF (rr.rt = 1) THEN
+                    ct := rr.max_npp;
+                ELSE
+                    EXIT;
+                END IF;
+            ELSE
+                ct := ct - 1;
+            END IF;
+            EXIT WHEN cnt > rr.sor;
+        END LOOP;
+    END LOOP;
+END;
+$BODY$;
+COMMENT ON PROCEDURE service.unlock_all_not_ness(bigint)
+    IS 'разблокируем все, заблокированное текущим роботом кроме расстояния вокруг робота';
 
 CREATE OR REPLACE PROCEDURE service.cell_lock_by_cmd(
     cid bigint,

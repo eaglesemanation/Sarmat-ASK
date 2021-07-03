@@ -1,0 +1,24 @@
+CREATE OR REPLACE FUNCTION helpers.substrrpos(
+	str text,
+	substr text)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+	_count BIGINT;
+BEGIN
+	FOR _count IN REVERSE length(str)..1 LOOP
+		IF(substring(str FROM _count FOR length(substr)) = substr) THEN
+			RETURN _count;
+		END IF;
+	END LOOP;
+	RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION helpers.substrrpos(text, text) OWNER TO postgres;
+COMMENT ON FUNCTION helpers.substrrpos(text, text)
+    IS 'Returns position of a last matching substring in a string. If search failed return value is 0. Behaves like INSTR(str, substr, -1)';
+
+-- vim: ft=pgsql

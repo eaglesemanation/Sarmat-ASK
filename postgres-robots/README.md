@@ -108,15 +108,15 @@
     - [ ] Get_Cmd_Inner_CP_Process
     - [ ] get_cmd_inner_dtb
     - [ ] Get_Cmd_Inner_Imi_Type
-    - [ ] Get_Cmd_Inner_Last_Checkpoint
-    - [ ] Get_Cmd_Inner_Npp_Dest
+    - [x] get_cmd_inner_last_checkpoint
+    - [x] get_cmd_inner_npp_dest
     - [ ] Get_Cmd_Inner_Time_Work
     - [ ] Get_Cmd_Inner_Txt
     - [ ] Get_Cmd_Inner_Type
     - [ ] get_cmd_robot_name
-    - [ ] get_cmd_text_another_dir
-    - [ ] Get_Cmd_Text_New_cp
-    - [ ] Get_Cmd_Text_WO_cp
+    - [x] get_cmd_text_another_dir
+    - [x] get_cmd_text_new_cp
+    - [x] get_cmd_text_wo_cp
     - [ ] Get_Robot_Name
     - [ ] Get_Robot_RP_ID
     - [ ] Get_Robot_RP_name
@@ -136,7 +136,7 @@
     - [ ] change_wpr_dir
     - [ ] Problem_Resolve
     - [ ] Problem_Resolve
-    - [ ] Redirect_Robot_To_New_Cell
+    - [x] redirect_robot_to_new_cell
     - [ ] InitY_If_Ness
     - [x] set_command_inner
     - [ ] Cmd_RP_Cancel
@@ -153,7 +153,7 @@
     - [ ] is_idle
     - [ ] Is_Npp_Actual_Info
     - [ ] is_poss_to_lock
-    - [ ] is_poss_ass_new_unload_cell
+    - [x] is_poss_ass_new_unload_cell
     - [ ] is_robot_lock_bad
     - [ ] is_rp_simple_1_robot
     - [x] is_track_between
@@ -163,10 +163,10 @@
     - [x] is_track_near_repair_robot
     - [x] is_track_npp_ban_move_to
     - [x] is_track_part_between
-    - [ ] is_way_free
-    - [ ] is_way_locked
-    - [ ] has_free_cell
-    - [ ] has_free_cell_by_cnt
+    - [x] is_way_free
+    - [x] is_way_locked
+    - [x] has_free_cell
+    - [x] has_free_cell_by_cnt
     - [x] add_track_npp
     - [x] calc_distance_by_dir
     - [ ] Calc_Min_Distance
@@ -176,13 +176,13 @@
     - [ ] calc_track_free_cell
     - [x] inc_spacing_of_robots
     - [ ] in
-    - [ ] inc_npp
+    - [x] inc_npp
     - [x] get_another_direction
     - [x] get_another_robot_id
     - [x] get_cell_id_by_name
-    - [ ] Get_Cell_Name_By_Track_ID
+    - [x] get_cell_name_by_track_id
     - [ ] Get_Cell_Name_By_Track_Npp
-    - [ ] Get_Cell_Shelving_ID
+    - [x] get_cell_shelving_id
     - [ ] Get_Cell_Track_Npp
     - [ ] get_container_cell_sname
     - [x] get_cmd_dir_text
@@ -215,7 +215,7 @@
     - [x] try_track_lock
     - [ ] Try_Track_Lock_Robot_Around
     - [x] unlock_track
-    - [ ] unlock_track_after_cmd_error
+    - [x] unlock_track_after_cmd_error
     - [ ] Robot_Stop_Drive_Away_Try
     - [ ] Group_Op_To_Simple_CRP
     - [ ] Change_Work_Status
@@ -223,9 +223,9 @@
     - [ ] crash_test_linear_tact
     - [ ] Actione_From_Pause
     - [ ] cancel_active_cmd
-    - [ ] change_cmd_rp_goal
-    - [ ] Container_Change_Placement
-    - [ ] try_assign_new_unload_cell
+    - [x] change_cmd_rp_goal
+    - [x] container_change_placement
+    - [x] try_assign_new_unload_cell
 
 - service
     - [ ] get_2d_word_beg
@@ -251,7 +251,7 @@
     - [ ] get_sec
     - [x] get_ust_cell_dir
     - [ ] is_cell_accept_enable
-    - [ ] is_cell_cmd_locked
+    - [x] is_cell_cmd_locked
     - [x] is_cell_full_check
     - [x] is_cell_near_edge
     - [ ] is_cell_on_comp
@@ -259,7 +259,7 @@
     - [x] is_free_way
     - [ ] is_hibernate
     - [ ] is_way_free_for_robot
-    - [ ] add_shelving_need_to_redraw
+    - [x] add_shelving_need_to_redraw
     - [x] bkp_to_file
     - [x] calc_ideal_crp_cost
     - [ ] cancel_all_verify_cmd
@@ -275,14 +275,14 @@
     - [x] log2filen
     - [ ] recover_last_ocil
     - [ ] robot_goto_cell
-    - [ ] unlock_all_not_ness
+    - [x] unlock_all_not_ness
     - [ ] empty_cell_capability
     - [ ] ml_get_val
     - [x] ml_get_rus_eng_val
     - [ ] make_bkp_stamp
     - [ ] make_bkp_good
-    - [ ] mark_cell_as_free
-    - [ ] mark_cell_as_full
+    - [x] mark_cell_as_free
+    - [x] mark_cell_as_full
     - [ ] op_last_cmd_repeat
     - [ ] op_last_cmd_mark_as_ok
     - [ ] test
@@ -316,11 +316,11 @@
     - [ ] command_gas_bi_e
     - [ ] command_gas_bu_state_e
     - [ ] command_gas_oc_bi_e
-    - [ ] command_inner_ade
-    - [ ] command_inner_au_state
-    - [ ] command_inner_bi_e
-    - [ ] command_inner_bu_problemr_e
-    - [ ] command_inner_bu_status_e
+    - [x] command_inner_ad_e
+    - [x] command_inner_au_state_e
+    - [x] command_inner_bi_e
+    - [x] command_inner_bu_problemr_e
+    - [x] command_inner_bu_status_e
     - [ ] command_inner_check_bi_e
     - [x] command_rp_ad_e
     - [x] command_rp_au_cis_e

@@ -80,4 +80,132 @@ COMMENT ON FUNCTION trigger.finish_crp(command_rp)
     IS 'Migrated inline procedure for command_rp_bu_cis_e trigger
 ';
 
+CREATE OR REPLACE FUNCTION trigger.cmd_retry(
+	INOUT new command_inner)
+    RETURNS command_inner
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    CALL service.log2file('trigger command_inner_bu_problemr_e - Пришло решение проблемы "повторить" от '
+        || current_user || ' для робота '
+        || NEW.robot_id ||' команды '
+        || NEW.id);
+    UPDATE robot
+        SET state = 0, command_inner_id = null,
+            cmd_error_descr = null, wait_for_problem_resolve = 0
+        WHERE id = NEW.robot_id;
+    NEW.state := 2;
+    INSERT INTO tmp_cmd_inner (ci_id, action)
+        VALUES (NEW.id,'R');
+    UPDATE emu_robot_problem
+        SET state = 0
+        WHERE state = 3
+            AND robot_id = NEW.robot_id;
+    --update robot set command_inner_assigned_id=:new.id where id=:new.robot_id;
+    --:new.problem_resolving_id:=null;
+    --:new.date_time_begin:=null;
+END;
+$BODY$;
+ALTER FUNCTION trigger.cmd_retry(command_inner) OWNER TO postgres;
+COMMENT ON FUNCTION trigger.cmd_retry(command_inner)
+    IS 'Migrated inline procedure for command_inner_bu_problemr_e trigger
+';
+
+CREATE OR REPLACE FUNCTION trigger.cmd_cancel(
+	INOUT new command_inner,
+    IN action_ text DEFAULT null)
+    RETURNS command_inner
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    CALL service.log2file('trigger command_inner_bu_problemr_e - Пришло решение проблемы "отменить" от '
+                            || current_user || ' для робота '
+                            || NEW.robot_id || ' команды '
+                            || NEW.id);
+    UPDATE robot
+        SET state = 0, command_inner_id = null,
+            cmd_error_descr = null, wait_for_problem_resolve = 0
+        WHERE id = NEW.robot_id;
+    NEW.error_code_id := 1;
+    NEW.state := 2;
+    UPDATE emu_robot_problem
+        SET state = 0
+        WHERE state = 3
+            AND robot_id = NEW.robot_id;
+    DELETE FROM track_order WHERE robot_id = NEW.robot_id;
+    IF coalesce(action_, '-') <> 'None' THEN
+        INSERT INTO tmp_cmd_inner (ci_id, action)
+            VALUES (NEW.id, action_);
+    END IF;
+    CALL obj_rpart.unlock_track_after_cmd_error(NEW.robot_id);
+END;
+$BODY$;
+ALTER FUNCTION trigger.cmd_cancel(command_inner, text) OWNER TO postgres;
+COMMENT ON FUNCTION trigger.cmd_cancel(command_inner, text)
+    IS 'Migrated inline procedure for command_inner_bu_problemr_e trigger
+';
+
+
+CREATE OR REPLACE FUNCTION trigger.cmd_handle(
+	INOUT new command_inner)
+    RETURNS command_inner
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    ress BIGINT;
+    ana RECORD;
+BEGIN
+    CALL service.log2file('trigger command_inner_bu_problemr_e - Пришло решение проблемы "выполнена вручную" от '
+                            || current_user || ' для робота '
+                            || NEW.robot_id || ' команды '
+                            || NEW.id);
+    IF (NEW.command_type_id IN (4)) THEN
+        ress := NEW.npp_src;
+    ELSE
+        ress := NEW.npp_dest;
+    END IF;
+    FOR ana IN (
+        SELECT *
+            FROM robot r
+            WHERE id = NEW.robot_id
+                AND ress <> current_track_npp
+    ) LOOP
+        RAISE EXCEPTION 'Команда может быть выполнена вручную только если робот будет находиться в результирующей секции № %. Сейчас же робот находится в секции № %!', ress, ana.current_track_npp
+            USING errcode = 50123;
+    END LOOP;
+    UPDATE emu_robot_problem
+        SET state = 0
+        WHERE state = 3
+            AND robot_id = NEW.robot_id;
+    UPDATE robot
+        SET state = 0, command_inner_id = null,
+            cmd_error_descr = null, wait_for_problem_resolve = 0
+        WHERE id = NEW.robot_id;
+    NEW.state := 5;
+    DELETE FROM track_order WHERE robot_id = NEW.robot_id;
+    INSERT INTO tmp_cmd_inner (ci_id)
+        VALUES (NEW.id);
+    CALL obj_rpart.unlock_track_after_cmd_error(NEW.robot_id);
+    IF (NEW.command_type_id = 4) THEN -- load
+        CALL service.mark_cell_as_free(NEW.cell_src_id, NEW.container_id, NEW.robot_id);
+        INSERT INTO tmp_cmd_inner (ci_id, action)
+            VALUES (NEW.id, 'L');
+    ELSIF (NEW.command_type_id = 5) THEN -- unload
+        CALL service.mark_cell_as_full(NEW.cell_dest_id, NEW.container_id, NEW.robot_id);
+        INSERT INTO tmp_cmd_inner (ci_id, action)
+            VALUES (NEW.id, 'G');
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION trigger.cmd_handle(command_inner) OWNER TO postgres;
+COMMENT ON FUNCTION trigger.cmd_handle(command_inner)
+    IS 'Migrated inline procedure for command_inner_bu_problemr_e trigger
+';
+
 -- vim: ft=pgsql

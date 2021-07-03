@@ -56,6 +56,27 @@ COMMENT ON FUNCTION obj_rpart.get_another_direction(bigint)
     IS 'получить иное, чем указанное, направление движения робота';
 
 
+CREATE OR REPLACE FUNCTION obj_rpart.get_cell_name_by_track_id(
+    track_id_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res__ TEXT;
+BEGIN
+    SELECT cell_sname INTO res__
+        FROM track
+        WHERE id = track_id_;
+    RETURN res__;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_cell_name_by_track_id(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_cell_name_by_track_id(bigint)
+    IS 'получить имя ячейки по ID трека (для команды робота move)';
+
+
 CREATE OR REPLACE FUNCTION obj_rpart.get_cmd_dir_text(
     dir_ bigint)
     RETURNS text
@@ -371,6 +392,236 @@ COMMENT ON PROCEDURE obj_rpart.unlock_track(bigint, bigint, bigint, bigint, bigi
 вызывается из триггера при смене текущего трека; нужно передавать rp_id_, чтобы не было мутации';
 
 
+CREATE OR REPLACE PROCEDURE obj_rpart.unlock_track_after_cmd_error(
+    robot_id_ bigint)
+LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr robot;
+    npp1 BIGINT;
+    npp2 BIGINT;
+    tr_id BIGINT;
+    tr_npp BIGINT;
+    tr_locked_by_robot_id BIGINT;
+    max_npp_ BIGINT;
+    is_loop_exit BIGINT;
+    sorb BIGINT;
+    rpt BIGINT;
+BEGIN
+    SELECT * INTO rr
+        FROM robot
+        WHERE id = robot_id_;
+    SELECT spacing_of_robots, max_npp, repository_type
+        INTO sorb, max_npp_, rpt
+        FROM repository_part
+        WHERE id = rr.repository_part_id;
+    IF (rpt = 0) THEN
+        -- нет смысла замарачиваться с блокировкой на линейный склад
+        RETURN;
+    END IF;
+    CALL obj_rpart.log(rr.repository_part_id, 'unlock_track_after_cmf_error: robot.id=' || robot_id_);
+    npp1 := obj_rpart.inc_spacing_of_robots(
+        rr.current_track_npp,
+        1,
+        sorb + 1,
+        rr.repository_part_id
+    );
+    npp2 := obj_rpart.inc_spacing_of_robots(
+        rr.current_track_npp,
+        obj_rpart.get_another_direction(1),
+        sorb + 1,
+        rr.repository_part_id
+    );
+    --log_track(rr.repository_part_id);
+    tr_npp := npp1;
+    LOOP
+        SELECT id, locked_by_robot_id
+            INTO tr_id, tr_locked_by_robot_id
+            FROM track
+            WHERE npp = tr_npp
+                AND repository_part_id = rr.repository_part_id;
+        --log_ut_step(4,'  ttle: tr_npp='||tr_npp);
+        IF coalesce(tr_locked_by_robot_id, 0) IN (robot_id_) THEN
+            UPDATE track SET locked_by_robot_id = 0 WHERE id = tr_id;
+        END IF;
+        CALL obj_rpart.get_next_npp(rpt, max_npp_, tr_npp, npp2, 1, tr_npp, is_loop_exit);
+        EXIT WHEN is_loop_exit = 1;
+    END LOOP;
+    --log_track(rr.repository_part_id);
+end;
+$BODY$;
+COMMENT ON PROCEDURE obj_rpart.unlock_track_after_cmd_error(bigint)
+    IS 'разблокировать трек после ошибки команды робота';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.is_way_free(
+    robot_id_ bigint,
+    npp_d bigint,
+    dir bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    r RECORD;
+    rp RECORD;
+    cnpp BIGINT;
+    ll BIGINT;
+    dnppsorb BIGINT;
+    is_dest_npp_reached BOOLEAN;
+BEGIN
+    is_dest_npp_reached := false;
+    FOR r IN (
+        SELECT *
+            FROM robot
+            WHERE id = robot_id_
+    ) LOOP
+        CALL obj_rpart.log(r.repository_part_id, 'is_way_free: robot_id_=' || robot_id_ || ' ' || npp_d || ' ' || dir);
+        FOR rp IN (
+            SELECT repository_type, id, max_npp, spacing_of_robots sorb, num_of_robots
+                FROM repository_part
+                WHERE id = r.repository_part_id
+        ) LOOP
+            IF /*rp.repository_type =0 or */rp.num_of_robots=1 THEN -- один робот - всегда все свободно
+                RETURN 1;
+            END IF;
+            cnpp := r.real_npp; --r.current_track_npp;
+            IF (cnpp = npp_d) THEN
+                RETURN 1; -- там же и стоим
+            END IF;
+            -- считаем максимум сколько нужно хапануть
+            dnppsorb := obj_rpart.inc_spacing_of_robots(npp_d, dir, rp.sorb, rp.id, 0, rp.max_npp);
+            CALL obj_rpart.log(r.repository_part_id, 'dnppsorb=' || dnppsorb);
+            LOOP
+                CALL obj_rpart.log(r.repository_part_id, '  cnpp=' || cnpp);
+                IF (cnpp = npp_d) THEN
+                    is_dest_npp_reached := true;
+                    CALL obj_rpart.log(r.repository_part_id, '    is_dest_npp_reached:=true');
+                END IF;
+                EXIT WHEN cnpp = dnppsorb AND is_dest_npp_reached;
+                IF (dir = 1) THEN -- по часовой
+                    IF (rp.repository_type = 1) THEN -- для кольцевого склада
+                        IF (cnpp = rp.max_npp) THEN
+                            cnpp := 0;
+                        ELSE
+                            cnpp := cnpp + 1;
+                        END IF;
+                    ELSE  -- для линейного
+                        IF (cnpp < rp.max_npp) THEN
+                            cnpp := cnpp + 1;
+                        ELSE
+                            EXIT; -- выход из цикла
+                        END IF;
+                    END IF;
+                ELSE -- против
+                    IF (rp.repository_type = 1) THEN -- для кольцевого склада
+                        IF cnpp=0 THEN
+                            cnpp := rp.max_npp;
+                        ELSE
+                            cnpp := cnpp - 1;
+                        END IF;
+                    ELSE  -- для линейного
+                        IF (cnpp > 0) THEN
+                            cnpp := cnpp - 1;
+                        ELSE
+                            EXIT; -- выход из цикла
+                        END IF;
+                    END IF;
+                END IF;
+                -- dbms_output.put_line('cnpp='||cnpp);
+                RAISE DEBUG 'cnpp=%', cnpp;
+                SELECT locked_by_robot_id INTO ll
+                    FROM track
+                    WHERE repository_part_id = rp.id
+                        AND npp = cnpp;
+                IF (ll <> r.id) THEN -- ошибка
+                    RETURN 0; -- путь не готов - ОШИБКА!!!
+                END IF;
+            END LOOP;
+        END LOOP;
+    END LOOP;
+    RETURN 1; -- все проверено, мин нет
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.is_way_free(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.is_way_free(bigint, bigint, bigint)
+    IS 'проверка на свободность пути';
+
+
+-- FIXME: Isn't that just inverted "is_way_free"? If not - confusing naming
+CREATE OR REPLACE FUNCTION obj_rpart.is_way_locked(
+    rp_id_ bigint,
+    robot_id_ bigint,
+    goal_npp bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    g1 BIGINT;
+    g2 BIGINT;
+    cur_npp BIGINT;
+    -- dir BIGINT;
+    g1_is BIGINT;
+    g2_is BIGINT;
+    rob_rec robot;
+    sorb BIGINT;
+    lbrid BIGINT;
+BEGIN
+    SELECT * INTO rob_rec FROM robot WHERE id = robot_id_;
+    SELECT spacing_of_robots INTO sorb FROM repository_part WHERE id = rp_id_;
+    --if emu_log_level>=2 then emu_log('  is_locked: id='||r(ro_num).id||'; goal_npp='||goal_npp); end if;
+    g1 := obj_rpart.inc_spacing_of_robots(goal_npp, 1, sorb, rp_id_);
+    g2 := obj_rpart.inc_spacing_of_robots(
+        goal_npp,
+        obj_rpart.get_another_direction(1),
+        sorb,
+        rp_id_
+    );
+    --if emu_log_level>=4 then emu_log('    il: g1='||g1||'; g2='||g2); end if;
+    FOR dir IN 0..1 LOOP
+        cur_npp := obj_rpart.inc_spacing_of_robots(
+            rob_rec.current_track_npp,
+            obj_rpart.get_another_direction(dir),
+            sorb,
+            rp_id_
+        );
+        g1_is := 0;
+        g2_is := 0;
+        LOOP
+            --if emu_log_level>=4 then emu_log('    il: loop cur_npp='||cur_npp); end if;
+            SELECT locked_by_robot_id INTO lbrid
+                FROM track
+                WHERE npp = cur_npp
+                    AND repository_part_id = rp_id_;
+            IF (lbrid <> rob_rec.id) THEN
+                EXIT;
+            END IF;
+            IF (cur_npp = g1) THEN
+                g1_is := 1;
+            END IF;
+            IF (cur_npp = g2) THEN
+                g2_is := 1;
+            END IF;
+            EXIT WHEN g1_is = 1 AND g2_is = 1;
+            cur_npp := obj_rpart.inc_npp(cur_npp, dir, rp_id_);
+        END LOOP;
+        IF (g1_is = 1) AND (g2_is = 1) THEN
+            --if emu_log_level>=2 then emu_log('    il: return 1'); end if;
+            RETURN 1;
+        END IF;
+    END LOOP;
+    --if emu_log_level>=2 then emu_log('    il: return 0'); end if;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.is_way_locked(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.is_way_locked(bigint, bigint, bigint)
+    IS 'заблокирован ли путь для робота до цели?';
+
+
 CREATE OR REPLACE FUNCTION obj_rpart.is_track_between(
     goal_npp numeric,
     npp_from numeric,
@@ -463,6 +714,31 @@ $BODY$;
 ALTER FUNCTION obj_rpart.get_cell_id_by_name(bigint, text) OWNER TO postgres;
 COMMENT ON FUNCTION obj_rpart.get_cell_id_by_name(bigint, text)
     IS 'взять ID ячейки по ее имени на конкретном огурце';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_cell_shelving_id(
+    cell_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    shelving_id_ BIGINT;
+begin
+    FOR shelving_id_ IN (
+        SELECT shelving_id
+            FROM cell
+            WHERE id = cell_id_
+    ) LOOP
+        RETURN shelving_id_;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_cell_shelving_id(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_cell_shelving_id(bigint)
+    IS 'получить ID стеллажа по ID ячейки';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.get_track_id_by_cell_and_rp(
@@ -1067,6 +1343,163 @@ COMMENT ON FUNCTION obj_rpart.form_track_order(bigint, bigint, bigint, bigint, b
     IS 'неинтеллектуальный запрос формирования заявки на блокировку трека';
 
 
+CREATE OR REPLACE FUNCTION obj_rpart.is_poss_ass_new_unload_cell(
+    old_cell_id bigint,
+    robot_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cellrec cell;
+    dir BIGINT;
+BEGIN
+    CALL obj_rpart.try_assign_new_unload_cell(old_cell_id, robot_id_, cellrec, dir);
+    IF cellrec.id IS null THEN
+        RETURN 0;
+    ELSE
+        RETURN 1;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.is_poss_ass_new_unload_cell(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.is_poss_ass_new_unload_cell(bigint, bigint)
+    IS 'можно ли назначить новую ячейку для выгрузки контейнера?';
+
+
+CREATE OR REPLACE PROCEDURE obj_rpart.try_assign_new_unload_cell(
+    old_cell_id bigint,
+    robot_id_ bigint,
+    INOUT cellrec cell,
+    INOUT dir bigint)
+LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    old_cell cell;
+    appr_cell cell;
+    cnt BIGINT;
+    rpt BIGINT;
+    cnpp BIGINT;
+    cnpp_sorb BIGINT;
+    max_npp_ BIGINT;
+    delta1 BIGINT;
+    delta0 BIGINT;
+    sorb BIGINT;
+    rp_id_ BIGINT;
+    was_found BIGINT;
+BEGIN
+    SELECT * INTO old_cell FROM cell WHERE id = old_cell_id;
+    -- если ничего не нашли - Null возвращаем
+    cellrec.id := null;
+    cellrec.sname := null;
+    dir := -1;
+    -- а вдруг в той же секции есть местечко
+    FOR appr_cell IN (
+        SELECT *
+            FROM cell
+            WHERE repository_part_id = old_cell.repository_part_id
+                AND cell_size = old_cell.cell_size
+                AND is_full = 0
+                AND (
+                    (hi_level_type = 1 AND zone_id <> 0) OR hi_level_type = 10
+                )
+                AND is_error = 0
+                AND service.is_cell_cmd_locked(id) = 0
+                AND id <> old_cell_id
+                AND track_npp = old_cell.track_npp
+    ) LOOP
+        CALL obj_rpart.log(
+            appr_cell.repository_part_id,
+            'try_assign_new_unload_cell - нашли в текущей секции ' || appr_cell.sname
+        );
+        cellrec := appr_cell;
+        dir := 1;
+        RETURN;
+    END LOOP;
+    -- раз дошли до сюда, значит нет свободного места в текущей секции
+    CALL obj_rpart.log(
+        old_cell.repository_part_id,
+        'try_assign_new_unload_cell - нет свободного места в текущей секции'
+    );
+    SELECT max_npp, spacing_of_robots, id, repository_type
+        INTO max_npp_, sorb, rp_id_, rpt
+        FROM repository_part
+        WHERE id = (
+            SELECT repository_part_id
+                FROM robot
+                WHERE id = robot_id_
+        );
+    delta1 := 0;
+    delta0 := 0;
+    FOR dir_f IN 0..1 LOOP
+        was_found := 0;
+        cnpp := old_cell.track_npp;
+        cnpp_sorb := obj_rpart.inc_spacing_of_robots(cnpp, dir_f, sorb, rp_id_, 0, max_npp_);
+        LOOP -- цикл по направлению
+            IF (dir_f = 0) THEN -- против часовой
+                IF (rpt = 0) THEN -- линейный
+                    EXIT WHEN cnpp = 0;
+                END IF;
+                delta0 := delta0 + 1;
+            ELSE -- по часовой
+                IF (rpt = 0) THEN -- линейный
+                    EXIT WHEN cnpp = max_npp_;
+                END IF;
+                delta1 := delta1 + 1;
+            END IF;
+            cnpp_sorb := obj_rpart.inc_spacing_of_robots(cnpp_sorb, dir_f, 1, rp_id_, 0, max_npp_);
+            cnpp      := obj_rpart.inc_spacing_of_robots(cnpp,      dir_f, 1, rp_id_, 0, max_npp_);
+            SELECT count(*) INTO cnt
+                FROM track
+                WHERE repository_part_id = rp_id_
+                    AND npp = cnpp_sorb
+                    AND locked_by_robot_id IN (0,robot_id_);
+            IF (cnt > 0) THEN -- трэк свободен
+                FOR appr_cell IN (
+                    SELECT *
+                        FROM cell
+                        WHERE repository_part_id = rp_id_
+                            AND track_npp = cnpp
+                            AND is_full = 0
+                            AND cell_size <= old_cell.cell_size
+                            AND (
+                                (hi_level_type = 1 AND zone_id <> 0) OR hi_level_type = 10
+                            )
+                            AND id <> old_cell_id
+                            AND is_error = 0
+                            AND service.is_cell_cmd_locked(id) = 0
+                        ORDER BY abs(old_cell.cell_size - cell_size)
+                ) LOOP
+                    -- ура, есть ячейка
+                    CALL obj_rpart.log(
+                        old_cell.repository_part_id,
+                        'try_assign_new_unload_cell - нашли подходящую ячейку ' || appr_cell.sname || ' dir=' || dir_f
+                    );
+                    was_found := 1;
+                    IF (cellrec.id IS null) THEN -- раньше не было - пишем
+                        cellrec := appr_cell;
+                        dir := dir_f;
+                    ELSE --уже было - на 0-вом шаге
+                        IF (delta1 < delta0) AND (delta1 <> 0) AND (delta0 <> 0) THEN
+                            cellrec := appr_cell;
+                            dir := dir_f;
+                        END IF;
+                    END IF;
+                    EXIT;
+                END LOOP;
+                EXIT WHEN was_found = 1;
+            ELSE
+                EXIT; -- дальше блокировано - вываливаемся
+            END IF;
+        END LOOP; -- по направлению одному
+    END LOOP; -- по направлениям
+END;
+$BODY$;
+COMMENT ON PROCEDURE obj_rpart.try_assign_new_unload_cell(bigint, bigint, cell, bigint)
+    IS 'пытаемся назначить новую ячейку выгрузки вместо старой';
+
+
 CREATE OR REPLACE FUNCTION obj_rpart.is_exists_cell_type(
     rp_id_ bigint,
     ct_ bigint)
@@ -1094,6 +1527,80 @@ ALTER FUNCTION obj_rpart.is_exists_cell_type(bigint, bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_rpart.is_exists_cell_type(bigint, bigint)
     IS 'Checks if there are any cells of specified type that have no erorrs.
 есть ли неошибочные ячейки указанного подтипа на складе?';
+
+
+CREATE OR REPLACE PROCEDURE obj_rpart.change_cmd_rp_goal(
+    cmd_rp_id_ bigint,
+    new_cell_dest_id bigint)
+LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    old_rp command_rp;
+    cc RECORD;
+    crp command_rp;
+    cmd command;
+    crprec command_rp;
+BEGIN
+    SELECT * INTO old_rp FROM command_rp WHERE id = cmd_rp_id_;
+    FOR cc IN (
+        SELECT c.sname, s.track_id, t.npp, hi_level_type
+            FROM cell c
+            INNER JOIN shelving s
+                ON c.shelving_id = s.id
+            INNER JOIN track t
+                ON s.track_id = t.id
+            WHERE c.id = new_cell_dest_id
+    ) LOOP
+        UPDATE cell_cmd_lock
+            SET cell_id = new_cell_dest_id, sname = cc.sname
+            WHERE cell_id = old_rp.cell_dest_id
+                AND cmd_id = old_rp.command_id;
+        UPDATE command_rp
+            SET cell_dest_id = new_cell_dest_id,
+                cell_dest_sname = cc.sname,
+                track_dest_id = cc.track_id,
+                npp_dest = cc.npp
+            WHERE id = cmd_rp_id_;
+        IF (cc.hi_level_type = 1) THEN -- выгружаем на хранение
+            FOR crp IN (
+                SELECT * FROM command_rp WHERE id = cmd_rp_id_
+            ) LOOP
+                UPDATE command
+                    SET cell_dest_sname=cc.sname,
+                        cell_dest_id=new_cell_dest_id,
+                        npp_dest=cc.npp,
+                        track_dest_id=cc.track_id
+                    WHERE id=crp.command_id;
+                -- а теперь command_gas правим
+                FOR cmd IN (
+                    SELECT * FROM command WHERE id = crp.command_id
+                ) LOOP
+                    UPDATE command_gas
+                        SET cell_out_name = cc.sname
+                        WHERE command_type_id IN (11,18)
+                            AND id = cmd.command_gas_id;
+                END LOOP;
+            END LOOP;
+        ELSE -- особые действия при выгрузке на временное хранение в транзитный склад
+            FOR crprec IN (
+                SELECT * FROM command_rp WHERE id = cmd_rp_id_
+            ) LOOP
+                UPDATE command_rp
+                    SET cell_src_id = new_cell_dest_id,
+                        cell_src_sname = cc.sname,
+                        track_src_id = cc.track_id,
+                        npp_src = cc.npp
+                    WHERE id <> cmd_rp_id_
+                        AND command_id = crprec.command_id
+                        AND rp_id = crprec.rp_id
+                        AND state = 1;
+            END LOOP;
+        END IF;
+    END LOOP;
+END;
+$BODY$;
+COMMENT ON PROCEDURE obj_rpart.change_cmd_rp_goal(bigint, bigint)
+    IS 'назначаем новую целевую ячейки команде перемещения контейнера';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.get_transit_1rp_cell(
@@ -1143,6 +1650,61 @@ END;
 $BODY$;
 COMMENT ON PROCEDURE obj_rpart.track_lock_prim(bigint, bigint)
     IS 'функция примитивной блокировки трека';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.has_free_cell(
+    csize bigint,
+    rp_id_ bigint DEFAULT 0)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BOOLEAN;
+BEGIN
+    SELECT exists(
+        SELECT * FROM cell
+            WHERE is_full=0
+                AND coalesce(blocked_by_ci_id, 0) = 0
+                AND service.is_cell_over_locked(cell.id) = 0
+                AND coalesce(is_error, 0) = 0
+                AND hi_level_type = 1
+                AND zone_id <> 0
+                AND (repository_part_id = rp_id_ or coalesce(rp_id_, 0) = 0)
+                AND cell_size <= csize
+    ) INTO res;
+    RETURN res::INT::BIGINT;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.has_free_cell(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.has_free_cell(bigint, bigint)
+    IS 'есть ли свободное место?';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.has_free_cell_by_cnt(
+    cntid bigint,
+    rp_id_ bigint DEFAULT 0)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    ct BIGINT;
+BEGIN
+    SELECT type INTO ct
+        FROM container
+        WHERE id = cntid;
+    IF ct IS null THEN
+        RETURN 0;
+    END IF;
+    RETURN obj_rpart.has_free_cell(ct, rp_id_);
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.has_free_cell_by_cnt(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.has_free_cell_by_cnt(bigint, bigint)
+    IS 'есть ли свободное место для контейнера заданного размера?';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.try_track_lock(
@@ -1415,5 +1977,91 @@ $BODY$;
 ALTER FUNCTION obj_rpart.is_poss_to_lock(bigint, bigint, bigint, bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_rpart.is_poss_to_lock(bigint, bigint, bigint, bigint)
     IS 'определяет, возможно ли заблокировать путь';
+
+CREATE OR REPLACE PROCEDURE obj_rpart.container_change_placement(
+    bc_ text,
+    rp_id_ bigint,
+    cell_id_ bigint)
+LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    cc container;
+BEGIN
+    FOR cc IN (
+        SELECT *
+            FROM container
+            WHERE barcode = bc_
+    ) LOOP
+        IF coalesce(cc.cell_id, 0) = coalesce(cell_id_, 0) THEN
+            RAISE EXCEPTION 'Контейнер % и так находится в указанной ячейке!', bc_
+                USING errcode = 50012;
+        END IF;
+        UPDATE cell
+            SET is_full = 0, container_id = 0
+            WHERE id = coalesce(cc.cell_id, 0);
+        UPDATE container
+            SET cell_id = cell_id_, location = 1
+            WHERE id = cc.id;
+        UPDATE cell
+            SET is_full = 1, container_id = cc.id
+            WHERE id = cell_id_;
+        CALL service.add_shelving_need_to_redraw(
+            obj_rpart.get_cell_shelving_id(coalesce(cc.cell_id, 0))
+        );
+        CALL service.add_shelving_need_to_redraw(
+            obj_rpart.get_cell_shelving_id(coalesce(cell_id_, 0))
+        );
+        RETURN;
+    END LOOP;
+    RAISE EXCEPTION 'Контейнер % не найден!', bc_
+        USING errcode = 50012;
+END;
+$BODY$;
+COMMENT ON PROCEDURE obj_rpart.container_change_placement(text, bigint, bigint)
+    IS 'назначить новое место реального расположения контейнера';
+
+CREATE OR REPLACE FUNCTION obj_rpart.inc_npp(
+    cur_npp bigint,
+    dir bigint,
+    rp_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    next_npp BIGINT;
+    -- rp_rec_min_npp BIGINT;
+    rp_rec_max_npp BIGINT;
+BEGIN
+    SELECT max(npp)
+        INTO rp_rec_max_npp
+        FROM track
+        WHERE repository_part_id = rp_id_;
+    IF (dir = 1) THEN -- по часовой
+        IF (cur_npp < rp_rec_max_npp) THEN
+            next_npp := cur_npp + 1;
+        ELSIF (cur_npp = rp_rec_max_npp) THEN
+            next_npp := 0;
+        -- ELSE
+            --if emu_log_level>=1 then emu_log('  inp: Error cur_npp='||cur_npp); end if;
+            --null;
+        END IF;
+    ELSE
+        IF (cur_npp > 0) THEN
+            next_npp := cur_npp - 1;
+        ELSIF (cur_npp = 0) THEN
+            next_npp := rp_rec_max_npp;
+        -- ELSE
+            --if emu_log_level>=1 then emu_log('  inp: Error cur_npp='||cur_npp); end if;
+            --null;
+        END IF;
+    END IF;
+    RETURN next_npp;
+end;
+$BODY$;
+ALTER FUNCTION obj_rpart.inc_npp(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.inc_npp(bigint, bigint, bigint)
+    IS 'увеличивает указанный трек на 1 по направлению';
 
 -- vim: ft=pgsql

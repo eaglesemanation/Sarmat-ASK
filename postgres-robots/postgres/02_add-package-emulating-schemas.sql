@@ -1,3 +1,7 @@
+DROP SCHEMA IF EXISTS helpers;
+CREATE SCHEMA helpers AUTHORIZATION postgres;
+COMMENT ON SCHEMA helpers IS 'Helper functions/procedures that assist migration from Oracle';
+
 DROP SCHEMA IF EXISTS service;
 CREATE SCHEMA service AUTHORIZATION postgres;
 COMMENT ON SCHEMA service IS 'Migrated service package';

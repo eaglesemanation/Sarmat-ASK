@@ -1,0 +1,141 @@
+CREATE OR REPLACE FUNCTION command_inner_bu_problemr_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+DECLARE
+    rr BOOLEAN;
+BEGIN
+    IF (OLD.problem_resolving_id IS NOT null)
+        AND (NEW.problem_resolving_id IS NOT null)
+    THEN -- повторно кто-то нажал решение проблемы
+        RAISE EXCEPTION 'Кто-то еще уже решил проблему с этой внутренней командой ID=%', NEW.id
+            USING errcode = 50123;
+    END IF;
+
+    IF (OLD.problem_resolving_id IS null)
+        AND (new.problem_resolving_id IS NOT null)
+    THEN -- разрешилась проблема какой-то команды
+        -- проверяем, а можно ли вообще решиьт?
+        SELECT exists (
+            SELECT *
+                FROM robot
+                WHERE id = NEW.robot_id
+                    AND (state <> 0 OR coalesce(wait_for_problem_resolve, 0) <> 1)
+        ) INTO rr;
+        IF rr THEN
+            RAISE EXCEPTION 'Нельзя решать проблему, если ее нет!'
+                USING errcode = 50123;
+        END IF;
+
+        IF (NEW.command_type_id = 6) THEN
+            -- MOVE
+            IF (NEW.problem_resolving_id = 9) THEN
+                -- повторить еще раз
+                PERFORM trigger.cmd_retry(NEW);
+            ELSIF (NEW.problem_resolving_id = 10) THEN
+                -- отменить команду
+                PERFORM trigger.cmd_cancel(NEW);
+            ELSIF (NEW.problem_resolving_id = 19) THEN
+                -- команда выполнена вручную
+                PERFORM trigger.cmd_handle(NEW);
+            END IF;
+
+        ELSIF (NEW.command_type_id = obj_robot."CMD_LOAD_TYPE_ID"()) THEN
+            -- LOAD
+            IF (NEW.problem_resolving_id = obj_robot."PR_LOAD_RETRY"()) THEN
+                -- повторить еще раз
+                PERFORM trigger.cmd_retry(NEW);
+            ELSIF (NEW.problem_resolving_id = 3) THEN
+                -- отменить команду
+                PERFORM trigger.cmd_cancel(NEW);
+            ELSIF (NEW.problem_resolving_id = 4) THEN
+                -- отменить команду
+                PERFORM trigger.cmd_cancel(NEW);
+                UPDATE cell
+                    SET is_error = 1
+                    WHERE id = NEW.cell_src_id;
+            ELSIF (NEW.problem_resolving_id = obj_robot."PR_LOAD_CELL_EMPTY"()) THEN
+                PERFORM trigger.cmd_cancel(NEW, 'B');
+                UPDATE container
+                    SET location = 0, cell_id = 0
+                    WHERE id = NEW.container_id;
+                UPDATE cell
+                    SET is_full = 0, container_id = 0
+                    WHERE id = NEW.cell_src_id;
+            ELSIF (NEW.problem_resolving_id = obj_robot."PR_LOAD_CELL_BAD"()) THEN
+                PERFORM trigger.cmd_cancel(NEW, 'B');
+                UPDATE cell
+                    SET is_error = 1
+                    WHERE id = NEW.cell_src_id;
+            ELSIF (NEW.problem_resolving_id = obj_robot."PR_LOAD_HANDLE"()) THEN
+                -- команда выполнена вручную
+                PERFORM trigger.cmd_handle(NEW);
+            END IF;
+
+        ELSIF (NEW.command_type_id = obj_robot."CMD_UNLOAD_TYPE_ID"()) THEN
+            -- UNLOAD
+            IF (NEW.problem_resolving_id = obj_robot."PR_UNLOAD_RETRY"()) THEN
+                -- повторить еще раз
+                PERFORM trigger.cmd_retry(NEW);
+            ELSIF (NEW.problem_resolving_id = obj_robot."PR_UNLOAD_MARK_BAD_REDIRECT"()) THEN
+                -- перенаправить в другую ячейку
+                CALL obj_robot.redirect_robot_to_new_cell(
+                    NEW.robot_id,
+                    NEW.command_rp_id,
+                    NEW.container_id,
+                    NEW.npp_dest,
+                    NEW.cell_dest_id);
+                PERFORM trigger.cmd_cancel(NEW, 'None');
+                UPDATE cell
+                    SET is_error = 1
+                    WHERE id = NEW.cell_dest_id;
+            ELSIF (NEW.problem_resolving_id = obj_robot."PR_UNLOAD_INDICATE_REDIRECT"()) THEN
+                -- перенаправить в другую ячейку, а целевую пометить как занятую другим контейнером
+                CALL obj_robot.redirect_robot_to_new_cell(
+                    NEW.robot_id,
+                    NEW.command_rp_id,
+                    NEW.container_id,
+                    NEW.npp_dest,
+                    NEW.cell_dest_id);
+                PERFORM trigger.cmd_cancel(NEW, 'None');
+                CALL obj_rpart.container_change_placement(
+                    NEW.problem_resolving_par,
+                    NEW.command_rp_id,
+                    NEW.cell_dest_id);
+            ELSIF (NEW.problem_resolving_id = 7) THEN
+                -- отменить команду
+                PERFORM trigger.cmd_cancel(NEW);
+            ELSIF (NEW.problem_resolving_id = 8) THEN
+                -- отменить команду
+                PERFORM trigger.cmd_cancel(NEW);
+                UPDATE cell
+                    SET is_error = 1
+                    where id = NEW.cell_dest_id;
+            ELSIF (NEW.problem_resolving_id = obj_robot."PR_UNLOAD_HANDLE"()) THEN
+                -- команда выполнена вручную
+                PERFORM trigger.cmd_handle(NEW);
+            END IF;
+        ELSIF (NEW.command_type_id = 32) THEN
+            -- INITY
+            -- повторить еще раз
+            PERFORM trigger.cmd_retry(NEW);
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION command_inner_bu_problemr_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS command_inner_bu_problemr_e ON command_inner;
+
+CREATE TRIGGER command_inner_bu_problemr_e
+    BEFORE UPDATE OF problem_resolving_id
+    ON command_inner
+    FOR EACH ROW
+    EXECUTE FUNCTION command_inner_bu_problemr_e();
+
+-- vim: ft=pgsql
