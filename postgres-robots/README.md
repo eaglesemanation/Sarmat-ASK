@@ -335,10 +335,9 @@
     - [x] container_collection_ai_e
     - [x] container_collection_bi_e
     - [ ] emu_robot_problem_biu_e
-    - [ ] firm_bd_e
-    - [ ] firm_gd_bi_e
-    - [ ] firm_gd_bu_qty_e
     - [x] firm_bd_e
+    - [x] firm_gd_bi_e
+    - [x] firm_gd_bu_qty_e
     - [ ] gd_party_aiu_e
     - [ ] gd_party_bu_qty_e
     - [ ] good_desc_ad_e

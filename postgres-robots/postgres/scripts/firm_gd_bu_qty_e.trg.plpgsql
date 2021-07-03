@@ -1,0 +1,27 @@
+CREATE OR REPLACE FUNCTION firm_gd_bu_qty_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+BEGIN
+    UPDATE good_desc
+        SET quantity = quantity + (NEW.quantity - OLD.quantity),
+            quantity_reserved = quantity_reserved + (NEW.quantity_reserved - OLD.quantity_reserved)
+        WHERE id = NEW.gd_id;
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION firm_gd_bu_qty_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS firm_gd_bu_qty_e ON firm_gd;
+
+CREATE TRIGGER firm_gd_bu_qty_e
+    BEFORE UPDATE OF quantity, quantity_reserved
+    ON firm_gd
+    FOR EACH ROW
+    EXECUTE FUNCTION firm_gd_bu_qty_e();
+
+-- vim: ft=pgsql
