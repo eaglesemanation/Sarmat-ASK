@@ -316,7 +316,7 @@
     - [x] command_inner_bi_e
     - [x] command_inner_bu_problemr_e
     - [x] command_inner_bu_status_e
-    - [ ] command_inner_check_bi_e
+    - [x] command_inner_check_bi_e
     - [x] command_rp_ad_e
     - [x] command_rp_au_cis_e
     - [x] command_rp_bi_e
