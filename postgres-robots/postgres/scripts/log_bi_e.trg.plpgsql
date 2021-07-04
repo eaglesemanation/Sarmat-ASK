@@ -1,0 +1,27 @@
+CREATE OR REPLACE FUNCTION log_bi_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+BEGIN
+    NEW.date_time := LOCALTIMESTAMP;
+    NEW.date_time_stamp := LOCALTIMESTAMP;
+    NEW.user_name := current_user;
+    NEW.ms := extract(milliseconds FROM LOCALTIMESTAMP);
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION log_bi_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS log_bi_e ON log;
+
+CREATE TRIGGER log_bi_e
+    BEFORE INSERT
+    ON log
+    FOR EACH ROW
+    EXECUTE FUNCTION log_bi_e();
+
+-- vim: ft=pgsql

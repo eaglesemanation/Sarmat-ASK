@@ -297,7 +297,6 @@
     - [ ] who_am_i
 
 - public.triggers
-    - [ ] LOG_bi_e
     - [x] cell_au
     - [x] cell_bi_e
     - [x] cell_bu_notes_e
@@ -344,6 +343,7 @@
     - [x] good_desc_bd_e
     - [x] good_desc_bi_e
     - [x] good_desc_biu_e
+    - [x] log_bi_e
     - [x] repository_bu_work_e
     - [x] robot_au_e
     - [x] robot_bu_ciid_e
