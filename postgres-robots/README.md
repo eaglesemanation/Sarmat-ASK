@@ -297,8 +297,6 @@
     - [ ] who_am_i
 
 - public.triggers
-    - [ ] GOOD_DESC_aiu_e
-    - [ ] GOOD_DESC_biu_e
     - [ ] LOG_bi_e
     - [x] cell_au
     - [x] cell_bi_e
@@ -341,9 +339,11 @@
     - [x] gd_party_bi_e
     - [x] gd_party_bu_qty_e
     - [x] good_desc_ad_e
+    - [x] good_desc_aiu_e
     - [x] good_desc_au_e
     - [x] good_desc_bd_e
     - [x] good_desc_bi_e
+    - [x] good_desc_biu_e
     - [x] repository_bu_work_e
     - [x] robot_au_e
     - [x] robot_bu_ciid_e

@@ -1,0 +1,39 @@
+CREATE OR REPLACE FUNCTION good_desc_biu_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+BEGIN
+    IF coalesce(NEW.quantity_box, 0) = 0 THEN
+        NEW.quantity_box := 1;
+    END IF;
+    IF coalesce(NEW.cubage, 0) = 0 THEN
+        NEW.cubage := 1;
+    END IF;
+    IF trim(NEW.id) <> NEW.id THEN
+        NEW.id := trim(NEW.id);
+    END IF;
+    IF position(';' IN NEW.id) <> 0 THEN
+        RAISE EXCEPTION 'Символ <;> нельзя использовать в коде товара!'
+            USING errcode = 50070;
+    END IF;
+    IF (TG_OP IN ('INSERT', 'UPDATE')) AND coalesce(NEW.id, '0') <> coalesce(OLD.id, '0') THEN
+        NEW.id_upper := upper(NEW.id);
+    END IF;
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION good_desc_biu_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS good_desc_biu_e ON good_desc;
+
+CREATE TRIGGER good_desc_biu_e
+    BEFORE INSERT OR UPDATE
+    ON good_desc
+    FOR EACH ROW
+    EXECUTE FUNCTION good_desc_biu_e();
+
+-- vim: ft=pgsql
