@@ -297,8 +297,6 @@
     - [ ] who_am_i
 
 - public.triggers
-    - [ ] GD_P__bi_e
-    - [ ] GD_P_bd_e
     - [ ] GOOD_DESC_aiu_e
     - [ ] GOOD_DESC_biu_e
     - [ ] LOG_bi_e
@@ -339,6 +337,8 @@
     - [x] firm_gd_bi_e
     - [x] firm_gd_bu_qty_e
     - [x] gd_party_aiu_e
+    - [x] gd_party_bd_e
+    - [x] gd_party_bi_e
     - [x] gd_party_bu_qty_e
     - [x] good_desc_ad_e
     - [x] good_desc_au_e
