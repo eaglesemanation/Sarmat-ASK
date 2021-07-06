@@ -310,7 +310,7 @@
     - [x] command_gas_aiu_e
     - [x] command_gas_bi_e
     - [x] command_gas_bu_state_e
-    - [ ] command_gas_oc_bi_e
+    - [x] command_gas_oc_bi_e
     - [x] command_inner_ad_e
     - [x] command_inner_au_state_e
     - [x] command_inner_bi_e
