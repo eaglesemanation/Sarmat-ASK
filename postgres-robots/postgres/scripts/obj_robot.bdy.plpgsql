@@ -328,6 +328,7 @@ $BODY$;
 ALTER FUNCTION obj_robot."PR_LOAD_CELL_BAD"() OWNER TO postgres;
 COMMENT ON FUNCTION obj_robot."PR_LOAD_CELL_BAD"() IS 'Варианты решения проблемы: LOAD - Контейнер в целевой ячейке заклинило';
 
+
 CREATE OR REPLACE FUNCTION obj_robot.get_log_file_name(
     robot_id_ numeric)
     RETURNS text
@@ -365,6 +366,69 @@ $BODY$;
 COMMENT ON PROCEDURE obj_robot.log(bigint, text)
     IS 'Adds timestamped entry into log for specified robot
 процедура ведения журнала';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.is_robot_ready_for_cmd(
+    rid_ bigint,
+    not_connected_is_ready_ boolean DEFAULT false)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    ncir BIGINT;
+    rr robot;
+BEGIN
+    ncir := 0;
+    IF not_connected_is_ready_ THEN
+        ncir := 1;
+    END IF;
+    FOR rr in (
+        SELECT *
+            FROM robot
+            WHERE id = rid_
+                AND ((state = 0) OR (ncir = 1 AND state IN (0,8)))
+                AND is_present = 1
+                AND coalesce(command_rp_id, 0) = 0
+                AND coalesce(command_inner_assigned_id, 0) = 0
+                AND coalesce(command_inner_id, 0) = 0
+                AND coalesce(wait_for_problem_resolve, 0) = 0
+    ) LOOP
+        RETURN 1;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.is_robot_ready_for_cmd(bigint, boolean) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.is_robot_ready_for_cmd(bigint, boolean)
+    IS 'робот готов для команд перемещения контейнера?';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.is_robot_ready_for_cmd_inner(
+    rid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr robot;
+BEGIN
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE id = rid_
+                AND state = 0
+                AND is_present = 1
+                AND coalesce(command_inner_assigned_id, 0) = 0
+                AND coalesce(command_inner_id, 0) = 0
+                AND coalesce(wait_for_problem_resolve, 0) = 0
+    ) LOOP
+        RETURN 1;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.is_robot_ready_for_cmd_inner(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.is_robot_ready_for_cmd_inner(bigint)
+    IS 'робот готов для подкоманд перемещения контейнера (load/unload)?';
 
 
 CREATE OR REPLACE FUNCTION obj_robot.get_cmd_inner_npp_dest(
@@ -700,7 +764,8 @@ BEGIN
 END;
 $BODY$;
 COMMENT ON PROCEDURE obj_robot.set_command_inner(bigint, bigint, bigint, bigint, bigint, text, text, text, bigint, bigint)
-IS 'выдаем роботу простую команду типа load/Unload/Move';
+    IS 'выдаем роботу простую команду типа load/Unload/Move';
+
 
 CREATE OR REPLACE PROCEDURE obj_robot.redirect_robot_to_new_cell(
     robot_id_ bigint,
@@ -746,5 +811,6 @@ END;
 $BODY$;
 COMMENT ON PROCEDURE obj_robot.redirect_robot_to_new_cell(bigint, bigint, bigint, bigint, bigint)
     IS 'перенаправить робота в новую целевую ячейку (Unload)';
+
 
 -- vim: ft=pgsql

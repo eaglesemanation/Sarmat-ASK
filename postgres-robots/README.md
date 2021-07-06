@@ -95,8 +95,8 @@
 
 - obj_robot
     - [x] log
-    - [ ] Is_Robot_Ready_For_Cmd
-    - [ ] Is_Robot_Ready_For_Cmd_Inner
+    - [x] is_robot_ready_for_cmd
+    - [x] is_robot_ready_for_cmd_inner
     - [ ] get_ci_cnt_bc
     - [ ] get_ci_cell_src
     - [ ] get_ci_cell_dst
