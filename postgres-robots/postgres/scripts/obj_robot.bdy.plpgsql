@@ -1,3 +1,96 @@
+CREATE OR REPLACE FUNCTION obj_robot."DIR_CW"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 1;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."DIR_CW"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."DIR_CW"() IS 'DIR: по часовой, от меньшего к большему';
+CREATE OR REPLACE FUNCTION obj_robot."DIR_CCW"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."DIR_CCW"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."DIR_CCW"() IS 'DIR: против часовой, от большего к меньшему';
+CREATE OR REPLACE FUNCTION obj_robot."DIR_NONE"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN -1;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."DIR_NONE"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."DIR_NONE"() IS 'DIR: нет никакого направления';
+
+CREATE OR REPLACE FUNCTION obj_robot."CMD_LOAD"(
+    )
+    RETURNS text
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 'LOAD';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."CMD_LOAD"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."CMD_LOAD"() IS 'Символьные названия команд: LOAD';
+CREATE OR REPLACE FUNCTION obj_robot."CMD_UNLOAD"(
+    )
+    RETURNS text
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 'UNLOAD';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."CMD_UNLOAD"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."CMD_UNLOAD"() IS 'Символьные названия команд: UNLOAD';
+CREATE OR REPLACE FUNCTION obj_robot."CMD_MOVE"(
+    )
+    RETURNS text
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 'MOVE';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."CMD_MOVE"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."CMD_MOVE"() IS 'Символьные названия команд: MOVE';
+CREATE OR REPLACE FUNCTION obj_robot."CMD_INITY"(
+    )
+    RETURNS text
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 'INITY';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."CMD_INITY"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."CMD_INITY"() IS 'Символьные названия команд: INITY';
+
 CREATE OR REPLACE FUNCTION obj_robot."CMD_LOAD_TYPE_ID"(
     )
     RETURNS bigint
@@ -11,7 +104,6 @@ END;
 $BODY$;
 ALTER FUNCTION obj_robot."CMD_LOAD_TYPE_ID"() OWNER TO postgres;
 COMMENT ON FUNCTION obj_robot."CMD_LOAD_TYPE_ID"() IS 'Числовой код команды: LOAD';
-
 CREATE OR REPLACE FUNCTION obj_robot."CMD_UNLOAD_TYPE_ID"(
     )
     RETURNS bigint
@@ -25,7 +117,85 @@ END;
 $BODY$;
 ALTER FUNCTION obj_robot."CMD_UNLOAD_TYPE_ID"() OWNER TO postgres;
 COMMENT ON FUNCTION obj_robot."CMD_UNLOAD_TYPE_ID"() IS 'Числовой код команды: UNLOAD';
+CREATE OR REPLACE FUNCTION obj_robot."CMD_MOVE_TYPE_ID"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 6;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."CMD_MOVE_TYPE_ID"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."CMD_MOVE_TYPE_ID"() IS 'Числовой код команды: MOVE';
+CREATE OR REPLACE FUNCTION obj_robot."CMD_INITY_TYPE_ID"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 32;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."CMD_INITY_TYPE_ID"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."CMD_INITY_TYPE_ID"() IS 'Числовой код команды: INITY';
 
+CREATE OR REPLACE FUNCTION obj_robot."ROBOT_STATE_READY"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."ROBOT_STATE_READY"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."ROBOT_STATE_READY"() IS 'Состояние робота: готов';
+CREATE OR REPLACE FUNCTION obj_robot."ROBOT_STATE_BUSY"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 1;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."ROBOT_STATE_BUSY"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."ROBOT_STATE_BUSY"() IS 'Состояние робота: работает';
+CREATE OR REPLACE FUNCTION obj_robot."ROBOT_STATE_ERROR"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 2;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."ROBOT_STATE_ERROR"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."ROBOT_STATE_ERROR"() IS 'Состояние робота: в ошибке';
+CREATE OR REPLACE FUNCTION obj_robot."ROBOT_STATE_INIT"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 3;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."ROBOT_STATE_INIT"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."ROBOT_STATE_INIT"() IS 'Состояние робота: в режиме инициализации';
 CREATE OR REPLACE FUNCTION obj_robot."ROBOT_STATE_REPAIR"(
     )
     RETURNS bigint
@@ -38,7 +208,20 @@ BEGIN
 END;
 $BODY$;
 ALTER FUNCTION obj_robot."ROBOT_STATE_REPAIR"() OWNER TO postgres;
-COMMENT ON FUNCTION obj_robot."ROBOT_STATE_REPAIR"() IS 'Состояние робота: В починке';
+COMMENT ON FUNCTION obj_robot."ROBOT_STATE_REPAIR"() IS 'Состояние робота: в починке';
+CREATE OR REPLACE FUNCTION obj_robot."ROBOT_STATE_DISCONNECT"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 8;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot."ROBOT_STATE_DISCONNECT"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot."ROBOT_STATE_DISCONNECT"() IS 'Состояние робота: нет связи';
 
 CREATE OR REPLACE FUNCTION obj_robot."PR_UNLOAD_RETRY"(
     )
@@ -53,7 +236,6 @@ END;
 $BODY$;
 ALTER FUNCTION obj_robot."PR_UNLOAD_RETRY"() OWNER TO postgres;
 COMMENT ON FUNCTION obj_robot."PR_UNLOAD_RETRY"() IS 'Варианты решения проблемы: повторить команду UNLOAD';
-
 CREATE OR REPLACE FUNCTION obj_robot."PR_UNLOAD_HANDLE"(
     )
     RETURNS bigint
@@ -67,7 +249,6 @@ END;
 $BODY$;
 ALTER FUNCTION obj_robot."PR_UNLOAD_HANDLE"() OWNER TO postgres;
 COMMENT ON FUNCTION obj_robot."PR_UNLOAD_HANDLE"() IS 'Варианты решения проблемы: UNLOAD выполнена вручную';
-
 CREATE OR REPLACE FUNCTION obj_robot."PR_UNLOAD_MARK_BAD_REDIRECT"(
     )
     RETURNS bigint
@@ -81,7 +262,6 @@ END;
 $BODY$;
 ALTER FUNCTION obj_robot."PR_UNLOAD_MARK_BAD_REDIRECT"() OWNER TO postgres;
 COMMENT ON FUNCTION obj_robot."PR_UNLOAD_MARK_BAD_REDIRECT"() IS 'Варианты решения проблемы: UNLOAD - пометить целевую ячейку как плохую и перенаправить контейнер в другую ячейку';
-
 CREATE OR REPLACE FUNCTION obj_robot."PR_UNLOAD_INDICATE_REDIRECT"(
     )
     RETURNS bigint
@@ -95,7 +275,6 @@ END;
 $BODY$;
 ALTER FUNCTION obj_robot."PR_UNLOAD_INDICATE_REDIRECT"() OWNER TO postgres;
 COMMENT ON FUNCTION obj_robot."PR_UNLOAD_INDICATE_REDIRECT"() IS 'Варианты решения проблемы: UNLOAD - Указать какой контейнер находится в ячейке и перенаправить текущий контейнер в другую ячейку';
-
 CREATE OR REPLACE FUNCTION obj_robot."PR_LOAD_RETRY"(
     )
     RETURNS bigint
@@ -109,7 +288,6 @@ END;
 $BODY$;
 ALTER FUNCTION obj_robot."PR_LOAD_RETRY"() OWNER TO postgres;
 COMMENT ON FUNCTION obj_robot."PR_LOAD_RETRY"() IS 'Варианты решения проблемы: повторить LOAD';
-
 CREATE OR REPLACE FUNCTION obj_robot."PR_LOAD_HANDLE"(
     )
     RETURNS bigint
@@ -123,7 +301,6 @@ END;
 $BODY$;
 ALTER FUNCTION obj_robot."PR_LOAD_HANDLE"() OWNER TO postgres;
 COMMENT ON FUNCTION obj_robot."PR_LOAD_HANDLE"() IS 'Варианты решения проблемы: LOAD выполнена вручную';
-
 CREATE OR REPLACE FUNCTION obj_robot."PR_LOAD_CELL_EMPTY"(
     )
     RETURNS bigint
@@ -137,7 +314,6 @@ END;
 $BODY$;
 ALTER FUNCTION obj_robot."PR_LOAD_CELL_EMPTY"() OWNER TO postgres;
 COMMENT ON FUNCTION obj_robot."PR_LOAD_CELL_EMPTY"() IS 'Варианты решения проблемы: LOAD - целевая ячейка пуста';
-
 CREATE OR REPLACE FUNCTION obj_robot."PR_LOAD_CELL_BAD"(
     )
     RETURNS bigint
