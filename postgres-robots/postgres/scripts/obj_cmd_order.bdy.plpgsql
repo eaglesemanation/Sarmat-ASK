@@ -1,0 +1,140 @@
+CREATE OR REPLACE FUNCTION obj_cmd_order.get_rasdoc_rest(
+	doc_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+    cr BIGINT;
+    dc doc_content;
+BEGIN
+    res := 0;
+    FOR dc IN (
+        SELECT *
+            FROM doc_content
+            WHERE doc_id = doc_id_
+    ) LOOP
+        --dbms_output.put_line(doc_id_||' good_id='|| dc.good_id||' gdp_id='|| dc.gdp_id||' qty= '||dc.quantity);
+        cr := obj_cmd_order.get_ras_gd_rest(doc_id_, dc.good_id, dc.gdp_id);
+        --dbms_output.put_line('    rest='||cr);
+        res := res + cr;
+    END LOOP;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_order.get_rasdoc_rest(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_order.get_rasdoc_rest(bigint)
+    IS 'TODO';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_order.get_ras_gd_rest(
+	doc_id_ bigint,
+    gd_id_ bigint,
+    party_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+    was BIGINT;
+    wasg BIGINT;
+    idold TEXT;
+    dd DATE;
+    is_party_c BIGINT;
+    rparty_id_ BIGINT;
+    cnt BIGINT;
+    pname_ TEXT;
+BEGIN
+    SELECT id INTO idold
+        FROM good_desc
+        WHERE good_desc_id = gd_id_;
+    --dbms_output.put_line('  gd.ID='||idold);
+    SELECT is_party_calc INTO is_party_c
+        FROM repository;
+    IF (is_party_c = 1) THEN
+        IF coalesce(party_id_, 0) <> 0 THEN
+            rparty_id_ := party_id_;
+        ELSE
+            SELECT id INTO rparty_id_
+                FROM gd_party
+                WHERE pname IS null
+                    AND gd_id = gd_id_;
+        END IF;
+        --dbms_output.put_line('  rparty_id_='||rparty_id_);
+        IF coalesce(rparty_id_, 0) > 0 THEN
+            SELECT pname INTO pname_
+                FROM gd_party
+                WHERE id = rparty_id_;
+        ELSE
+            pname_ := '';
+        END IF;
+        -- смотрим - нет ли нехватки товара
+        SELECT count(*) INTO cnt
+            FROM command_order
+            WHERE order_number::bigint = doc_id_
+                AND good_desc_id = idold
+                AND gd_party_id = rparty_id_
+                AND state = 2;
+        IF (cnt > 0) THEN
+            --dbms_output.put_line('  Нехватка товара');
+            RETURN 0;
+        END IF;
+        SELECT coalesce(sum(quantity), 0) INTO res
+            FROM doc_content
+            WHERE doc_id = doc_id_
+                AND good_id = gd_id_
+                AND (
+                    coalesce(gdp_id, 0) = coalesce(party_id_, 0)
+                    OR
+                    pname_ IS null AND coalesce(gdp_id, 0) <= 0
+                );
+        --dbms_output.put_line('  res='||res);
+        SELECT date_order INTO dd
+            FROM doc
+            WHERE id = doc_id_;
+        SELECT coalesce(sum(quantity), 0) INTO was
+            FROM command_order
+            WHERE good_desc_id = idold
+                AND coalesce(gd_party_id, 0) = coalesce(rparty_id_,0)
+                AND command_type_id = 16
+                AND order_number::bigint = doc_id_
+                AND date_time_create >= dd - 30;
+        --dbms_output.put_line('  was='||was);
+        SELECT coalesce(sum(quantity), 0) INTO wasg
+            FROM command_gas
+            WHERE good_desc_id = idold
+                AND coalesce(gd_party_id, 0) = coalesce(rparty_id_, 0)
+                AND command_type_id = 24
+                AND pri_doc_number::bigint = doc_id_
+                AND date_time_create >= dd - 30;
+        --dbms_output.put_line('  wasg='||wasg);
+    ELSE
+        SELECT sum(quantity) INTO res
+            FROM doc_content
+            WHERE doc_id = doc_id_
+                AND good_id = gd_id_
+                AND coalesce(gdp_id, 0) = coalesce(party_id_, 0);
+        SELECT date_order INTO dd
+            FROM doc
+            WHERE id = doc_id_;
+        SELECT coalesce(sum(quantity), 0) INTO was
+            FROM command_gas
+            WHERE good_desc_id = idold
+                AND coalesce(gd_party_id, 0) = coalesce(party_id_, 0)
+                AND command_type_id = 24
+                AND pri_doc_number::bigint = doc_id_
+                AND date_time_create >= dd - 30;
+        wasg := 0;
+    END IF;
+    RETURN res - was - wasg;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_order.get_ras_gd_rest(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_order.get_ras_gd_rest(bigint, bigint, bigint)
+    IS 'TODO';
+
+-- vim: ft=pgsql

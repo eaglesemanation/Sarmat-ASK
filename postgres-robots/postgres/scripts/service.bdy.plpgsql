@@ -156,6 +156,54 @@ COMMENT ON FUNCTION service.get_another_robot_id(bigint)
     IS 'взять второй робот на огурце';
 
 
+CREATE OR REPLACE FUNCTION service.get_rp_param_number(
+    cpn text,
+    def bigint DEFAULT 0)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cp repository_param;
+BEGIN
+    FOR cp IN (
+        SELECT *
+            FROM repository_param
+            WHERE trim(upper(name)) = trim(upper(cpn))
+    ) LOOP
+        RETURN coalesce(cp.value_number, 0);
+    END LOOP;
+    RETURN def;
+END;
+$BODY$;
+ALTER FUNCTION service.get_rp_param_number(text, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION service.get_rp_param_number(text, bigint)
+    IS 'взять числовой параметр всего АСК';
+
+
+CREATE OR REPLACE FUNCTION service.get_container_sum_qty(
+    cnt_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+BEGIN
+    res := 0;
+    SELECT coalesce(sum(quantity), 0) INTO res
+        FROM container_content
+        WHERE container_id = cnt_id_;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION service.get_container_sum_qty(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION service.get_container_sum_qty(bigint)
+    IS 'сколько штук товара в контейнере?';
+
+
 CREATE OR REPLACE PROCEDURE service.mark_cell_as_free(
     cid bigint,
     container_id_ bigint,

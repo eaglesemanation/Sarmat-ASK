@@ -40,28 +40,28 @@
 - obj_ask
     - [ ] Form_Commands
     - [ ] Log
-    - [ ] Is_can_accept_cmd
+    - [x] is_can_accept_cmd
     - [ ] Is_Cell_Locked_By_Cmd
-    - [ ] is_enable_container_accept
+    - [x] is_enable_container_accept
     - [ ] Get_ASK_name
     - [ ] get_cell_name
     - [ ] get_cmd_max_priority
     - [ ] Get_Cnt_BC_By_ID
     - [ ] Get_Cur_Max_Cmd_Priority
-    - [ ] get_good_desc_id_by_id
+    - [x] get_good_desc_id_by_id
     - [ ] Get_Desktop_Container_History
     - [ ] get_shelving_fullness
     - [ ] Get_Work_Status
-    - [ ] calc_distance
+    - [x] calc_distance
     - [ ] calc_distance_on_way
     - [ ] Change_Work_Status
     - [ ] To_Pause
     - [ ] To_Work
     - [ ] Shelving_Need_Redraw_Clear
     - [ ] Shelving_Need_Redraw_Clear
-    - [ ] check_gdrest_consistance
+    - [x] check_gdrest_consistance
     - [x] global_error_log
-    - [ ] Set_Command
+    - [x] set_command
     - [ ] Gen_Cmd_Err_Rep
     - [ ] workload_info
 
@@ -69,7 +69,7 @@
     - [ ] Form_Commands
     - [ ] crash_test_cmd_Gas_tact
     - [ ] crash_test_cmd_accept
-    - [ ] Get_Acc_Cell_Src_npp_RP
+    - [x] get_acc_cell_src_npp_rp
     - [ ] get_always_out_bcg
     - [ ] get_cg_was_cnt_planned
     - [ ] get_container_last_rp
@@ -78,17 +78,17 @@
     - [ ] prav_cg_status
     - [ ] presence_in_side
     - [ ] presence_in_side_accurance
-    - [ ] get_cell_name_for_accept
+    - [x] get_cell_name_for_accept
     - [ ] is_cg_otbor_cell_out_unlock
-    - [ ] parse_cg_cc
+    - [x] parse_cg_cc
 
 - obj_cmd_order
     - [ ] Form_Commands
     - [ ] get_Order_Content_Out_Picked
     - [ ] get_Order_Content_Out_Promis
     - [ ] get_container_izlish
-    - [ ] get_ras_gd_rest
-    - [ ] get_rasdoc_rest
+    - [x] get_ras_gd_rest
+    - [x] get_rasdoc_rest
     - [ ] is_rashod_shortage
     - [ ] Order_Content_Out_Doz_on_dfct
     - [ ] Cancel_Error_Cmd_Cont_Out
@@ -148,7 +148,7 @@
     - [ ] crash_test_rzn
     - [ ] Is_Active_Command_RP
     - [ ] is_cell_cmd_track_lock
-    - [ ] is_cell_locked_by_repaire
+    - [x] is_cell_locked_by_repaire
     - [x] is_exists_cell_type
     - [ ] is_idle
     - [ ] Is_Npp_Actual_Info
@@ -169,11 +169,11 @@
     - [x] has_free_cell_by_cnt
     - [x] add_track_npp
     - [x] calc_distance_by_dir
-    - [ ] Calc_Min_Distance
+    - [x] calc_min_distance
     - [ ] Calc_Min_Distance
     - [x] calc_repair_robots
     - [ ] calc_robot_nearest
-    - [ ] calc_track_free_cell
+    - [x] calc_track_free_cell
     - [x] inc_spacing_of_robots
     - [ ] in
     - [x] inc_npp
@@ -183,10 +183,10 @@
     - [x] get_cell_name_by_track_id
     - [ ] Get_Cell_Name_By_Track_Npp
     - [x] get_cell_shelving_id
-    - [ ] Get_Cell_Track_Npp
+    - [x] get_cell_track_npp
     - [ ] get_container_cell_sname
     - [x] get_cmd_dir_text
-    - [ ] get_cmd_max_priority
+    - [x] get_cmd_max_priority
     - [ ] Get_Cmd_RP_Min_NS_ID
     - [ ] Get_Cmd_RP_Min_NS_ID
     - [ ] Get_Cmd_RP_Order_After_Min
@@ -236,7 +236,7 @@
     - [ ] get_cells_for_ustirovka
     - [ ] get_cells_for_ustirovka_short
     - [ ] get_cnt_name_on_robot
-    - [ ] get_container_sum_qty
+    - [x] get_container_sum_qty
     - [ ] get_corr_shelving_id
     - [ ] get_free_rest
     - [ ] get_last_cmd
@@ -246,7 +246,7 @@
     - [ ] get_robot_ci_cell_dst
     - [ ] get_robot_name
     - [ ] get_robot_stop_param
-    - [ ] get_rp_param_number
+    - [x] get_rp_param_number
     - [ ] get_rp_param_string
     - [ ] get_sec
     - [x] get_ust_cell_dir
@@ -306,10 +306,10 @@
     - [x] command_bi_e
     - [x] command_bu_cis_e
     - [x] command_bu_state_e
-    - [ ] command_gas_ad_e
-    - [ ] command_gas_aiu
-    - [ ] command_gas_bi_e
-    - [ ] command_gas_bu_state_e
+    - [x] command_gas_ad_e
+    - [x] command_gas_aiu_e
+    - [x] command_gas_bi_e
+    - [x] command_gas_bu_state_e
     - [ ] command_gas_oc_bi_e
     - [x] command_inner_ad_e
     - [x] command_inner_au_state_e

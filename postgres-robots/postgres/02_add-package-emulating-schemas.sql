@@ -21,3 +21,15 @@ COMMENT ON SCHEMA obj_rpart IS 'Migrated obj_rpart package';
 DROP SCHEMA IF EXISTS obj_ask;
 CREATE SCHEMA obj_ask AUTHORIZATION postgres;
 COMMENT ON SCHEMA obj_ask IS 'Migrated obj_ask package';
+
+DROP SCHEMA IF EXISTS obj_cmd_order;
+CREATE SCHEMA obj_cmd_order AUTHORIZATION postgres;
+COMMENT ON SCHEMA obj_cmd_order IS 'Migrated obj_cmd_order package';
+
+DROP SCHEMA IF EXISTS obj_cmd_gas;
+CREATE SCHEMA obj_cmd_gas AUTHORIZATION postgres;
+COMMENT ON SCHEMA obj_cmd_gas IS 'Migrated obj_cmd_gas package';
+
+DROP SCHEMA IF EXISTS obj_doc_expense;
+CREATE SCHEMA obj_doc_expense AUTHORIZATION postgres;
+COMMENT ON SCHEMA obj_doc_expense IS 'Migrated obj_doc_expense package';

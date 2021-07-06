@@ -77,6 +77,99 @@ COMMENT ON FUNCTION obj_rpart.get_cell_name_by_track_id(bigint)
     IS 'получить имя ячейки по ID трека (для команды робота move)';
 
 
+CREATE OR REPLACE FUNCTION obj_rpart.get_cell_track_npp(
+    cell_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cc cell;
+BEGIN
+    FOR cc IN (
+        SELECT track_npp
+            FROM cell
+            WHERE id = cell_id_
+    ) LOOP
+        RETURN cc.track_npp;
+    END LOOP;
+    RETURN null;
+end;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_cell_track_npp(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_cell_track_npp(bigint)
+    IS 'взять номер трека по ID ячейки';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.calc_track_free_cell(
+    rpid_ bigint,
+    track_npp_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt_ BIGINT;
+BEGIN
+    SELECT count(*) INTO cnt_
+        FROM cell
+        WHERE repository_part_id = rpid_
+            AND track_npp = track_npp_
+            AND hi_level_type = 1
+            AND is_full = 0
+            AND NOT exists(
+                SELECT *
+                    FROM cell_cmd_lock
+                    WHERE cell_id = cell.id
+            );
+    RETURN cnt_;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.calc_track_free_cell(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.calc_track_free_cell(bigint, bigint)
+    IS 'посчитать сколько в треке соводных ячеек для хранения';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_cmd_max_priority(
+    rp_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+    res BIGINT;
+BEGIN
+    SELECT count(*) INTO cnt
+        FROM command_rp
+        WHERE state IN (0,1)
+            AND command_type_id = 3
+            AND rp_id = rp_id_
+            AND date_time_begin IS null;
+    IF (cnt = 0) THEN -- нет запущенных команд
+        RETURN 0;
+    ELSE
+        SELECT coalesce(max(priority), 0) INTO res
+            FROM command_rp
+            WHERE command_type_id = 3
+                AND state IN (0,1)
+                AND rp_id = rp_id_
+                AND date_time_begin IS null;
+        RETURN res;
+    END IF;
+    RETURN 0;
+EXCEPTION WHEN others THEN
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_cmd_max_priority(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_cmd_max_priority(bigint)
+    IS 'получить максимальный приоритет активной команды по подскладу';
+
+
 CREATE OR REPLACE FUNCTION obj_rpart.get_cmd_dir_text(
     dir_ bigint)
     RETURNS text
@@ -214,6 +307,43 @@ ALTER FUNCTION obj_rpart.add_track_npp(bigint, bigint, bigint, bigint) OWNER TO 
 COMMENT ON FUNCTION obj_rpart.add_track_npp(bigint, bigint, bigint, bigint)
     IS 'Adds section to track.
 примитив для добавления к номеру трека столько-то секций';
+
+
+-- FIXME: Duplicate of obj_ask.calc_distance
+CREATE OR REPLACE FUNCTION obj_rpart.calc_min_distance(
+    rp_type bigint,
+    max_npp bigint,
+    n1 bigint,
+    n2 bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+    nn1 BIGINT;
+    nn2 BIGINT;
+BEGIN
+    IF (n2 < n1) THEN
+        nn1 := n2;
+        nn2 := n1;
+    ELSE
+        nn1 := n1;
+        nn2 := n2;
+    END IF;
+    res := nn2 - nn1;
+    IF (rp_type = 1) THEN -- только для кольцевого
+        IF (max_npp - nn2 + nn1) < res THEN
+            res := max_npp - nn2 + nn1;
+        END IF;
+    END IF;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.calc_min_distance(bigint, bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.calc_min_distance(bigint, bigint, bigint, bigint)
+    IS 'вычисляет расстояние между двумя треками npp по оптимальному направлению';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.correct_npp_to_track_order(
@@ -1527,6 +1657,71 @@ ALTER FUNCTION obj_rpart.is_exists_cell_type(bigint, bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_rpart.is_exists_cell_type(bigint, bigint)
     IS 'Checks if there are any cells of specified type that have no erorrs.
 есть ли неошибочные ячейки указанного подтипа на складе?';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.is_cell_locked_by_repaire(
+    cell_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    onp BIGINT;
+    cnp BIGINT;
+    cc cell;
+    rr robot;
+    tla track;
+    rp RECORD;
+BEGIN
+    FOR cc IN (
+        SELECT *
+            FROM cell
+            WHERE id = cell_id_
+    ) LOOP
+        FOR rr IN (
+            SELECT *
+                FROM robot
+                WHERE repository_part_id = cc.repository_part_id
+                    AND state = 6
+        ) LOOP
+            FOR tla IN (
+                SELECT *
+                    FROM track
+                    WHERE repository_part_id = rr.repository_part_id
+                        AND locked_by_robot_id = rr.id
+                        AND npp = cc.track_npp
+            ) LOOP
+                RETURN 1;
+            END LOOP;
+            FOR rp IN (
+                SELECT id, spacing_of_robots sor, max_npp
+                    FROM repository_part
+                    WHERE id = cc.repository_part_id
+            ) LOOP
+                --cnp:=rr.current_track_npp;
+                -- по часовой стрелке
+                onp := rr.current_track_npp;
+                FOR dir IN 0..1 LOOP
+                    FOR delt IN 1..rp.sor*2 LOOP
+                        cnp := obj_rpart.inc_spacing_of_robots(rr.current_track_npp, dir,delt, rp.id, 0, rp.max_npp);
+                        IF (cnp <> onp) THEN -- чтоб не застряли на туда, куда нельзя пройти
+                            IF (cnp = cc.track_npp) THEN
+                                RETURN 1;
+                            END IF;
+                        END IF;
+                        onp := cnp;
+                    END LOOP;
+                END LOOP;
+            END LOOP;
+        END LOOP;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.is_cell_locked_by_repaire(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.is_cell_locked_by_repaire(bigint)
+    IS 'заблокирована ли ячейка роботом в состоянии починки?';
 
 
 CREATE OR REPLACE PROCEDURE obj_rpart.change_cmd_rp_goal(

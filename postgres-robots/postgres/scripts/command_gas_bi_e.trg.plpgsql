@@ -1,0 +1,2118 @@
+CREATE OR REPLACE FUNCTION command_gas_bi_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+    --error_name TEXT;
+    s TEXT;
+    --ss TEXT;
+    --scnt BIGINT;
+    --scnt2 BIGINT;
+    --sgd TEXT;
+    sn TEXT;
+    --snotes TEXT;
+    cell_id_ BIGINT;
+    --cell_dest_id_ BIGINT;
+    container_id_ BIGINT;
+    cnt_type BIGINT;
+    rp_S_id BIGINT;
+    rpt BIGINT;
+    cell_sname_ TEXT;
+    --wf BIGINT;
+    wcnt_id BIGINT;
+    cc_id_ BIGINT;
+    scheck BIGINT;
+    cnt_id BIGINT;
+    cmgd BIGINT;
+    qty_rest BIGINT;
+    qty_need BIGINT;
+    qty_by_cc BIGINT;
+    sb_firm BIGINT;
+    is_party_c BIGINT;
+    fullness BIGINT;
+    icasc BIGINT;
+    lloc BIGINT;
+    gd_id_ BIGINT;
+    gdp_id__ BIGINT;
+    IAEC BIGINT;
+    new_rp_id BIGINT;
+    all_is_ok BOOLEAN;
+    csnpp BIGINT;
+    csorient TEXT;
+    maxnpp BIGINT;
+    pri_ BIGINT;
+    rp repository;
+    rr repository;
+    co RECORD;
+    cgcnt command_gas;
+    cb cell_cmd_lock;
+    cmd RECORD;
+    cmd_ret command_gas;
+    ccgd RECORD;
+    csb cell;
+    cc cell;
+    cc2 container_collection;
+    ccc container_collection_content;
+    frm RECORD;
+    emp_cont RECORD;
+    del_cc container_content;
+    cntr container;
+    vrv cell;
+    del_cq RECORD;
+    add_cq RECORD;
+    add_cc RECORD;
+    ccel RECORD;
+    cgl command_gas;
+BEGIN
+    NEW.user_name := current_user;
+    NEW.state_ind := NEW.state;
+
+    IF (NEW.id IS null) THEN
+        SELECT nextval('seq_command_gas') INTO NEW.id;
+        NEW.date_time_create := LOCALTIMESTAMP;
+        NEW.time_create := LOCALTIMESTAMP;
+    END IF;
+    SELECT container_multi_gd,
+        storage_by_firm,
+        is_cell_accept_strong_check,
+        is_party_calc,
+        is_allow_store_empty_cnt
+        INTO cmgd, sb_firm, icasc, is_party_c, IAEC
+        FROM repository;
+
+    ------------------------------------------------------
+    -- проверки, в случае, если без рабочего стола работа
+    ------------------------------------------------------
+    FOR rp IN (
+        SELECT *
+            FROM repository
+            WHERE coalesce(is_allow_desktop, 0) = 0
+    ) LOOP
+        IF (NEW.command_type_id IN (12,27,11,14)) THEN
+            CALL obj_doc_expense.check_last_doc_end(NEW.pri_doc_number);
+        END IF;
+    END LOOP;
+
+    --------------------------
+    -- GoodDesc.AddInfo
+    --------------------------
+    IF (NEW.command_type_id = 10) THEN
+        IF (NEW.good_desc_id IS null) THEN
+            RAISE EXCEPTION 'Good_desc_id must be not Null!'
+                USING errcode = 50070;
+        END IF;
+        IF (NEW.abc_rang IS null) THEN
+            RAISE EXCEPTION 'ABC_RANG must be not Null!'
+                USING errcode = 50070;
+        END IF;
+        SELECT count(*) INTO cnt
+            FROM good_desc
+            WHERE id = NEW.good_desc_id;
+        IF (cnt = 0) THEN
+            -- добавляем
+            INSERT INTO good_desc (
+                id, name,
+                mass_1, mass_box,
+                quantity_box, abc_rang
+            ) VALUES (
+                NEW.good_desc_id, NEW.good_desc_name,
+                NEW.mass_1, NEW.mass_box,
+                NEW.quantity_box, NEW.abc_rang
+            );
+        ELSE
+            -- обновляем
+            UPDATE good_desc
+                SET name = NEW.Good_desc_name,
+                    mass_1 = NEW.mass_1,
+                    mass_box = NEW.mass_box,
+                    quantity_box = NEW.quantity_box,
+                    abc_rang = NEW.abc_rang,
+                    cubage = NEW.cubage,
+                    max_pack = NEW.max_pack,
+                    sc_t = NEW.sc_t,
+                    rc_t = NEW.rc_t
+                WHERE id = NEW.good_desc_id;
+        END IF;
+        NEW.state := 5;
+        NEW.state_ind := NEW.state;
+
+    --------------------------
+    -- Container.Accept
+    --------------------------
+    ELSIF (NEW.command_type_id = 11) THEN
+        IF coalesce(NEW.container_id, 0) <> 0 THEN
+            BEGIN
+                SELECT barcode INTO NEW.container_barcode
+                    FROM container
+                    WHERE id = NEW.container_id;
+            EXCEPTION WHEN others THEN
+                INSERT INTO container (
+                    id, barcode,
+                    type,
+                    location, cell_id
+                ) VALUES (
+                    NEW.container_id, NEW.container_barcode,
+                    coalesce(NEW.container_type, 0),
+                    0, NEW.cell_id
+                ) RETURNING id INTO container_id_;
+            END;
+        END IF;
+        IF coalesce(NEW.cell_id, 0) <> 0 THEN
+            SELECT sname, repository_part_id
+                INTO NEW.cell_name, NEW.rp_id
+                FROM cell
+                WHERE id = NEW.cell_id;
+        END IF;
+
+        -- проверка на не NULL
+        IF (NEW.container_barcode IS null) THEN
+            RAISE EXCEPTION 'CONTAINER_BARCODE must be not Null!'
+                USING errcode = 50070;
+        END IF;
+        IF (NEW.content IS null) AND (IAEC <> 1) THEN
+            RAISE EXCEPTION 'content must be not Null!'
+                USING errcode = 50070;
+        END IF;
+        --RAISE EXCEPTION(-20070,length(NEW.content)||' '||NEW.content);
+        CALL service.log2file('Container.Accept ' || NEW.content);
+        -- проверка на фирму
+        IF (sb_firm = 1) AND coalesce(NEW.firm_id, 0) = 0 THEN
+            RAISE EXCEPTION 'firm must be not Null!'
+                USING errcode = 50070;
+        END IF;
+        -- склад по умолчанию
+        IF (NEW.rp_id IS null) THEN
+            SELECT count(*) INTO cnt
+                FROM repository_part rp
+                WHERE purpose_id IN (1,3);
+            IF (cnt = 1) THEN
+                SELECT id INTO NEW.rp_id
+                    FROM repository_part rp
+                    WHERE purpose_id IN (1,3);
+            ELSE
+                RAISE EXCEPTION '<rp_id> must be assigned!'
+                    USING errcode = 50070;
+            END IF;
+        END IF;
+        -- проверка на № документа
+        FOR rr IN (
+            SELECT name
+                FROM repository
+                WHERE coalesce(is_strong_prihod_check, 0) = 1
+        ) LOOP
+            IF (NEW.pri_doc_number IS null) THEN
+                RAISE EXCEPTION 'Strong Check is ON on repository! Need debit document number!'
+                    USING errcode = 50070;
+            END IF;
+        END LOOP;
+        -- ячейка по умолчанию
+        IF (NEW.cell_name IS null) THEN
+            SELECT count(*) INTO cnt
+                FROM cell
+                WHERE repository_part_id = NEW.rp_id
+                    AND hi_level_type IN (9,15,16)
+                    AND is_error <> 1;
+            IF (cnt = 1) THEN
+                SELECT sname INTO NEW.cell_name
+                    FROM cell
+                    WHERE repository_part_id = NEW.rp_id
+                        AND hi_level_type IN (9,15,16)
+                        AND is_error <> 1;
+            ELSE
+                RAISE EXCEPTION 'cell_name  must be not Null!'
+                    USING errcode = 50070;
+            END IF;
+        END IF;
+        -- определяем ячейку
+        IF (NEW.cell_name = 'Desktop') THEN
+            -- тут у нас вариант тупо на рабочий стол положили для дальнейшей работы
+            IF (NEW.content IS null) THEN
+                RAISE EXCEPTION 'content must be not Null!'
+                    USING errcode = 50070;
+            END IF;
+            lloc := 0;
+            -- Null;
+        ELSE
+            lloc := 1;
+            SELECT count(*) INTO cnt
+                FROM cell
+                WHERE repository_part_id = NEW.rp_id
+                    AND sname = NEW.cell_name;
+            IF (cnt = 0) THEN
+                RAISE EXCEPTION 'bad <cell_name> or <rp_id>!'
+                    USING errcode = 50070;
+            ELSE
+                SELECT id, container_id, is_full
+                    INTO cell_id_, wcnt_id, fullness
+                    FROM cell
+                    WHERE repository_part_id = NEW.rp_id
+                        AND sname = NEW.cell_name;
+            END IF;
+            FOR co IN (
+                SELECT *
+                    FROM cell
+                    WHERE id = cell_id_
+            ) LOOP
+                IF (co.hi_level_type NOT IN (15,9,14,16))
+                    OR (co.is_error = 1)
+                THEN
+                    RAISE EXCEPTION 'The cell % is bad type or error type!', NEW.cell_name
+                        USING errcode = 50070;
+                END IF;
+            END LOOP;
+        END IF;
+
+        IF coalesce(NEW.cell_name, '-') <> 'Desktop' THEN
+            -- проверяем, а есть ли свободные ячейки
+            cnt := exists(
+                SELECT *
+                    FROM cell c
+                    WHERE hi_level_type = 1
+                        AND is_full = 0
+                        AND is_error = 0
+                        AND service.is_cell_cmd_locked(c.id) = 0
+            )::INT::BIGINT;
+            IF (cnt = 0) THEN
+                RAISE EXCEPTION 'The repository is overload (Desktop)!'
+                    USING errcode = 50070;
+            END IF;
+            -- в случае строгой проверки проверяем, а свободна ли ячейка
+            IF (icasc = 1) THEN
+                SELECT is_full INTO cnt
+                    FROM cell
+                    WHERE id = cell_id_;
+                IF (cnt > 0) THEN
+                    RAISE EXCEPTION 'The cell <%> in rp % is full!', NEW.cell_name, NEW.rp_id
+                        USING errcode = 50070;
+                END IF;
+            END IF;
+            --  проверяем, а не насували ли команд кладовщики
+            SELECT count(*) INTO cnt
+                FROM command_gas cg
+                WHERE state = 1
+                    AND rp_id = NEW.rp_id
+                    AND cell_name = NEW.cell_name
+                    AND command_type_id = NEW.command_type_id
+                    AND NOT exists(
+                        SELECT *
+                            FROM command
+                            WHERE command_gas_id = cg.id
+                    );
+            IF (cnt > 0) THEN
+                RAISE EXCEPTION 'Command buffer for cell % is overload! Cnt=%', NEW.cell_name, cnt
+                    USING errcode = 50070;
+            END IF;
+            -- проверяем, а не лежит ли в ячейке контейнер с команды, иной чем прием товара
+            IF (fullness > 0) AND coalesce(wcnt_id, 0) <> 0 THEN -- уже лежит какой-то контейнер в той ячейке, куда ложим
+                FOR cgcnt in (
+                    SELECT *
+                        FROM command_gas
+                        WHERE container_barcode = (
+                            SELECT barcode
+                                FROM container
+                                WHERE id = wcnt_id
+                            )
+                            AND command_type_id IN (14,12,18,11)
+                        ORDER BY id DESC
+                ) LOOP
+                    IF (cgcnt.command_type_id IN (14,12)) THEN
+                        SELECT barcode INTO s
+                            FROM container
+                            WHERE id = wcnt_id;
+                        RAISE EXCEPTION 'Cell % is busy by another container %!', NEW.cell_name, s
+                            USING errcode = 50070;
+                    END IF;
+                    EXIT;
+                END LOOP;
+            END IF;
+            -- проверяем, а не идет ли в ячейку товар по командам
+            FOR cb IN (
+                SELECT *
+                    FROM cell_cmd_lock
+                    WHERE cell_id = cell_id_
+            ) LOOP
+                FOR cmd IN (
+                    SELECT cg.*
+                        FROM command c
+                        INNER JOIN command_gas cg
+                            ON c.command_gas_id = cg.id
+                        WHERE c.id = cb.cmd_id
+                ) LOOP
+                    IF (cmd.command_type_id IN (14,12)) THEN
+                        RAISE EXCEPTION 'Cell % is blocked by another command %!', NEW.cell_name, cb.cmd_id
+                            USING errcode = 50070;
+                    END IF;
+                END LOOP;
+            END LOOP;
+        END IF;
+
+        -- ищем контейнер
+        SELECT count(*) INTO cnt
+            FROM container
+            WHERE barcode = NEW.container_barcode;
+        IF (cnt = 0) THEN -- нет контейнера
+            SELECT strong_container_check INTO scheck
+                FROM repository;
+            IF (scheck = 1) THEN -- строгая проверка
+                RAISE EXCEPTION 'Container % is not registered in system!', NEW.container_barcode
+                    USING errcode = 50070;
+            END IF;
+            INSERT INTO container (
+                barcode,
+                type,
+                location, cell_id, firm_id
+            ) VALUES (
+                NEW.container_barcode,
+                coalesce(NEW.container_type, 0),
+                lloc, cell_id_, NEW.firm_id
+            ) RETURNING id INTO container_id_;
+        ELSE
+            SELECT count(*) INTO cnt
+                FROM container
+                WHERE barcode = NEW.container_barcode
+                    AND location = 1;
+            IF (cnt <> 0) THEN
+                RAISE EXCEPTION 'Container is already in repository!'
+                    USING errcode = 50070;
+            END IF;
+            SELECT count(*) INTO cnt
+                FROM command_gas
+                WHERE container_barcode = NEW.container_barcode
+                    AND state IN (1,3)
+                    AND id <> NEW.id;
+            IF (cnt <> 0) THEN
+                RAISE EXCEPTION 'Container is already in work!'
+                    USING errcode = 50070;
+            END IF;
+            SELECT id INTO container_id_
+                FROM container
+                WHERE barcode = NEW.container_barcode;
+            DELETE FROM container_content
+                WHERE container_id = container_id_;
+            UPDATE container
+                SET cell_id = cell_id_, firm_id = NEW.firm_id
+                WHERE id = container_id_;
+        END IF;
+        NEW.container_id := container_id_;
+
+        -- проверяем, а не дадена ли уже команда на возврат из этой же ячейки
+        FOR cmd_ret IN (
+            SELECT *
+                FROM command_gas
+                WHERE command_type_id = 18
+                    AND rp_id = NEW.rp_id
+                    AND NEW.cell_name = cell_name
+                    AND state = 0
+        ) LOOP
+            RAISE EXCEPTION 'Commad conflict found!'
+                USING errcode = 50070;
+        END LOOP;
+
+        -- проверяем что есть место
+        IF obj_ask.is_enable_container_accept(NEW.rp_id, NEW.container_id) = 0 THEN
+            RAISE EXCEPTION 'Repository overload!'
+                USING errcode = 50070;
+        END IF;
+
+        -- заполненность контейнера прописываем
+        IF (NEW.container_fullness IS NOT null) THEN
+            IF NOT (NEW.container_fullness BETWEEN 0 AND 1) THEN
+                RAISE EXCEPTION 'Container fullness must be between 0 and 1!'
+                    USING errcode = 50070;
+            END IF;
+            UPDATE container
+                SET fullness = NEW.container_fullness
+                WHERE id = container_id_;
+        END IF;
+        -- название контейнера
+        IF (NEW.notes IS NOT null) THEN
+            UPDATE container
+                SET notes = NEW.notes
+                WHERE id = container_id_;
+        END IF;
+        -- check is opened container collection
+        SELECT count(*) INTO cnt
+            FROM container_collection
+            WHERE state = 0
+                AND container_id = NEW.container_id;
+        IF (cnt <> 0) THEN
+            RAISE EXCEPTION 'Container collection on container % is still opened!', NEW.container_barcode
+                USING errcode = 50003;
+        END IF;
+
+        -- а есть ли место
+        SELECT type INTO cnt
+            FROM container
+            WHERE id = NEW.container_id;
+        IF obj_rpart.has_free_cell(cnt) = 0 THEN
+            RAISE EXCEPTION '% %', service.ml_get_rus_eng_val(
+                    'Склад переполнен! Мест нет!',
+                    'Repository is overload (by type)!'
+                ), cnt
+                USING errcode = 50003;
+        END IF;
+
+        -- разбор строки состава принимаемого контейнера
+        IF (NEW.content IS NOT null) THEN
+            CALL obj_cmd_gas.parse_cg_cc(NEW.id, NEW.content, cmgd);
+            SELECT count(*) INTO cnt
+                FROM command_gas_container_content cgcc
+                WHERE command_gas_id = NEW.id
+                    AND gdp_id IS NOT null
+                    AND NOT exists(
+                        SELECT *
+                            FROM gd_party gdp
+                            INNER JOIN good_desc gd
+                                ON gd.good_desc_id = gdp.gd_id
+                            WHERE cgcc.gdp_id = gdp.id
+                                AND cgcc.gd_id=gd.id
+                    );
+            IF (cnt > 0) THEN
+                RAISE EXCEPTION 'Part No is bad!'
+                    USING errcode = 50003;
+            END IF;
+        END IF;
+
+        IF (is_party_c = 1) THEN
+            -- хитрое добавление состава контейнера для партий
+            INSERT INTO container_content (container_id, good_desc_id, quantity, notes, gdp_id)
+                SELECT container_id_, gd_id, qty, notes, gdp_id
+                    FROM command_gas_container_content
+                    WHERE command_gas_id = NEW.id
+                        AND coalesce(gdp_id, 0) <> 0;
+
+            -- добавляем пустые партии
+            INSERT INTO gd_party (pname, gd_id)
+                SELECT null, gd.good_desc_id
+                    FROM command_gas_container_content cgcc
+                    INNER JOIN good_desc gd
+                        ON cgcc.gd_id = gd.id
+                    WHERE command_gas_id = NEW.id
+                        AND coalesce(gdp_id, 0) = 0
+                        AND NOT exists(
+                            SELECT *
+                                FROM gd_party
+                                WHERE pname IS null
+                                    AND gd_id = gd.good_desc_id
+                        );
+            UPDATE command_gas_container_content cgu
+                SET gdp_id = (
+                    SELECT id
+                        FROM gd_party
+                        WHERE gd_id = (
+                            SELECT good_desc_id
+                                FROM good_desc
+                                WHERE id = cgu.gd_id
+                        ) AND pname IS null
+                )
+                WHERE command_gas_id = NEW.id
+                    AND gdp_id IS null;
+
+            INSERT INTO container_content (container_id, good_desc_id, quantity, notes, gdp_id)
+                SELECT container_id_, gd_id, qty, notes, (
+                    SELECT id
+                        FROM gd_party
+                        WHERE pname IS null
+                            AND gd_id = (
+                                SELECT good_desc_id
+                                    FROM good_desc
+                                    WHERE id = cgcc.gd_id
+                            )
+                    )
+                    FROM command_gas_container_content cgcc
+                    WHERE command_gas_id = NEW.id
+                        AND coalesce(gdp_id, 0) <> 0;
+        ELSE
+            INSERT INTO container_content (container_id, good_desc_id, quantity, notes, gdp_id)
+                SELECT container_id_, gd_id, qty, notes, gdp_id
+                    FROM command_gas_container_content
+                    WHERE command_gas_id = NEW.id;
+        END IF;
+
+        NEW.container_cell_name := NEW.cell_name;
+        NEW.container_rp_id := NEW.rp_id;
+
+        IF coalesce(NEW.cell_name, '-') = 'Desktop' THEN -- на рабочий стол ложим
+            NEW.state := 5;
+            NEW.state_ind := NEW.state;
+
+            FOR ccgd IN (
+                SELECT cc_.*, gd.good_desc_id gdid_
+                    FROM container_content cc_
+                    INNER JOIN good_desc gd
+                        ON cc_.good_desc_id = gd.id
+                    WHERE cc_.container_id = NEW.container_id
+            ) LOOP
+
+                IF (sb_firm = 1) THEN -- учет товаров по фирме
+                    BEGIN
+                        INSERT INTO firm_gd (
+                            firm_id, gd_id, quantity
+                        ) VALUES (
+                            NEW.firm_id, ccgd.good_desc_id, ccgd.quantity
+                        );
+                    EXCEPTION WHEN others THEN
+                        UPDATE firm_gd
+                            SET quantity = quantity + ccgd.quantity
+                            WHERE gd_id = ccgd.good_desc_id
+                                AND firm_id = NEW.firm_id;
+                    END;
+
+                ELSIF coalesce(is_party_c, 0) = 1 THEN -- учет по партиям
+                    UPDATE gd_party
+                        SET qty = qty + ccgd.quantity
+                        WHERE gd_id = ccgd.gdid_
+                            AND (
+                                pname IS null AND coalesce(ccgd.gdp_id, 0) = 0
+                                OR ccgd.gdp_id = id
+                            );
+
+                    -- триггер не срабатывает из триггера, сука!
+                    /*update good_desc set quantity=quantity+
+                    ccgd.quantity
+                    where id=ccgd.good_desc_id;*/
+
+
+                ELSE -- общий учет товаров
+                    UPDATE good_desc
+                        SET quantity = quantity + ccgd.quantity
+                        WHERE id = ccgd.good_desc_id;
+                END IF;
+            END LOOP;
+            INSERT INTO container_collection (
+                container_id, state, cmd_gas_id, container_barcode
+            ) VALUES (
+                NEW.container_id, 0, NEW.id, NEW.container_barcode
+            );
+
+        ELSE -- реальный прием
+            NEW.state := 0;
+            NEW.state_ind := NEW.state;
+
+        END IF;
+
+        FOR rr IN (
+            SELECT name
+                FROM repository
+                WHERE coalesce(is_strong_prihod_check, 0) = 1
+        ) LOOP
+            -- триггер на автообновление статусов приходных накладных
+            INSERT INTO tmp_cmd_gas(
+                cmd_gas_id, action
+            ) VALUES (
+                NEW.id, 1
+            );
+            CALL obj_doc_expense.strong_pri_check(NEW.id, NEW.pri_doc_number);
+        END LOOP;
+
+
+    --------------------------
+    -- Good.Out
+    --------------------------
+    ELSIF (NEW.command_type_id = 12) THEN
+        IF coalesce(NEW.good_desc_id, '-') = '-' THEN
+            RAISE EXCEPTION '<Good_desc_id> must be not null!'
+                USING errcode = 50070;
+        END IF;
+        SELECT count(*) INTO cnt
+            FROM good_desc
+            WHERE id = NEW.good_desc_id;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION '<Good_desc_id> not found in database!'
+                USING errcode = 50070;
+        END IF;
+        -- проверка на фирму
+        IF (sb_firm = 1) AND coalesce(NEW.firm_id,0) = 0 THEN
+            RAISE EXCEPTION 'firm must be not Null!'
+                USING errcode = 50070;
+        END IF;
+        -- склад по умолчанию
+        IF coalesce(NEW.rp_id, 0) = 0 THEN
+            SELECT count(*) INTO cnt
+                FROM repository_part rp
+                WHERE purpose_id IN (2,3);
+            IF (cnt = 1) THEN
+                SELECT id INTO NEW.rp_id
+                    FROM repository_part rp
+                    WHERE purpose_id IN (2,3);
+            ELSE
+                RAISE EXCEPTION '<rp_id> must be assigned!'
+                    USING errcode = 50070;
+            END IF;
+        END IF;
+        -- партии проверяем
+        IF (NEW.gd_party_id IS NOT null) THEN
+            SELECT count(*) INTO cnt
+                FROM good_desc gd
+                INNER JOIN gd_party gdp
+                    ON gd.good_desc_id = gdp.gd_id
+                WHERE gd.id = NEW.good_desc_id
+                    AND gdp.id = NEW.gd_party_id;
+            IF (cnt = 0) THEN
+                RAISE EXCEPTION 'Pointed shipment is not exists for current good card!'
+                    USING errcode = 50070;
+            END IF;
+        END IF;
+        -- ячейки сброса по умолчанию
+        IF (NEW.cell_name IS null) THEN
+            FOR csb IN (
+                SELECT *
+                    FROM cell
+                    WHERE is_error = 0
+                        AND repository_part_id = NEW.rp_id
+                        AND hi_level_type IN (12,15)
+            ) LOOP
+                IF (NEW.cell_name IS null) THEN
+                    NEW.cell_name := csb.sname;
+                ELSE
+                    NEW.cell_name := NEW.cell_name || ',' || csb.sname;
+                END IF;
+            END LOOP;
+        END IF;
+        -- конкретные ячейки сброса
+        sn := NEW.cell_name;
+        DELETE FROM command_gas_cell_in
+            WHERE command_gas_id = NEW.id;
+        LOOP
+            cnt := position(',' IN sn);
+            IF (cnt <> 0) THEN
+                s := trim(substring(sn FROM 1 FOR cnt::INT - 1));
+                sn := trim(substring(sn FROM cnt::INT + 1));
+            ELSE
+                s := trim(sn);
+                sn := null;
+            END IF;
+            SELECT count(*) INTO cnt
+                FROM cell
+                WHERE sname = s
+                    AND repository_part_id = NEW.rp_id;
+            IF (cnt = 0) THEN
+                RAISE EXCEPTION '<%> as cell is not exists!', s
+                    USING errcode = 50070;
+            END IF;
+            INSERT INTO command_gas_cell_in (
+                command_gas_id, cell_id, sname, track_npp
+            ) SELECT NEW.id, id, sname, track_npp
+                FROM cell
+                WHERE sname = s
+                    AND repository_part_id = NEW.rp_id;
+            EXIT WHEN sn IS null;
+            --NEW.state:=1; -- как примем, тогда и назначим
+        END LOOP;
+
+    --------------------------
+    -- Container.Remove
+    --------------------------
+    ELSIF (NEW.command_type_id = 13) THEN
+        CALL service.log2file('  команда Container.Remove box='
+            || NEW.container_barcode || '; cmd_type=' || NEW.command_type_id);
+        IF coalesce(NEW.container_id, 0) <> 0 THEN
+            SELECT barcode INTO NEW.container_barcode
+                FROM container
+                WHERE id = NEW.container_id;
+        END IF;
+        NEW.container_barcode := trim(NEW.container_barcode);
+        SELECT count(*) INTO cnt
+            FROM container
+            WHERE barcode = NEW.container_barcode;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION 'Container with barcode <%> doesn''t  exists!', NEW.container_barcode
+                USING errcode = 50070;
+        END IF;
+        SELECT count(*) INTO cnt
+            FROM container
+            WHERE barcode = NEW.container_barcode
+                AND location = 1;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION 'Container with barcode <%> is not in cell!', NEW.container_barcode
+                USING errcode = 50070;
+        END IF;
+        SELECT id INTO NEW.container_id
+            FROM container
+            WHERE barcode = NEW.container_barcode;
+        SELECT cell_id INTO cell_id_
+            FROM container
+            WHERE barcode = NEW.container_barcode;
+        -- проверяем, а можно ли вообще из этой ячейки делать изъятие
+        SELECT hi_level_type INTO cnt
+            FROM cell
+            WHERE id = cell_id_;
+        IF (cnt IN (16,14,9)) THEN
+            RAISE EXCEPTION 'Operation Container.Remove is forbiden for this cell type!'
+                USING errcode = 50070;
+        END IF;
+        -- проверяем, а нет ли в процессе команды возврата
+        SELECT count(*) INTO cnt
+            FROM command_gas cg
+            WHERE state IN (0,1,3)
+                AND container_id = NEW.container_id
+                AND command_type_id = 18;
+        IF (cnt > 0) THEN
+            RAISE EXCEPTION 'Container with barcode <%> is in return command processing!', NEW.container_barcode
+                USING errcode = 50071;
+        END IF;
+        INSERT INTO shelving_need_to_redraw (
+            shelving_id
+        ) SELECT shelving_id
+            FROM cell
+            WHERE id = cell_id_;
+        UPDATE container
+            SET location = 0
+            WHERE barcode = NEW.container_barcode;
+        UPDATE cell
+            SET is_full = is_full - 1
+            WHERE id = cell_id_;
+        UPDATE cell
+            SET container_id = 0
+            WHERE id = cell_id_ AND is_full = 0;
+        SELECT coalesce(sum(quantity), 0) INTO cnt
+            FROM container_content
+            WHERE container_id = NEW.container_id;
+        IF (cnt > 0) THEN -- есть ненулевой товар
+            SELECT count(*) INTO cnt
+                FROM container_collection
+                WHERE container_id = NEW.container_id
+                    AND state = 0;
+            IF (cnt = 0) THEN -- нет открытого отбора-коллекции, добавляем
+                INSERT INTO container_collection (
+                    container_id, container_barcode, state, cmd_gas_id
+                ) VALUES (
+                    NEW.container_id, NEW.container_barcode, 0, NEW.id
+                );
+            END IF;
+        END IF;
+        NEW.state := 5;
+        NEW.state_ind := NEW.state;
+
+
+    --------------------------
+    -- Container.Transfer
+    --------------------------
+    ELSIF (NEW.command_type_id = 14) THEN
+        IF coalesce(NEW.container_id, 0) <> 0 THEN
+            SELECT barcode INTO NEW.container_barcode
+                FROM container WHERE id = NEW.container_id;
+        END IF;
+        IF coalesce(NEW.cell_id, 0) <> 0 THEN
+            SELECT sname, repository_part_id
+                INTO NEW.cell_name, NEW.rp_id
+                FROM cell
+                WHERE id = NEW.cell_id;
+        END IF;
+
+        NEW.container_barcode := trim(NEW.container_barcode);
+        IF coalesce(NEW.rp_id, 0) = 0 THEN
+            SELECT count(*) INTO cnt
+                FROM repository_part;
+            IF (cnt > 1) THEN
+                RAISE EXCEPTION 'You need to define repository_part_id!'
+                    USING errcode = 50070;
+            ELSE
+                SELECT id INTO NEW.rp_id
+                    FROM repository_part;
+            END IF;
+        END IF;
+        -- ячейку - приемник проверяем
+        IF (NEW.cell_name IS null) THEN
+            -- вначале ищем, а нет ли автоматом назначить
+            FOR cc IN (
+                SELECT *
+                    FROM cell
+                    WHERE repository_part_id = NEW.rp_id
+                        AND is_full = 0
+                        AND hi_level_type = 12
+                        AND service.is_cell_over_locked(cell.id) = 0
+            ) LOOP
+                NEW.cell_name := cc.sname;
+            END LOOP;
+            IF (NEW.cell_name IS null) THEN
+                RAISE EXCEPTION 'cell_name  must be not Null!'
+                    USING errcode = 50070;
+            END IF;
+        END IF;
+        NEW.cell_name := trim(NEW.cell_name);
+        SELECT count(*) INTO cnt
+            FROM cell
+            WHERE repository_part_id = NEW.rp_id
+                AND sname = NEW.cell_name;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION 'cell_name % doesnt exists!', trim(NEW.cell_name)
+                USING errcode = 50070;
+        END IF;
+        FOR cc IN (
+            SELECT *
+                FROM cell
+                WHERE repository_part_id = NEW.rp_id
+                    AND sname = NEW.cell_name
+        ) LOOP
+            IF obj_rpart.is_cell_locked_by_repaire(cc.id) = 1 THEN
+                RAISE EXCEPTION 'cell_name % is locked by repaire robot!', trim(NEW.cell_name)
+                    USING errcode = 50070;
+            END IF;
+        END LOOP;
+        SELECT count(*) INTO cnt
+            FROM cell
+            WHERE repository_part_id = NEW.rp_id
+                AND sname = trim(NEW.cell_name)
+                AND is_full < max_full_size;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION 'cell_name % already is full!', trim(NEW.cell_name)
+                USING errcode = 50070;
+        END IF;
+        SELECT count(*) INTO cnt
+            FROM cell
+            WHERE repository_part_id = NEW.rp_id
+                AND sname = trim(NEW.cell_name)
+                AND is_error = 0;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION 'cell_name % is error cell!', trim(NEW.cell_name)
+                USING errcode = 50070;
+        END IF;
+        SELECT count(*) INTO cnt
+            FROM cell
+            WHERE repository_part_id = NEW.rp_id
+                AND sname = trim(NEW.cell_name)
+                AND is_full < max_full_size
+                AND service.is_cell_over_locked(cell.id) = 0;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION '%', service.ml_get_rus_eng_val(
+                    'Ячейка ' || trim(NEW.cell_name) || ' уже блокирована другой командой! Ждите завершения операции!',
+                    'cell_name ' || trim(NEW.cell_name) || ' already blocked by cmd!'
+                ) USING errcode = 50070;
+        END IF;
+        SELECT count(*) INTO cnt
+            FROM cell
+            WHERE repository_part_id = NEW.rp_id
+                AND sname = trim(NEW.cell_name)
+                AND is_full < max_full_size
+                AND coalesce(blocked_by_ci_id,0) = 0;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION 'cell_name % already blocked by command inner!', trim(NEW.cell_name)
+                USING errcode = 50070;
+        END IF;
+        SELECT track_npp, substring(coalesce(orientaition,'-') FROM 1 FOR 1)
+            INTO csnpp, csorient
+            FROM cell
+            WHERE repository_part_id = NEW.rp_id
+                AND sname = NEW.cell_name;
+        SELECT max_npp, repository_type
+            INTO maxnpp, rpt
+            FROM repository_part
+            WHERE id = NEW.rp_id;
+        -- проверяем контейнеер
+        IF (NEW.container_barcode IS NOT null) THEN -- ШК контейнера не пустой - реальная команда
+            SELECT count(*) INTO cnt
+                FROM container
+                WHERE barcode = NEW.container_barcode;
+            IF (cnt = 0) THEN
+                RAISE EXCEPTION 'Container with barcode <%> doesn''t  exists!', NEW.container_barcode
+                    USING errcode = 50070;
+            END IF;
+            SELECT count(*) INTO cnt
+                FROM container
+                WHERE barcode = NEW.container_barcode
+                    AND location = 1;
+            IF (cnt = 0) THEN
+                RAISE EXCEPTION 'Container with barcode <%> is not in cell!', NEW.container_barcode
+                    USING errcode = 50070;
+            END IF;
+            SELECT cell_id, cntt.id, type, sname, c.repository_part_id
+                INTO cell_id_, container_id_, cnt_type, cell_sname_, rp_s_id
+                FROM container cntt
+                INNER JOIN cell c
+                    ON c.id = cntt.cell_id
+                WHERE cntt.barcode = NEW.container_barcode;
+            NEW.container_id := container_id_;
+            -- проверяем ячейку-источник
+            SELECT count(*) INTO cnt
+                FROM cell
+                WHERE id = cell_id_
+                    AND hi_level_type IN (1,15,12);
+            IF (cnt = 0) THEN
+                RAISE EXCEPTION 'container % is not in storage or unitype cell!', trim(NEW.container_barcode)
+                    USING errcode = 50070;
+            END IF;
+            IF service.is_cell_cmd_locked(cell_id_) = 1 THEN
+                RAISE EXCEPTION 'Source cell id=% is locked by another cmd!', cell_id_
+                    USING errcode = 50070;
+            END IF;
+            IF obj_rpart.is_cell_locked_by_repaire(cell_id_) = 1 THEN
+                RAISE EXCEPTION 'Source cell id=% is locked by repaire robot!', cell_id_
+                    USING errcode = 50070;
+            END IF;
+        ELSE -- подвоз пустого
+            NEW.notes := 'Подвоз пустого контейнера';
+            FOR cntr IN (
+                SELECT cnt.*
+                    FROM container cnt
+                    INNER JOIN cell
+                        ON cell.container_id = cnt.id
+                    WHERE location = 1
+                        AND service.get_container_sum_qty(cnt.id) = 0
+                        AND hi_level_type = 1
+                        AND obj_rpart.is_cell_locked_by_repaire(cell.id) = 0
+                    ORDER BY abs(repository_part_id - coalesce(NEW.rp_id, 0)),
+                        obj_ask.calc_distance(rpt, maxnpp, csnpp, track_npp),
+                        abs(ascii(csorient ) - ascii(cell.orientaition)) DESC
+            ) LOOP
+                all_is_ok := true;
+                BEGIN
+                    NEW.container_barcode := cntr.barcode;
+                    SELECT cell_id, cntt.id, type, sname, c.repository_part_id
+                        INTO cell_id_, container_id_, cnt_type, cell_sname_, rp_s_id
+                        FROM container cntt
+                        INNER JOIN cell c
+                            ON c.id = cntt.cell_id
+                        WHERE cntt.barcode = NEW.container_barcode;
+                    NEW.container_id := container_id_;
+                    -- проверяем ячейку-источник
+                    SELECT count(*) INTO cnt
+                        FROM cell
+                        WHERE id = cell_id_
+                            AND hi_level_type IN (1,15,12);
+                    IF (cnt = 0) THEN
+                        RAISE EXCEPTION 'container % is not in storage or unitype cell!', trim(NEW.container_barcode)
+                            USING errcode = 50070;
+                    END IF;
+                    IF service.is_cell_cmd_locked(cell_id_) = 1 THEN
+                        RAISE EXCEPTION 'Source cell id=% is locked by another cmd!', cell_id_
+                            USING errcode = 50070;
+                    END IF;
+                EXCEPTION WHEN others THEN
+                    all_is_ok := false;
+                END;
+                EXIT WHEN all_is_ok;
+            END LOOP;
+        END IF;
+        -- склад по умолчанию
+        IF coalesce(NEW.rp_id, 0) = 0 THEN
+            SELECT count(*) INTO cnt
+                FROM repository_part rp
+                WHERE purpose_id IN (2,3);
+            IF (cnt = 1) THEN
+                SELECT id INTO NEW.rp_id
+                    FROM repository_part rp
+                    WHERE purpose_id IN (2,3);
+            ELSE
+                RAISE EXCEPTION '<rp_id> must be assigned!'
+                    USING errcode = 50070;
+            END IF;
+        END IF;
+        IF (cnt_type = 0) THEN -- проверка для больших контейнеров - не суем ли их в маленькие
+            SELECT count(*) INTO cnt
+                FROM cell
+                WHERE repository_part_id = NEW.rp_id
+                    AND sname = trim(NEW.cell_name)
+                    AND is_full < max_full_size
+                    AND coalesce(blocked_by_ci_id, 0) = 0
+                    AND cell_size = 0;
+            IF (cnt = 0) THEN
+                RAISE EXCEPTION 'cell % is too small !', trim(NEW.cell_name)
+                    USING errcode = 50070;
+            END IF;
+        END IF;
+        -- проверяем, а не команда ли для разных складов без транзитных ячеек
+        IF (rp_s_id <> NEW.rp_id) THEN
+            SELECT count(*) INTO cnt
+                FROM cell
+                WHERE hi_level_type IN (6,7,8)
+                    AND repository_part_id IN (rp_s_id, NEW.rp_id);
+            IF (cnt = 0) THEN
+                RAISE EXCEPTION 'Repository part does''nt have transit cells!'
+                    USING errcode = 50070;
+            END IF;
+        END IF;
+        -- проверяем, а нет ли активного автоматического сбора на эту ячейку
+        FOR co IN (
+            SELECT *
+                FROM command_order
+                WHERE command_type_id = 15
+                    AND state NOT IN (2,5)
+                    AND cell_name = NEW.cell_name
+                    AND rp_id = NEW.rp_id
+        ) LOOP
+            RAISE EXCEPTION 'Уже есть активная автоматическая команда сбора для данного рабочего места. Дождитесь завершения автоматического сбора, и попробуйте снова!'
+                USING errcode = 50070;
+        END LOOP;
+        -- проверяем, а не воровство ли это контейнера с другого рабочего места?
+        FOR vrv IN (
+            SELECT cs.*
+                FROM cell cs
+                INNER JOIN cell cd
+                    ON cd.repository_part_id = NEW.rp_id
+                WHERE cs.sname = cell_sname_
+                    AND cs.repository_part_id = rp_s_id
+                    AND cd.sname = NEW.cell_name
+                    AND cs.hi_level_type IN (15,2,3,4,5,12,14,16)
+                    AND cd.hi_level_type IN (15,2,3,4,5,12,14,16)
+        ) LOOP
+            RAISE EXCEPTION 'Нельзя воровать контейнеры с других рабочих мест оператора! Дождитесь, пока оператор на другом рабочем месте закончит работу!'
+                USING errcode = 50070;
+        END LOOP;
+
+        -- даем команду таки
+        CALL obj_ask.set_command(
+            NEW.id, 1, rp_s_id, cell_sname_,
+            NEW.rp_id, NEW.cell_name,
+            NEW.priority, container_id_
+        );
+
+    --------------------------
+    -- Handle.Container.Out
+    --------------------------
+    ELSIF (NEW.command_type_id = 27) THEN
+        NEW.container_barcode := trim(NEW.container_barcode);
+        -- проверяем контейнеер
+        SELECT count(*) INTO cnt
+            FROM container
+            WHERE barcode = NEW.container_barcode;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION 'Container with barcode <%> doesn''t  exists!', NEW.container_barcode
+                USING errcode = 50070;
+        END IF;
+        SELECT count(*) INTO cnt
+            FROM container
+            WHERE barcode = NEW.container_barcode
+                AND location = 1;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION 'Container with barcode <%> is not in cell!', NEW.container_barcode
+                USING errcode = 50070;
+        END IF;
+        SELECT id INTO NEW.container_id
+            FROM container
+            WHERE barcode = NEW.container_barcode;
+        SELECT cell_id INTO cell_id_
+            FROM container
+            WHERE barcode = NEW.container_barcode;
+        INSERT INTO shelving_need_to_redraw (
+            shelving_id
+        ) SELECT shelving_id
+            FROM cell
+            WHERE id = cell_id_;
+        UPDATE container
+            SET location = 0
+            WHERE barcode = NEW.container_barcode;
+        UPDATE cell
+            SET is_full = is_full - 1, container_id = 0
+            WHERE id = cell_id_;
+        SELECT coalesce(sum(quantity),0) INTO cnt
+            FROM container_content
+            WHERE container_id = NEW.container_id;
+        IF (cnt > 0) THEN -- есть ненулевой товар
+            SELECT count(*) INTO cnt
+                FROM container_collection
+                WHERE container_id = NEW.container_id
+                    AND state = 0;
+            IF (cnt = 0) THEN -- нет открытого отбора-коллекции, добавляем
+                INSERT INTO container_collection (
+                    container_id, container_barcode, state, cmd_gas_id
+                ) VALUES (
+                    NEW.container_id, NEW.container_barcode, 0, NEW.id
+                );
+            END IF;
+        END IF;
+        NEW.state := 5;
+        NEW.state_ind := NEW.state;
+
+
+
+    --------------------------
+    -- Container.Content.Remove
+    --------------------------
+    ELSIF (NEW.command_type_id = 24) THEN
+        -- проверяем товар
+        IF coalesce(NEW.good_desc_id,'-') = '-' THEN
+            RAISE EXCEPTION '<Good_desc_id> must be not null!'
+                USING errcode = 50070;
+        END IF;
+        SELECT count(*) INTO cnt
+            FROM good_desc
+            WHERE id = NEW.good_desc_id;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION '<Good_desc_id> not found in database!'
+                USING errcode = 50070;
+        END IF;
+        -- проверяем контейнер
+        IF (NEW.container_barcode IS null) THEN
+            RAISE EXCEPTION 'CONTAINER_BARCODE must be not Null!'
+                USING errcode = 50070;
+        END IF;
+        NEW.container_barcode := trim(NEW.container_barcode);
+        SELECT count(*) INTO cnt
+            FROM container
+            WHERE barcode = NEW.container_barcode;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION 'Container with barcode <%> doesn''t  exists!', NEW.container_barcode
+                USING errcode = 50070;
+        ELSE
+            SELECT id INTO NEW.container_id
+                FROM container
+                WHERE barcode = NEW.container_barcode;
+        END IF;
+        -- проверяем есть ли списываемый товар в контейнере
+        SELECT count(*) INTO cnt
+            FROM container_content
+            WHERE container_id = NEW.container_id
+                AND good_desc_id = NEW.good_desc_id
+                AND quantity > 0;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION 'Container with barcode <%> doesn''t contain good with id=%!', NEW.container_barcode, NEW.good_desc_id
+                USING errcode = 50070;
+        END IF;
+        SELECT count(*) INTO cnt
+            FROM container_content
+            WHERE container_id = NEW.container_id
+                AND good_desc_id = NEW.good_desc_id
+                AND quantity >= NEW.quantity;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION 'Container with barcode <%> doesn''t contain enough good with id=%. Need to remove%!', NEW.container_barcode, NEW.good_desc_id, NEW.quantity
+                USING errcode = 50070;
+        END IF;
+        CALL service.log2file('  команда Container.Content.Remove box=' || NEW.container_barcode
+            || '; cmd_type=' || NEW.command_type_id
+            || '; qty=' || NEW.quantity
+            || '; good_desc_id=' || NEW.good_desc_id);
+        -- проверяем в случае строгой проверки по документам
+        FOR rr IN (
+            SELECT name
+                FROM repository
+                WHERE coalesce(is_strong_prihod_check, 0) = 1
+        ) LOOP
+            IF NEW.quantity > obj_cmd_order.get_ras_gd_rest(
+                NEW.pri_doc_number::BIGINT,
+                obj_ask.get_good_desc_id_by_id(NEW.good_desc_id),
+                NEW.gd_party_id
+            ) THEN
+                RAISE EXCEPTION 'Doc with ID % have not this qty of good!', NEW.pri_doc_number
+                    USING errcode = 50070;
+            END IF;
+        END LOOP;
+
+
+        -- делаем действия
+        -- списываем коллекцию
+        qty_by_cc := 0;
+        qty_rest := NEW.quantity;
+        FOR cc2 IN (
+            SELECT *
+                FROM container_collection
+                WHERE state = 0
+                    AND container_id = NEW.container_id
+        ) LOOP
+            FOR ccc IN (
+                SELECT *
+                    FROM container_collection_content
+                    WHERE cc_id = cc.id
+                        AND good_desc_id = NEW.good_desc_id
+                        AND (is_party_c = 0 OR gd_party_id = NEW.gd_party_id)
+                    ORDER BY cmd_order_id
+            ) LOOP
+                qty_need := ccc.quantity_need - ccc.quantity_real - ccc.quantity_deficit;
+                IF (qty_rest >= qty_need) THEN
+                    qty_rest := qty_rest - qty_need;
+                    qty_by_cc := qty_by_cc + qty_need;
+                    UPDATE container_collection_content
+                        SET quantity_real = quantity_real + qty_need
+                        WHERE cc_id = cc2.id
+                            AND good_desc_id = NEW.good_desc_id
+                            AND coalesce(cmd_order_id, 0) = coalesce(ccc.cmd_order_id, 0)
+                            AND (is_party_c = 0 OR gd_party_id = NEW.gd_party_id);
+                ELSE
+                    qty_rest := 0;
+                    qty_by_cc := qty_by_cc + qty_rest;
+                    UPDATE container_collection_content
+                        SET quantity_real = quantity_real + qty_rest
+                        WHERE cc_id = cc2.id
+                            AND good_desc_id = NEW.good_desc_id
+                            AND coalesce(cmd_order_id, 0) = coalesce(ccc.cmd_order_id, 0)
+                            AND (is_party_c = 0 OR gd_party_id = NEW.gd_party_id);
+                END IF;
+            END LOOP;
+        END LOOP;
+
+        -- а теперь состав контейнера
+        SELECT count(*) INTO cnt
+            FROM container_content
+            WHERE container_id = NEW.container_id
+                AND good_desc_id = NEW.good_desc_id
+                AND coalesce(gdp_id, 0) = 0;
+        IF (cnt = 0) THEN -- есть только по партиям
+            IF (NEW.gd_party_id IS null) THEN
+                RAISE EXCEPTION 'Shipment is not noticed!'
+                    USING errcode = 50070;
+            END IF;
+            SELECT count(*) INTO cnt
+                FROM container_content
+                WHERE container_id = NEW.container_id
+                    AND good_desc_id = NEW.good_desc_id
+                    AND coalesce(gdp_id, 0) = NEW.gd_party_id;
+            IF (cnt = 0) THEN
+                RAISE EXCEPTION 'Pointed shipment is not in container!'
+                    USING errcode= 50070;
+            END IF;
+            UPDATE container_content
+                SET quantity = quantity - NEW.quantity
+                WHERE container_id = NEW.container_id
+                    AND good_desc_id = NEW.good_desc_id
+                    AND gdp_id = NEW.gd_party_id;
+        ELSE -- есть и без партий
+            IF (NEW.gd_party_id IS null) THEN
+                UPDATE container_content
+                    SET quantity = quantity - NEW.quantity
+                    WHERE container_id = NEW.container_id
+                        AND good_desc_id = NEW.good_desc_id
+                        AND coalesce(gdp_id, 0) = 0;
+            ELSE -- но партия задана
+                SELECT count(*) INTO cnt
+                    FROM container_content
+                    WHERE container_id = NEW.container_id
+                        AND good_desc_id = NEW.good_desc_id
+                        AND coalesce(gdp_id, 0) = NEW.gd_party_id;
+                IF (cnt = 0) THEN
+                    RAISE EXCEPTION 'Pointed shipment is not in container!'
+                        USING errcode = 50070;
+                END IF;
+                UPDATE container_content
+                    SET quantity = quantity - NEW.quantity
+                    WHERE container_id = NEW.container_id
+                        AND good_desc_id = NEW.good_desc_id
+                        AND gdp_id = NEW.gd_party_id;
+            END IF;
+        END IF;
+
+        --RAISE EXCEPTION(-20070,qty_by_cc||' '||qty_rest);
+        -- и из товаров убираем
+        IF (sb_firm = 1) THEN
+            FOR frm IN (
+                SELECT firm_id id
+                    FROM container
+                    WHERE id = NEW.container_id
+            ) LOOP
+                UPDATE firm_gd
+                    SET quantity = quantity - (NEW.quantity - qty_by_cc)
+                    WHERE gd_id = NEW.good_desc_id
+                        AND firm_id = frm.id;
+                UPDATE firm_gd
+                    SET quantity_reserved = quantity_reserved - qty_by_cc
+                    WHERE gd_id = NEW.good_desc_id
+                        AND firm_id = frm.id;
+            END LOOP;
+        ELSIF (is_party_c = 1) THEN
+            UPDATE gd_party
+                SET qty = qty - (NEW.quantity - qty_by_cc)
+                WHERE id = NEW.gd_party_id;
+            UPDATE gd_party
+                SET qty_reserved = qty_reserved - qty_by_cc
+                WHERE id = NEW.gd_party_id;
+        ELSE
+            UPDATE good_desc
+                SET quantity = quantity - (NEW.quantity - qty_by_cc)
+                WHERE id = NEW.good_desc_id;
+            UPDATE good_desc
+                SET quantity_reserved = quantity_reserved - qty_by_cc
+                WHERE id = NEW.good_desc_id;
+        END IF;
+        -- проверякм, не обнулился ли контейнер, и если обнулился, то закрываем сбор по контейнеру
+        FOR emp_cont IN (
+            SELECT sum(quantity) sq
+                FROM container_content
+                WHERE container_id = NEW.container_id
+        ) LOOP
+            IF (emp_cont.sq = 0) THEN
+                UPDATE container_collection
+                    SET state = 1
+                    WHERE state = 0
+                        AND container_id = NEW.container_id;
+                UPDATE container
+                    SET fullness = 0
+                    WHERE id = NEW.container_id;
+            END IF;
+        END LOOP;
+        NEW.state := 5;
+        NEW.state_ind := NEW.state;
+
+        FOR rr IN (
+            SELECT name
+                FROM repository
+                WHERE coalesce(is_strong_prihod_check, 0) = 1
+        ) LOOP
+            -- проверяем расходные накладные на завершение сбора
+            INSERT INTO tmp_cmd_gas (
+                cmd_gas_id, action
+            ) VALUES (
+                NEW.id, 3
+            );
+        END LOOP;
+
+
+    --------------------------
+    -- Container.Content.Add
+    --------------------------
+    ELSIF (NEW.command_type_id = 25) THEN
+        -- проверяем товар
+        IF coalesce(NEW.good_desc_id, '-') = '-' THEN
+            RAISE EXCEPTION '<Good_desc_id> must be not null!'
+                USING errcode = 50070;
+        END IF;
+        SELECT count(*) INTO cnt
+            FROM good_desc
+            WHERE id = NEW.good_desc_id;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION '<Good_desc_id> not found in database!'
+                USING errcode = 50070;
+        END IF;
+        SELECT good_desc_id INTO gd_id_
+            FROM good_desc
+            WHERE id = NEW.good_desc_id;
+
+        -- проверяем контейнер
+        IF (NEW.container_barcode IS null) THEN
+            RAISE EXCEPTION 'CONTAINER_BARCODE must be not Null!'
+                USING errcode = 50070;
+        END IF;
+        NEW.container_barcode := trim(NEW.container_barcode);
+        SELECT count(*) INTO cnt
+            FROM container
+            WHERE barcode = NEW.container_barcode;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION 'Container with barcode <%> doesn''t  exists!', NEW.container_barcode
+                USING errcode = 50070;
+        ELSE
+            SELECT id INTO NEW.container_id
+                FROM container
+                WHERE barcode = NEW.container_barcode;
+        END IF;
+        CALL service.log2file('  команда Container.Content.Add box=' || NEW.container_barcode
+            || '; cmd_type=' || NEW.command_type_id
+            || '; qty=' || NEW.quantity
+            || '; good_desc_id=' ||NEW.good_desc_id);
+
+        IF (is_party_c = 1) THEN
+            --  если нет пустой партии, добавляем
+            IF coalesce(NEW.gd_party_id, 0) = 0 THEN
+                INSERT INTO gd_party (
+                    pname, gd_id
+                ) SELECT null, gd.good_desc_id
+                    FROM good_desc gd
+                    WHERE gd.id = NEW.good_desc_id
+                        AND NOT exists(
+                            SELECT *
+                                FROM gd_party
+                                WHERE pname IS null
+                                    AND gd_id = gd.good_desc_id
+                        );
+                SELECT id INTO gdp_id__
+                    FROM gd_party
+                    WHERE pname IS null
+                        AND gd_id = gd_id_;
+                NEW.gd_party_id := gdp_id__;
+            ELSE
+                gdp_id__ := NEW.gd_party_id;
+            END IF;
+        ELSE
+            gdp_id__ := NEW.gd_party_id;
+        END IF;
+
+        -- делаем действия
+        SELECT count(*) INTO cnt
+            FROM container_content
+            WHERE container_id = NEW.container_id
+                AND good_desc_id = NEW.good_desc_id
+                AND coalesce(gdp_id, 0) = coalesce(gdp_id__, 0);
+        IF (cnt = 0) THEN
+            -- нету такого в составе контейнера, добавляем insert
+            INSERT INTO container_content (
+                container_id, good_desc_id, quantity, gdp_id
+            ) VALUES (
+                NEW.container_id, NEW.good_desc_id, NEW.quantity, gdp_id__
+            );
+        ELSE
+            -- есть такой, update
+            -- а теперь состав контейнера
+            UPDATE container_content
+                SET quantity = quantity + NEW.quantity
+                WHERE container_id = NEW.container_id
+                    AND good_desc_id = NEW.good_desc_id
+                    AND coalesce(gdp_id, 0) = coalesce(gdp_id__, 0);
+        END IF;
+
+        -- и из товаров убираем
+        IF (sb_firm = 1) THEN
+            FOR frm IN (
+                SELECT firm_id id
+                    FROM container
+                    WHERE id = NEW.container_id
+            ) LOOP
+                IF coalesce(frm.id, 0) = 0 THEN
+                    RAISE EXCEPTION 'Нельзя докладывать товар в контейнер, непривязанный к клиенту!'
+                        USING errcode = 50070;
+                END IF;
+                BEGIN
+                    INSERT INTO firm_gd (
+                        firm_id, gd_id, quantity, quantity_reserved
+                    ) VALUES (
+                        frm.id, NEW.good_desc_id, NEW.quantity, 0
+                    );
+                EXCEPTION WHEN others THEN
+                    UPDATE firm_gd
+                        SET quantity = quantity + NEW.quantity
+                        WHERE gd_id = NEW.good_desc_id
+                            AND firm_id = frm.id;
+                END;
+            END LOOP;
+        ELSIF (is_party_c = 1) THEN
+            UPDATE gd_party
+                SET qty = qty + NEW.quantity
+                WHERE gd_id = gd_id_
+                    AND (
+                        pname IS null AND coalesce(NEW.gd_party_id,0) = 0
+                        OR NEW.gd_party_id = id
+                    );
+        ELSE
+            UPDATE good_desc
+                SET quantity = quantity + NEW.quantity
+                WHERE id = NEW.good_desc_id;
+        END IF;
+        NEW.state := 5;
+        NEW.state_ind := NEW.state;
+
+        FOR rr IN (
+            SELECT name
+                FROM repository
+                WHERE coalesce(is_strong_prihod_check, 0) = 1
+        ) LOOP
+            -- триггер на автообновление статусов приходных накладных
+            INSERT INTO tmp_cmd_gas (
+                cmd_gas_id, action
+            ) VALUES (
+                NEW.id, 1
+            );
+            CALL obj_doc_expense.strong_pri_check1(NEW.good_desc_id, NEW.gd_party_id, NEW.quantity, NEW.pri_doc_number);
+        END LOOP;
+        NEW.date_time_end := LOCALTIMESTAMP;
+
+
+    --------------------------
+    -- Container.Content.Inventory
+    --------------------------
+    ELSIF (NEW.command_type_id = 26) THEN
+        -- проверка на не NULL
+        IF (NEW.container_barcode IS null) THEN
+            RAISE EXCEPTION 'CONTAINER_BARCODE must be not Null!'
+                USING errcode = 50070;
+        END IF;
+        IF (NEW.content IS null) THEN
+            RAISE EXCEPTION 'content must be not Null!'
+                USING errcode = 50070;
+        END IF;
+        -- проверяем контейнер
+        NEW.container_barcode := trim(NEW.container_barcode);
+        SELECT count(*) INTO cnt
+            FROM container
+            WHERE barcode = NEW.container_barcode;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION 'Container with barcode <%> doesn''t  exists!', NEW.container_barcode
+                USING errcode = 50070;
+        ELSE
+            SELECT id INTO NEW.container_id
+                FROM container
+                WHERE barcode = NEW.container_barcode;
+            container_id_ := NEW.container_id;
+        END IF;
+        CALL service.log2file('  команда Container.Content.Inventory box=' || NEW.container_barcode
+            || '; cmd_type=' || NEW.command_type_id
+            || '; qty=' || NEW.quantity
+            || '; gd_id_s=' || NEW.content);
+
+        -- разбор строки состава принимаемого контейнера
+        CALL obj_cmd_gas.parse_cg_cc(NEW.id, NEW.content, cmgd);
+        -- удаляем то, что удалили прям строкой во время ревизии
+        FOR del_cc IN (
+            SELECT DISTINCT cc_.id, cc_.good_desc_id, quantity, gdp_id
+                FROM container_content cc_
+                WHERE container_id = NEW.container_id
+                    AND NOT exists(
+                        SELECT *
+                            FROM command_gas_container_content cgcc
+                            WHERE cgcc.command_gas_id = NEW.id
+                                AND coalesce(cgcc.gdp_id, 0) = coalesce(cc_.gdp_id, 0)
+                                AND cc_.good_desc_id = cgcc.gd_id
+                    )
+        ) LOOP
+            RAISE NOTICE 'удаляем то, что удалили прям строкой gd_id=% party=%', del_cc.good_desc_id, del_cc.gdp_id;
+            INSERT INTO command_gas_container_content (
+                command_gas_id, gd_id, qty, notes, qty_delta, gdp_id
+            ) VALUES (
+                NEW.id, del_cc.good_desc_id, 0, 'ав.сген.', -del_cc.quantity, del_cc.gdp_id
+            );
+            IF (sb_firm = 1) THEN
+                FOR frm IN (
+                    SELECT firm_id id
+                        FROM container
+                        WHERE id = NEW.container_id
+                ) LOOP
+                    UPDATE firm_gd
+                        SET quantity = quantity - del_cc.quantity
+                        WHERE gd_id = del_cc.good_desc_id
+                            AND firm_id = frm.id;
+                END LOOP;
+            ELSE
+                IF (is_party_c = 1) THEN -- по партиям
+                    UPDATE gd_party
+                        SET qty = qty - del_cc.quantity
+                        WHERE id = del_cc.gdp_id;
+                ELSE
+                    UPDATE good_desc
+                        SET quantity = quantity - del_cc.quantity
+                        WHERE id = del_cc.good_desc_id;
+                END IF;
+            END IF;
+            UPDATE container_content cc_
+                SET quantity = 0
+                WHERE cc_.id = del_cc.id
+                    AND coalesce(cc_.gdp_id, 0) = coalesce(del_cc.gdp_id, 0);
+        END LOOP;
+        -- удаляем то, чего не хватает
+        FOR del_cq IN (
+            SELECT DISTINCT cc_.id, cc_.good_desc_id, quantity, qty, cc_.gdp_id
+                FROM container_content cc_
+                INNER JOIN command_gas_container_content cgcc
+                    ON coalesce(cgcc.gdp_id, 0) = coalesce(cc_.gdp_id, 0)
+                WHERE container_id = NEW.container_id
+                    AND cgcc.command_gas_id = NEW.id
+                    AND cc_.good_desc_id = cgcc.gd_id
+                    and cgcc.qty < cc_.quantity
+        ) LOOP
+            RAISE NOTICE 'удаляем то, чего не хватает %', del_cq.good_desc_id;
+            UPDATE command_gas_container_content
+                SET qty_delta = -(del_cq.quantity - del_cq.qty)
+                WHERE command_gas_id = NEW.id
+                AND gd_id = del_cq.good_desc_id
+                AND coalesce(gdp_id, 0) = coalesce(del_cq.gdp_id, 0);
+            IF (sb_firm = 1) THEN
+                FOR frm IN (
+                    SELECT firm_id id
+                        FROM container
+                        WHERE id = NEW.container_id
+                ) LOOP
+                    UPDATE firm_gd
+                        SET quantity = quantity - (del_cq.quantity - del_cq.qty)
+                        WHERE gd_id = del_cq.good_desc_id
+                            AND firm_id=frm.id;
+                END LOOP;
+            ELSE
+                IF (is_party_c = 1) THEN -- по партиям
+                    UPDATE gd_party
+                        SET qty = qty - (del_cq.quantity - del_cq.qty)
+                        WHERE id = del_cq.gdp_id;
+                ELSE
+                    UPDATE good_desc
+                        SET quantity = quantity - (del_cq.quantity - del_cq.qty)
+                        WHERE id = del_cq.good_desc_id;
+                END IF;
+            END IF;
+            UPDATE container_content cc_
+                SET quantity = del_cq.qty
+                WHERE cc_.id = del_cq.id;
+        END LOOP;
+        -- добавляем то, чего больше
+        FOR add_cq IN (
+            SELECT DISTINCT cc_.id, cc_.good_desc_id, quantity, qty, cc_.gdp_id
+                FROM container_content cc_
+                INNER JOIN command_gas_container_content cgcc
+                    ON coalesce(cc_.gdp_id, 0) = coalesce(cgcc.gdp_id, 0)
+                WHERE container_id = NEW.container_id
+                    AND cgcc.command_gas_id = NEW.id
+                    AND cc_.good_desc_id = cgcc.gd_id
+                    AND cgcc.qty > cc_.quantity
+        ) LOOP
+            RAISE NOTICE 'добавляем то, чего больше %', add_cq.good_desc_id;
+            IF (sb_firm = 1) THEN
+                FOR frm IN (
+                    SELECT firm_id id
+                        FROM container
+                        WHERE id = NEW.container_id
+                ) LOOP
+                    UPDATE firm_gd
+                        SET quantity = quantity + (add_cq.qty - add_cq.quantity)
+                        WHERE gd_id = add_cq.good_desc_id
+                            AND firm_id = frm.id;
+                END LOOP;
+            ELSE
+                IF (is_party_c = 1) THEN -- по партиям
+                    UPDATE gd_party
+                        SET qty = qty + (add_cq.qty - add_cq.quantity)
+                        WHERE id = add_cq.gdp_id;
+                ELSE
+                    UPDATE good_desc
+                        SET quantity = quantity + (add_cq.qty - add_cq.quantity)
+                        WHERE id = add_cq.good_desc_id;
+                END IF;
+            END IF;
+            UPDATE container_content cc_
+                SET quantity = add_cq.qty
+                WHERE cc_.id = add_cq.id;
+            UPDATE command_gas_container_content
+                SET qty_delta = (add_cq.qty - add_cq.quantity)
+                WHERE command_gas_id = NEW.id
+                    AND gd_id = add_cq.good_desc_id
+                    AND coalesce(gdp_id, 0) = coalesce(add_cq.gdp_id, 0);
+        END LOOP;
+        -- прибавляем то, чего не было, но появилось строчками
+        FOR add_cc IN (
+            SELECT DISTINCT gd_id, qty, gdp_id
+                FROM command_gas_container_content cgcc
+                WHERE cgcc.command_gas_id = NEW.id
+                    AND NOT exists(
+                        SELECT *
+                            FROM container_content cc_
+                            WHERE container_id = NEW.container_id
+                                AND coalesce(cc_.gdp_id, 0) = coalesce(cgcc.gdp_id, 0)
+                                AND cc_.good_desc_id = cgcc.gd_id
+                    )
+        ) LOOP
+            IF (sb_firm = 1) THEN
+                FOR frm IN (
+                    SELECT firm_id id
+                        FROM container
+                        WHERE id = NEW.container_id
+                ) LOOP
+                    SELECT count(*) INTO cnt
+                        FROM firm_gd
+                        WHERE firm_id = frm.id
+                            AND gd_id = add_cc.gd_id;
+                    IF (cnt > 0) THEN
+                        UPDATE firm_gd
+                            SET quantity = quantity + add_cc.qty
+                            WHERE gd_id = add_cc.gd_id
+                                AND firm_id = frm.id;
+                    ELSE
+                        INSERT INTO firm_gd (
+                            firm_id, gd_id, quantity
+                        ) VALUES (
+                            frm.id, add_cc.gd_id, add_cc.qty
+                        );
+                    END IF;
+                END LOOP;
+            ELSE
+                IF (is_party_c = 1) THEN -- по партиям
+                    UPDATE gd_party
+                        SET qty = qty + add_cc.qty
+                        WHERE id = add_cc.gdp_id;
+                ELSE
+                    UPDATE good_desc
+                        SET quantity = quantity + add_cc.qty
+                        WHERE id = add_cc.gd_id;
+                END IF;
+            END IF;
+            INSERT INTO container_content (
+                container_id, good_desc_id, quantity, gdp_id
+            ) VALUES (
+                NEW.container_id, add_cc.gd_id, add_cc.qty, add_cc.gdp_id
+            );
+            UPDATE command_gas_container_content
+                SET qty_delta = add_cc.qty
+                WHERE command_gas_id = NEW.id
+                    AND gd_id = add_cc.gd_id
+                    AND coalesce(gdp_id, 0) = coalesce(add_cc.gdp_id, 0);
+        END LOOP;
+
+        -- заполненность контейнера прописываем
+        IF (NEW.container_fullness IS NOT null) THEN
+            IF NOT (NEW.container_fullness BETWEEN 0 AND 1) THEN
+                RAISE EXCEPTION 'Container fullness must be between 0 and 1!'
+                    USING errcode = 50070;
+            END IF;
+            UPDATE container
+                SET fullness = NEW.container_fullness
+                WHERE id = container_id_;
+        END IF;
+        NEW.state := 5;
+        NEW.state_ind := NEW.state;
+
+    --------------------------
+    -- Container.Firm.Change
+    --------------------------
+    ELSIF (NEW.command_type_id = 28) THEN
+        SELECT storage_by_firm INTO cnt
+            FROM repository;
+        IF (cnt = 1) THEN
+            IF coalesce(NEW.firm_id, 0) = 0 THEN
+                RAISE EXCEPTION 'New firm_id must be not Null!'
+                    USING errcode = 50070;
+            END IF;
+            IF coalesce(NEW.old_firm_id, 0) = 0 THEN
+                RAISE EXCEPTION 'Old firm_id must be not Null!'
+                    USING errcode = 50070;
+            END IF;
+        END IF;
+        IF (NEW.container_barcode IS null) THEN
+            RAISE EXCEPTION 'Container barcode must be not Null!'
+                USING errcode = 50070;
+        END IF;
+        -- проверяем контейнер
+        IF (NEW.container_id IS null) THEN
+            SELECT count(*) INTO cnt
+                FROM container
+                WHERE barcode = NEW.container_barcode;
+            IF (cnt = 0) THEN
+                RAISE EXCEPTION 'Container with barcode=% is''nt in database', NEW.container_barcode
+                    USING errcode = 50070;
+            END IF;
+            SELECT id INTO NEW.container_id
+                FROM container
+                WHERE barcode = NEW.container_barcode;
+        END IF;
+        INSERT INTO command_gas_container_content (
+            command_gas_id, gd_id, qty
+        ) SELECT NEW.id, good_desc_id, quantity
+            FROM container_content
+            WHERE container_id = NEW.container_id;
+        NEW.state := 5;
+        NEW.state_ind := NEW.state;
+
+    --------------------------
+    -- Container.Return
+    --------------------------
+    ELSIF (NEW.command_type_id = 18) THEN
+        -- RAISE EXCEPTION(-20070,'Test!'); строка 951 т.е. +5
+        IF (obj_ask.is_can_accept_cmd() = 0) THEN
+            RAISE EXCEPTION '%', service.ml_get_rus_eng_val(
+                    'Ошибка! Нельзя давать команды АСК, находящемуся в режиме паузы!',
+                    'ERROR: Repository must be in work mode!'
+                ) USING errcode = 50071;
+        END IF;
+
+        -- проверяем, а не по ID ли команда
+        IF coalesce(NEW.container_id,0) <> 0 THEN
+            SELECT barcode INTO NEW.container_barcode
+                FROM container
+                WHERE id = NEW.container_id;
+        END IF;
+        IF coalesce(NEW.cell_id, 0) <> 0 THEN
+            SELECT sname, repository_part_id
+                INTO NEW.cell_name, NEW.rp_id
+                FROM cell
+                WHERE id = NEW.cell_id;
+        END IF;
+
+        -- проверка на не NULL
+        IF (NEW.container_barcode IS null) THEN
+            RAISE EXCEPTION 'CONTAINER_BARCODE must be not Null!'
+                USING errcode = 50070;
+        END IF;
+        -- проверка склада
+        IF (NEW.rp_id IS null) THEN
+            SELECT count(*) INTO cnt
+                FROM repository_part
+                WHERE purpose_id IN (2,3);
+            IF (cnt = 1) THEN
+                SELECT id INTO NEW.rp_id
+                    FROM repository_part
+                    WHERE purpose_id IN (2,3);
+            ELSE
+                FOR ccel IN (
+                    SELECT cell.repository_part_id
+                        FROM container con
+                        INNER JOIN cell
+                            ON con.cell_id = cell.id
+                        WHERE con.barcode = NEW.container_barcode
+                            AND hi_level_type IN (14,15)
+                ) LOOP
+                    NEW.rp_id := ccel.repository_part_id;
+                END LOOP;
+                IF (NEW.rp_id IS null) THEN
+                    RAISE EXCEPTION '<rp_id> must be not Null!'
+                        USING errcode = 50070;
+                END IF;
+            END IF;
+        END IF;
+        -- проверка ячеек
+        IF (NEW.cell_name IS null) THEN
+            SELECT count(*) INTO cnt
+                FROM cell
+                WHERE repository_part_id = NEW.rp_id
+                    AND hi_level_type IN (15,14)
+                    AND is_error <> 1;
+            IF (cnt = 1) THEN
+                SELECT sname INTO NEW.cell_name
+                    FROM cell
+                    WHERE repository_part_id = NEW.rp_id
+                        AND hi_level_type IN (15,14)
+                        AND is_error <> 1;
+            ELSE
+                FOR ccel IN (
+                    SELECT sname
+                        FROM container con
+                        INNER JOIN cell
+                            ON con.cell_id = cell.id
+                        WHERE con.barcode = NEW.container_barcode
+                            AND hi_level_type IN (14,15)
+                ) LOOP
+                    NEW.cell_name := ccel.sname; -- контейнер и так находится в ячейке возврата или универсальной
+                END LOOP;
+                IF (NEW.cell_name IS null) THEN
+                    RAISE EXCEPTION '<cell_name> must be not Null!'
+                        USING errcode = 50070;
+                END IF;
+            END IF;
+        END IF;
+        -- проверяем контейнер
+        SELECT count(*) INTO cnt
+            FROM container
+            WHERE barcode = NEW.container_barcode;
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION 'Container with barcode=% is''nt in database', NEW.container_barcode
+                USING errcode = 50070;
+        END IF;
+        SELECT id INTO cnt_id
+            FROM container
+            WHERE barcode = NEW.container_barcode;
+        NEW.container_id := cnt_id;
+        SELECT sum(quantity) INTO cnt
+            FROM container_content
+            WHERE container_id = cnt_id;
+        IF (cnt = 0) AND (IAEC = 0) THEN
+            RAISE EXCEPTION 'Container with barcode=% is empty!', NEW.container_barcode
+                USING errcode = 50070;
+        END IF;
+        SELECT count(*) INTO cnt
+            FROM container cn
+            INNER JOIN cell c
+                ON cn.cell_id = c.id
+            WHERE cn.id = cnt_id
+                AND location = 1
+                and c.hi_level_type = 1;
+        IF (cnt > 0) THEN
+            RAISE EXCEPTION 'Container is already in repository!'
+                USING errcode = 50070;
+        END IF;
+
+        -- проверяем, а нет ли команды приема товара по этой же ячейке недоделанной
+        FOR cgl IN (
+            SELECT *
+                FROM command_gas t
+                WHERE command_type_id = 11
+                    AND state IN (0,1,3)
+                    AND container_id = NEW.container_id
+                    AND date_time_create >= LOCALTIMESTAMP - INTERVAL '3 days'
+        ) LOOP
+            RAISE EXCEPTION 'Cell <%> was already locked by accept command %!', NEW.cell_name, cgl.id
+                USING errcode = 50070;
+        END LOOP;
+
+        -- проверяем склад возврата
+        SELECT count(*) INTO cnt
+            FROM repository_part
+            WHERE id = NEW.rp_id
+                AND purpose_id IN (2,3);
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION '<rp_id> point to bad repositiry subtype!'
+                USING errcode = 50070;
+        END IF;
+
+        -- проверяем ячейку возврата
+        NEW.cell_name := trim(NEW.cell_name);
+        SELECT count(*) INTO cnt
+            FROM cell
+            WHERE repository_part_id = NEW.rp_id
+                AND sname = NEW.cell_name
+                AND is_error = 0
+                AND hi_level_type in (14,15,16);
+        IF (cnt = 0) THEN
+            RAISE EXCEPTION 'Cell % is error or another type!', NEW.cell_name
+                USING errcode = 50070;
+        END IF;
+        SELECT id INTO cell_id_
+            FROM cell
+            WHERE repository_part_id = NEW.rp_id
+                AND sname = NEW.cell_name
+                AND is_error = 0
+                AND hi_level_type IN (14,15,16);
+
+        -- проверяем, а нету ли уже команды полученной по этой ячейке/контейнеру
+        SELECT count(*) INTO cnt
+            FROM command_gas
+            WHERE state IN (0,1,3)
+                AND NEW.container_barcode = container_barcode
+                AND command_type_id = 18;
+        IF (cnt <> 0) THEN
+            RAISE EXCEPTION 'Command was already given by barcode=%', NEW.container_barcode
+                USING errcode = 50070;
+        END IF;
+
+        -- в случае строгой проверки проверяем, а свободна ли ячейка
+        IF (icasc = 1) THEN
+            SELECT count(*) INTO cnt
+                FROM cell
+                WHERE id = cell_id_
+                    AND coalesce(container_id,0) <> NEW.container_id
+                    AND is_full > 0;
+            IF (cnt > 0) THEN
+                RAISE EXCEPTION 'The cell <%> in rp % is full!', NEW.cell_name, NEW.rp_id
+                    USING errcode = 50070;
+            END IF;
+        END IF;
+
+        IF obj_rpart.has_free_cell_by_cnt(NEW.container_id) = 0 THEN
+            RAISE EXCEPTION 'Repository is overload (has_free)!'
+                USING errcode = 50003;
+        END IF;
+
+        -- проверяем, а не дадена ли уже команда на заьор из этой же ячейки
+        FOR cmd_ret IN (
+            SELECT *
+                FROM command_gas
+                WHERE command_type_id = 11
+                    AND rp_id = NEW.rp_id
+                    AND NEW.cell_name = cell_name
+                    AND state = 0
+        ) LOOP
+            RAISE EXCEPTION 'Commad conflict found!'
+                USING errcode = 50070;
+        END LOOP;
+
+
+        NEW.state := 1;
+
+        -- проверяем, а не находился ли контейнер в другой ячейке универсальной
+        FOR ccel IN (
+            SELECT *
+                FROM cell
+                WHERE cell.container_id = NEW.container_id
+                    AND sname <> NEW.cell_name
+                    AND is_full <> 0
+                    AND hi_level_type = 15
+        ) LOOP
+            CALL service.log2file('  возврат - случай когда контейнер [' || NEW.container_barcode
+                || '] был в другой ячейке ' || ccel.sname);
+            UPDATE cell
+                SET is_full = is_full - 1,
+                    container_id = 0
+                WHERE id = ccel.id;
+        END LOOP;
+
+        -- а нету ли контейнера уже в ячейке приема?
+        SELECT count(*) INTO cnt
+            FROM container
+            WHERE barcode = NEW.container_barcode
+                AND cell_id = cell_id_
+                AND location = 1;
+        IF (cnt <> 0) THEN
+            -- есть уже контейнер в ячейке возврата, можно сразу давать команду
+            CALL service.log2file('  возврат - случай когда контейнер в ячейке возврата уже ' || NEW.rp_id
+                || ' ' || NEW.container_id
+                || ' ' || NEW.command_type_id
+                || ' ' || NEW.cell_name
+                || ' ' || NEW.rp_id
+                || ' ' || new_rp_id);
+            -- gas.get_cell_name_for_accept(NEW.rp_id, NEW.container_id, NEW.command_type_id, NEW.cell_name, NEW.rp_id, new_rp_id);
+            SELECT obj_cmd_gas.get_cell_name_for_accept(
+                NEW.rp_id, NEW.container_id, NEW.command_type_id,
+                NEW.cell_name, NEW.rp_id
+            ) INTO new_rp_id, cell_sname_;
+            FOR cc IN (
+                SELECT cc_.id
+                    FROM container_collection cc_
+                    INNER JOIN container_collection_content ccc_
+                        ON ccc_.cc_id = cc_.id
+                    WHERE cc_.state = 0
+                        AND cc_.container_barcode = NEW.container_barcode
+                        AND (quantity_real + quantity_deficit) <> quantity_need
+            ) LOOP
+                RAISE EXCEPTION 'Container collection with id=% is not finished yet!', cc.id
+                    USING errcode = 50070;
+            END LOOP;
+            CALL service.log2file('  ячейка для хранения определена как =' || cell_sname_
+                || ' rp_id=' || new_rp_id);
+            IF (cell_sname_ <> '-') THEN
+                NEW.cell_out_name := cell_sname_;
+                SELECT letter INTO NEW.zone_letter
+                    FROM zone WHERE id = (
+                        SELECT zone_id
+                            FROM cell
+                            WHERE sname = cell_sname_
+                                AND repository_part_id = NEW.rp_id
+                    );
+
+                IF service.get_rp_param_number('Particular_Return_Priority', 0) = 1 THEN
+                    pri_ := NEW.priority;
+                ELSE
+                    pri_ := obj_rpart.get_cmd_max_priority(NEW.rp_id);
+                END IF;
+                CALL obj_ask.set_command(
+                    NEW.id, 1, NEW.rp_id,
+                    NEW.cell_name, new_rp_id,
+                    cell_sname_,pri_, NEW.container_id);
+                NEW.state := 0;
+            ELSE
+                RAISE EXCEPTION 'Repository is overload (get_cell_name_for_accept)!'
+                    USING errcode = 50070;
+            END IF;
+        ELSE
+            SELECT count(*) INTO cnt
+                FROM command_gas_out_container
+                WHERE container_id = NEW.container_id; -- а был ли вообще подвоз по контейнеру когда либо?
+            IF (cnt <> 0) THEN -- подвоз был, пошла проверка
+                -- проверяем процесс отбора по контейнеру
+                SELECT count(*) INTO cnt
+                    FROM container_collection cc
+                    WHERE state = 0
+                        AND container_barcode = NEW.container_barcode;
+                IF (cnt = 0) THEN
+                    RAISE EXCEPTION 'There is not opening collection for container with barcode=% and container is''nt in return cell!', NEW.container_barcode
+                        USING errcode = 50070;
+                ELSE -- есть коллекция
+                    SELECT id INTO cc_id_
+                        FROM container_collection cc
+                        WHERE state = 0
+                            AND container_barcode = NEW.container_barcode;
+                    SELECT count(*) INTO cnt
+                        FROM container_collection_content ccc
+                        WHERE cc_id = cc_id_
+                            AND (quantity_real + quantity_deficit) <> quantity_need;
+                    IF (cnt <> 0) THEN
+                        RAISE EXCEPTION 'Container collection with id=% is not finished yet!', cc_id_
+                            USING errcode = 50070;
+                    END IF;
+                END IF;
+            END IF;
+        END IF;
+        -- вроде все ок, делаем присваивания
+        UPDATE container_collection cc
+            SET state = 1
+            WHERE state = 0
+                AND container_barcode = NEW.container_barcode;
+
+        NEW.container_cell_name := NEW.cell_name;
+        NEW.container_rp_id := NEW.rp_id;
+        NEW.state_ind := NEW.state;
+
+        IF (cmgd = 0) THEN -- если только один товар в контейнеере
+            SELECT good_desc_id, quantity
+                INTO NEW.good_desc_id, NEW.quantity
+                FROM container_content
+                WHERE container_id = NEW.container_id;
+        END IF;
+
+    END IF;
+
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION command_gas_bi_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS command_gas_bi_e ON command_gas;
+
+CREATE TRIGGER command_gas_bi_e
+    BEFORE INSERT
+    ON command_gas
+    FOR EACH ROW
+    EXECUTE FUNCTION command_gas_bi_e();
+
+-- vim: ft=pgsql

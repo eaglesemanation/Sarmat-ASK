@@ -30,6 +30,21 @@ COMMENT ON FUNCTION obj_ask."ERROR_TYPE_ROBOT"()
     IS 'Emulating package variable. Code for all robot related errors.
 Тип ошибки: ошибка робота';
 
+CREATE OR REPLACE FUNCTION obj_ask."CELL_TYPE_STORAGE_CELL"(
+	)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 1;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask."CELL_TYPE_STORAGE_CELL"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask."CELL_TYPE_STORAGE_CELL"()
+    IS 'Тип ячейки: ячейки для хранения товара';
+
 CREATE OR REPLACE FUNCTION obj_ask."CELL_TYPE_TRANSIT_1RP"(
 	)
     RETURNS bigint
@@ -45,6 +60,36 @@ ALTER FUNCTION obj_ask."CELL_TYPE_TRANSIT_1RP"() OWNER TO postgres;
 COMMENT ON FUNCTION obj_ask."CELL_TYPE_TRANSIT_1RP"()
     IS 'Emulating package variable. Virtual cell for inner warehouse transfers.
 Тип ячейки: транзитные виртуальные для перемещений внутри одного подсклада';
+
+CREATE OR REPLACE FUNCTION obj_ask."CELL_TYPE_TR_CELL"(
+	)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 6;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask."CELL_TYPE_TR_CELL"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask."CELL_TYPE_TR_CELL"()
+    IS 'Тип ячейки: транзитные ячейки двунаправленные';
+
+CREATE OR REPLACE FUNCTION obj_ask."CELL_TYPE_TR_CELL_OUTCOMING"(
+	)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 8;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask."CELL_TYPE_TR_CELL_OUTCOMING"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask."CELL_TYPE_TR_CELL_OUTCOMING"()
+    IS 'Тип ячейки: транзитные ячейки исходящие';
 
 CREATE OR REPLACE FUNCTION obj_ask.get_log_file_name(
     )
@@ -82,6 +127,7 @@ COMMENT ON PROCEDURE obj_ask.log(text)
     IS 'Adds timestamped entry into log
 запись строки в журнал';
 
+
 CREATE OR REPLACE PROCEDURE obj_ask.global_error_log(
     error_type_ bigint,
     repository_part_id_ bigint,
@@ -116,5 +162,420 @@ END;
 $BODY$;
 COMMENT ON PROCEDURE obj_ask.global_error_log(bigint, bigint, bigint, text)
     IS 'добавить лог о глобальной ошибке';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.is_enable_container_accept(
+    rp_id_ bigint,
+    cnt_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    i_ BIGINT;
+    cnt container;
+BEGIN
+    IF obj_rpart.is_exists_cell_type(rp_id_, obj_ask."CELL_TYPE_TR_CELL"()) = 0
+        AND obj_rpart.is_exists_cell_type(rp_id_, obj_ask."CELL_TYPE_TR_CELL_OUTCOMING"()) = 0
+    THEN
+        -- вариант, когда склад обособленный
+        FOR cnt IN (
+            SELECT *
+                FROM container
+                WHERE id = cnt_id_
+        ) LOOP
+            SELECT count(*) INTO i_
+                FROM cell
+                WHERE repository_part_id = rp_id_
+                    AND hi_level_type = obj_ask."CELL_TYPE_STORAGE_CELL"()
+                    AND is_error = 0
+                    AND is_full = 0
+                    AND cell_size <= cnt.type
+                    AND NOT exists(
+                        SELECT * FROM cell_cmd_lock WHERE cell_id = cell.id
+                    );
+            IF (i_ = 0) THEN
+                RETURN 0;
+            END IF;
+        END LOOP;
+    END IF;
+    RETURN 1;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.is_enable_container_accept(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.is_enable_container_accept(bigint, bigint)
+    IS 'можно ли принять на подсклад данный контейнер?';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.is_can_accept_cmd()
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rr BIGINT;
+BEGIN
+    FOR rr IN (
+        SELECT id
+            FROM repository
+            WHERE is_work = 0
+    ) LOOP
+        IF service.get_rp_param_number('accept_cmd_always', 0) = 1 THEN
+            RETURN 1;
+        ELSE
+            RETURN 0;
+        END IF;
+    END LOOP;
+    RETURN 1;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.is_can_accept_cmd() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.is_can_accept_cmd()
+    IS 'можно ли принимать команды от внешней системы?';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.calc_distance(
+    rp_type bigint,
+    max_npp bigint,
+    n1 bigint,
+    n2 bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+    nn1 BIGINT;
+    nn2 BIGINT;
+BEGIN
+    IF (n2 < n1) THEN
+        nn1 := n2;
+        nn2 := n1;
+    ELSE
+        nn1 := n1;
+        nn2 := n2;
+    END IF;
+    res := nn2 - nn1;
+    IF (rp_type = 1) THEN -- только для кольцевого
+        IF (max_npp - nn2 + nn1) < res THEN
+            res := max_npp - nn2 + nn1;
+        END IF;
+    END IF;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.calc_distance(bigint, bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.calc_distance(bigint, bigint, bigint, bigint)
+    IS 'вычисляет расстояние между двумя треками npp';
+
+
+CREATE OR REPLACE PROCEDURE obj_ask.set_command(
+    command_gas_id_ bigint,
+    command_type_id_ bigint,
+    rp_src_id_ bigint,
+    cell_src_sname_ text,
+    rp_dest_id_ bigint,
+    cell_dest_sname_ text,
+    priority_ bigint,
+    container_id_ bigint)
+LANGUAGE 'plpgsql'
+AS $BODY$
+BEGIN
+    CALL obj_ask.log('Ставим команду на выполнение command_gas_id_=' || command_gas_id_
+        || ' command_type_id_=' || command_type_id_
+        || ' rp_src_id_=' || rp_src_id_
+        || ' cell_src_sname_=' || cell_src_sname_
+        || ' rp_dest_id_=' || rp_dest_id_
+        || ' cell_dest_sname_=' || cell_dest_sname_
+        || ' priority_=' || priority_
+        || ' container_id_=' || container_id_);
+    INSERT INTO command (
+        command_gas_id, command_type_id,
+        rp_src_id, cell_src_sname,
+        rp_dest_id, cell_dest_sname,
+        priority, container_id
+    ) VALUES (
+        command_gas_id_, command_type_id_,
+        rp_src_id_, cell_src_sname_,
+        rp_dest_id_, cell_dest_sname_,
+        priority_, container_id_
+    );
+    IF coalesce(container_id_, 0) > 0 THEN
+        UPDATE container
+            SET cell_goal_id=obj_rpart.get_cell_id_by_name(rp_dest_id_, cell_dest_sname_)
+            WHERE id = container_id_;
+    END IF;
+END;
+$BODY$;
+COMMENT ON PROCEDURE obj_ask.set_command(bigint, bigint, bigint, text, bigint, text, bigint, bigint)
+    IS 'установить команду к выполнению';
+
+
+CREATE OR REPLACE PROCEDURE obj_ask.check_gdrest_consistance()
+LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    errm TEXT;
+    msg TEXT;
+    rps BIGINT;
+    fgd_cc RECORD;
+    ggd_ RECORD;
+    gdch RECORD;
+    gdpch RECORD;
+BEGIN
+    msg := '  check_gdrest_consistance - начало' ;
+    CALL obj_ask.log(msg);
+    FOR rps IN (
+        SELECT id
+            FROM repository
+            WHERE coalesce(storage_by_firm, 0) = 1
+    ) LOOP
+        FOR fgd_cc IN (
+            SELECT *
+                FROM (
+                    SELECT gd.id gdid,
+                        gd.name gdname,
+                        f.name fname,
+                        f.id firm_id,
+                        (
+                            SELECT sum(quantity)
+                                FROM container_content cc
+                                INNER JOIN container c
+                                    ON cc.container_id = c.id
+                                WHERE firm_id = f.id
+                                    AND gd.id = good_desc_id
+                                    AND c.id NOT IN (
+                                        SELECT container_id
+                                            FROM command_gas
+                                            WHERE command_type_id = 11
+                                                AND state_ind = 1
+                                    )
+                        ) ccqty,
+                        (
+                            SELECT quantity + quantity_reserved qty
+                                FROM firm_gd
+                                WHERE firm_id = f.id
+                                    AND gd.id = gd_id
+                        ) fqty
+                        FROM firm f
+                        INNER JOIN firm_gd frm_gd
+                            ON f.id = frm_gd.firm_id
+                        INNER JOIN good_desc gd
+                            ON frm_gd.gd_id = gd.id
+                ) fgd
+                WHERE coalesce(fgd.ccqty, 0) <> coalesce(fgd.fqty, 0)
+        ) LOOP
+            errm := ' Ошибка сходимости состава контейнеров с остатками по клиентам для '
+                || fgd_cc.gdid || ' '
+                || fgd_cc.firm_id || ' '
+                || fgd_cc.ccqty || ' '
+                || fgd_cc.fqty;
+            CALL obj_ask.log(errm);
+            RAISE EXCEPTION '%', errm
+                USING errcode = 50003;
+        END LOOP;
+        FOR ggd_ IN (
+            SELECT *
+                FROM (
+                    SELECT id,
+                        quantity + quantity_reserved qq,
+                        (
+                            SELECT coalesce(sum(quantity + quantity_reserved), 0)
+                                FROM firm_gd
+                                WHERE gd_id = gd.id
+                        ) ss
+                        FROM good_desc gd
+                ) ggd
+                WHERE ggd.qq <> ggd.ss
+        ) LOOP
+            errm := ' Ошибка сходимости состава остатков с остатками по клиентам для ' || ggd_.id;
+            CALL obj_ask.log(errm);
+            RAISE EXCEPTION '%', errm
+                USING errcode = 50003;
+        END LOOP;
+    END LOOP;
+    FOR rps IN (
+        SELECT id
+            FROM repository
+            WHERE is_party_calc = 0
+    ) LOOP
+        FOR gdch IN (
+            SELECT /*+RULE*/ *
+                FROM (
+                    SELECT gd.name,
+                        quantity qty,
+                        quantity_reserved qty_reserved,
+                        id,
+                        (
+                            SELECT coalesce(sum(quantity), 0)
+                                FROM command_gas
+                                WHERE command_type_id = 25
+                                    AND state = 5
+                                    AND good_desc_id = gd.id
+                        ) qpry,
+                        (
+                            SELECT coalesce(sum(cgoo.qty), 0)
+                                FROM command_gas cg
+                                INNER JOIN command_gas_container_content cgoo
+                                    ON cg.id = cgoo.command_gas_id
+                                WHERE command_type_id=11
+                                    AND (cell_out_name IS NOT null OR coalesce(cell_name, '-') = 'Desktop')
+                                    AND state IN (1,3,5)
+                                    AND cgoo.gd_id = gd.id
+                        ) qpry11,
+                        (
+                            SELECT coalesce(sum(cgoo.qty_delta), 0)
+                                FROM command_gas cg
+                                INNER JOIN command_gas_container_content cgoo
+                                    ON cg.id = cgoo.command_gas_id
+                                WHERE command_type_id = 26
+                                    AND state in (1,3,5)
+                                    AND cgoo.gd_id = gd.id
+                        ) qinv,
+                        (
+                            SELECT coalesce(sum(quantity), 0)
+                                FROM command_order
+                                WHERE command_type_id = 16
+                                    AND state = 5
+                                    AND good_desc_id = gd.id
+                        ) qras,
+                        (
+                            SELECT coalesce(sum(quantity), 0)
+                                FROM command_gas
+                                WHERE command_type_id = 24
+                                    AND state = 5
+                                    AND good_desc_id = gd.id
+                        ) qras24
+                        FROM good_desc gd
+                ) chc
+                WHERE chc.qty + chc.qty_reserved <> chc.qpry + chc.qpry11 - chc.qras - chc.qras24 + chc.qinv
+        ) LOOP
+            errm := ' Ошибка сходимости товара по остаткам ' || gdch.id;
+            CALL obj_ask.log(errm);
+            RAISE EXCEPTION '%', errm
+                USING errcode = 50003;
+        END LOOP;
+    END LOOP;
+    -- по партиям
+    FOR rps IN (
+        SELECT id
+            FROM repository
+            WHERE is_party_calc = 1
+    ) LOOP
+        FOR gdch IN (
+            SELECT /*+RULE*/ good_desc_id,
+                quantity,
+                quantity_reserved,
+                (
+                    SELECT sum(qty)
+                        FROM gd_party
+                        WHERE gd_id = gd.good_desc_id
+                ) gdp_qty,
+                (
+                    SELECT sum(qty_reserved)
+                        FROM gd_party
+                        WHERE gd_id = gd.good_desc_id
+                ) gdp_qty_reserved,
+                (
+                    SELECT coalesce(sum(quantity), 0)
+                        FROM container_content
+                        WHERE good_desc_id = gd.id
+                            AND container_id NOT IN (
+                                SELECT container_id
+                                    FROM command_gas
+                                    WHERE command_type_id = 11
+                                        AND state_ind = 1
+                            )
+                ) qty_cont_all
+                FROM good_desc gd
+                WHERE quantity <> (
+                    SELECT sum(qty)
+                        FROM gd_party
+                        WHERE gd_id = gd.good_desc_id
+                ) OR quantity_reserved <> (
+                    SELECT sum(qty_reserved)
+                        FROM gd_party
+                        WHERE gd_id = gd.good_desc_id
+                ) OR quantity + quantity_reserved <> (
+                    SELECT coalesce(sum(quantity), 0)
+                        FROM container_content
+                        WHERE good_desc_id = gd.id
+                            AND container_id NOT IN (
+                                SELECT container_id
+                                    FROM command_gas
+                                    WHERE command_type_id = 11
+                                        AND state_ind = 1
+                                        AND cell_out_name IS null
+                            )
+                )
+        ) LOOP
+            errm := ' Ошибка целостности остатков для товара ' || gdch.good_desc_id;
+            CALL obj_ask.log(errm);
+            RAISE EXCEPTION '%', errm
+                USING errcode = 50003;
+        END LOOP;
+        FOR gdpch IN (
+            SELECT /*+RULE*/ gd_id,
+                gdp.id,
+                qty + qty_reserved qnt,
+                (
+                    SELECT sum(quantity)
+                        FROM container_content
+                        WHERE good_desc_id = gd.id
+                            AND gdp_id = gdp.id
+                ) hh
+                FROM gd_party gdp
+                INNER JOIN good_desc gd
+                    ON gdp.gd_id = gd.good_desc_id
+                WHERE (qty + qty_reserved) <> (
+                    SELECT coalesce(sum(quantity), 0)
+                        FROM container_content
+                        WHERE good_desc_id = gd.id
+                            AND gdp_id = gdp.id
+                            AND container_id NOT IN (
+                                SELECT container_id
+                                    FROM command_gas
+                                    WHERE command_type_id = 11
+                                        AND state_ind = 1
+                                        AND cell_out_name IS null
+                            )
+                )
+        ) LOOP
+            errm := 'Ошибка целостности остатков для партии товара ' || gdpch.gd_id;
+            CALL obj_ask.log(errm);
+            RAISE EXCEPTION '%', errm
+                USING errcode = 50003;
+        END LOOP;
+    END LOOP;
+    msg := '  проверили сходимость остатков товара';
+    CALL obj_ask.log(msg);
+END;
+$BODY$;
+COMMENT ON PROCEDURE obj_ask.check_gdrest_consistance()
+    IS 'проверка остатков товара на консистентность';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.get_good_desc_id_by_id(
+    gdid_ text)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+BEGIN
+    SELECT good_desc_id INTO res
+        FROM good_desc
+        WHERE id = gdid_;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.get_good_desc_id_by_id(text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.get_good_desc_id_by_id(text)
+    IS 'получить числовой ID товара по символьному ID';
 
 -- vim: ft=pgsql

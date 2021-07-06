@@ -1,0 +1,34 @@
+CREATE OR REPLACE FUNCTION command_gas_ad_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+BEGIN
+    CALL service.log2file('удаление command_gas с id='||OLD.id);
+    DELETE FROM command
+        WHERE command_gas_id = OLD.id;
+    DELETE FROM command_gas_cell_in
+        WHERE command_gas_id = OLD.id;
+    DELETE FROM command_gas_out_container
+        WHERE cmd_gas_id = OLD.id;
+    DELETE FROM command_gas_out_container_plan
+        WHERE cmd_gas_id = OLD.id;
+    DELETE FROM container_collection
+        WHERE cmd_gas_id = OLD.id;
+    RETURN OLD;
+END;
+$BODY$;
+
+ALTER FUNCTION command_gas_ad_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS command_gas_ad_e ON command_gas;
+
+CREATE TRIGGER command_gas_ad_e
+    AFTER DELETE
+    ON command_gas
+    FOR EACH ROW
+    EXECUTE FUNCTION command_gas_ad_e();
+
+-- vim: ft=pgsql

@@ -1,0 +1,82 @@
+CREATE OR REPLACE FUNCTION command_gas_aiu_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+DECLARE
+    tg tmp_cmd_gas;
+    cg command_gas;
+    rr repository;
+    qq BIGINT;
+BEGIN
+    -- прием товара
+    FOR tg IN (
+        SELECT *
+            FROM tmp_cmd_gas
+            WHERE action = 1
+    ) LOOP
+        DELETE FROM tmp_cmd_gas WHERE cmd_gas_id = tg.cmd_gas_id;
+        FOR cg IN (
+            SELECT *
+                FROM command_gas
+                WHERE id = tg.cmd_gas_id
+        ) LOOP
+            qq := obj_doc_expense.get_pridoc_rest(cg.pri_doc_number);
+            IF (qq = 0) THEN
+                UPDATE doc
+                    SET accepted = 3
+                    WHERE accepted = 1
+                        AND id=cg.pri_doc_number;
+            END IF;
+        END LOOP;
+    END LOOP;
+
+    -- отбор товара
+    FOR tg IN (
+        SELECT *
+            FROM tmp_cmd_gas
+            WHERE action = 3
+    ) LOOP
+        DELETE FROM tmp_cmd_gas WHERE cmd_gas_id = tg.cmd_gas_id;
+        FOR cg IN (
+            SELECT *
+                FROM command_gas
+                WHERE id = tg.cmd_gas_id
+        ) LOOP
+            qq := obj_cmd_order.get_rasdoc_rest(cg.pri_doc_number::bigint);
+            IF (qq = 0) THEN
+                UPDATE doc
+                    SET accepted = 3
+                    WHERE accepted = 1
+                        AND id = cg.pri_doc_number::bigint;
+            END IF;
+        END LOOP;
+    END LOOP;
+
+    IF (TG_OP = 'INSERT') THEN
+        FOR rr IN (
+            SELECT *
+                FROM repository
+                WHERE coalesce(cycle_check_gdrest_consistance, 0) = 1
+        ) LOOP
+            CALL obj_ask.check_gdrest_consistance();
+        END LOOP;
+    END IF;
+
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION command_gas_aiu_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS command_gas_aiu_e ON command_gas;
+
+CREATE TRIGGER command_gas_aiu_e
+    AFTER INSERT OR UPDATE
+    ON command_gas
+    FOR EACH ROW
+    EXECUTE FUNCTION command_gas_aiu_e();
+
+-- vim: ft=pgsql

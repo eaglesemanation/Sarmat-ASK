@@ -1,0 +1,387 @@
+CREATE OR REPLACE PROCEDURE obj_cmd_gas.log(
+    s_ text)
+LANGUAGE 'plpgsql'
+AS $BODY$
+BEGIN
+    RAISE NOTICE '%', s_;
+    CALL obj_ask.log(s_);
+END;
+$BODY$;
+COMMENT ON PROCEDURE obj_cmd_gas.log(text)
+    IS 'добавить строку в журнал (лог)';
+
+
+CREATE OR REPLACE PROCEDURE obj_cmd_gas.parse_cg_cc(
+    cg_id bigint,
+    ccont text,
+    cmgd bigint)
+LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    s TEXT;
+    ss TEXT;
+    sgd TEXT;
+    sgdr TEXT;
+    sn TEXT;
+    snotes TEXT;
+    scnt BIGINT;
+    cnt BIGINT;
+    cntg BIGINT;
+    IAEC BIGINT;
+    ipc SMALLINT;
+    gdp_id_ TEXT;
+    sn1 TEXT;
+BEGIN
+    SELECT coalesce(is_party_calc, 0), is_allow_store_empty_cnt
+        INTO ipc, IAEC
+        FROM repository;
+    DELETE FROM command_gas_container_content
+        WHERE command_gas_id = cg_id;
+    -- разбор строки состава принимаемого контейнера
+    s := trim(ccont);
+    --begin
+    LOOP
+        IF substring(s FROM 1 FOR 1) <> '[' THEN
+            RAISE EXCEPTION '<content> has bad structure! substr(s,1,1)<>['
+                USING errcode = 20070;
+        END IF;
+        cnt := position(']' IN s);
+        ss := substring(s FROM 2 FOR cnt::INT - 2); -- текущая позиция
+        scnt := position(';' IN ss); -- первый ";"
+        IF (scnt = 0) THEN
+            RAISE EXCEPTION '<content> has bad structure! scnt=0'
+                USING errcode = 50070;
+        END IF;
+        sgd := substring(ss FROM 1 FOR scnt::INT - 1);
+        sn := substring(ss FROM scnt::INT + 1);
+        scnt := position(';' IN sn);
+        IF (scnt <> 0) THEN -- есть комментарий
+            --dbms_output.put_line('1-й '||scnt);
+            sn1 := substring(sn FROM scnt::INT + 1); -- означили что после кол-ва
+            sn := substring(sn FROM 1 FOR scnt::INT - 1)  ; -- Означили кол-во
+            scnt := position(';' IN sn1);
+            --dbms_output.put_line('2-й ' ||scnt);
+            --dbms_output.put_line(sn1||'-'||sn);
+            IF (scnt <> 0) THEN
+                snotes := substring(sn1 FROM 1 FOR scnt::INT - 1);
+                gdp_id_ := substring(sn1 FROM scnt::INT + 1);
+            ELSE
+                snotes := sn1;
+                gdp_id_ := '';
+            END IF;
+            --        raise_application_error(-20070,sn);
+        ELSE -- нет комментария и ничего
+            snotes := '';
+            gdp_id_ := '';
+        END IF;
+        /*if nvl(to_number(sn),0)=0  then -- нулевое кол-во при приеме
+        if  IAEC<>1 then
+            raise_application_error(-20070,'Empty quantity for parse_content');
+        end if;
+        exit;
+    else*/
+        SELECT count(*) INTO cntg
+            FROM good_desc
+            WHERE trim(upper(id)) = trim(upper(sgd));
+        IF (cntg = 0) THEN
+            RAISE EXCEPTION 'Good_desc with ID=[%] does''nt exist!', sgd
+                USING errcode = 50070;
+        END IF;
+        SELECT id INTO sgdr
+            FROM good_desc
+            WHERE trim(upper(id)) = trim(upper(sgd));
+        IF (ipc = 0) AND (gdp_id_ IS NOT null) THEN
+            RAISE EXCEPTION 'Calculation in parts is disabled!'
+                USING errcode = 50070;
+        END IF;
+        INSERT INTO command_gas_container_content (
+            command_gas_id, gd_id, qty, notes, gdp_id
+        ) VALUES (
+            cg_id, sgdr, sn::BIGINT, snotes, gdp_id_::BIGINT
+        );
+        RAISE NOTICE 'Вставка % % % % %', cg_id, sgdr, sn::INT, snotes, gdp_id_;
+        IF (cnt >= length(s)) THEN
+            EXIT;
+        ELSE
+            s := substring(s FROM cnt::INT + 1);
+            IF (cmgd = 0) THEN
+                RAISE EXCEPTION 'In <content> must be one good_desc!'
+                    USING errcode = 50070;
+            END IF;
+        END IF;
+        EXIT WHEN s IS null;
+    --end if;
+    END LOOP;
+    --exception when others then
+    --  raise_application_error(-20070,'<content> has bad structure or multi_gd not allowed!');
+    --end;
+END;
+$BODY$;
+COMMENT ON PROCEDURE obj_cmd_gas.parse_cg_cc(bigint, text, bigint)
+    IS 'парсит строку товара в таблицу';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.get_acc_cell_src_npp_rp(
+    rp_src_npp_ bigint,
+    rp_src_id_ bigint,
+    rp_dest_id_ bigint
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cc cell;
+BEGIN
+    IF rp_src_id_ = rp_dest_id_ THEN
+        RETURN rp_src_npp_;
+    ELSE -- не совпадают склад-источник и приемник
+        FOR cc IN (
+            SELECT *
+                FROM cell
+                WHERE repository_part_id = rp_dest_id_
+                    AND hi_level_type = 7
+                ORDER BY is_full
+        ) LOOP
+            RETURN cc.track_npp;
+        END LOOP;
+    END IF;
+    RETURN -1000;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.get_acc_cell_src_npp_rp(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.get_acc_cell_src_npp_rp(bigint, bigint, bigint)
+    IS 'взять трек ячейки источника для приема контейнера (может не совпадать для разных складов)
+если склад приемник и источник совпадает, то тот же трек возвращает
+если не совпадает, то возвращает трек трансферной свободной ячейки';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.get_cell_name_for_accept(
+    rp_id_ bigint,
+    cnt_id_ bigint,
+    cg_type_id_ bigint,
+    cg_cell_sname_ text,
+    cg_rp_id_ bigint,
+    OUT new_rp_id_ bigint,
+    OUT result text)
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt_rang__ BIGINT;
+    cnt_rec__ container;
+    celli_rec__ cell;
+    last_save_cell_npp__ BIGINT;
+    --slog_ TEXT;
+    can_transit_ BIGINT;
+    src_npp_for_transfer_ TEXT;
+    recot_ BIGINT;
+    ll RECORD;
+    cga command_gas;
+    --cnd RECORD;
+    ncl RECORD;
+    cnt RECORD;
+BEGIN
+    CALL obj_cmd_gas.log('get_cell_name_for_accept rp_id_=' || rp_id_
+        || ' cnt_id_=' || cnt_id_
+        || ' cg_type_id_=' || cg_type_id_
+        || ' cg_cell_sname_=' || cg_cell_sname_
+        || ' cg_rp_id_=' || cg_rp_id_);
+    -- взяли ранг
+    SELECT coalesce(max(gd.abc_rang), 0) INTO cnt_rang__
+        FROM good_desc gd
+        INNER JOIN container_content cc
+            ON cc.good_desc_id = gd.id
+        WHERE container_id = cnt_id_;
+    -- взяли инфу по контейнеру
+    SELECT * INTO cnt_rec__
+        FROM container c
+        WHERE c.id = cnt_id_;
+    -- взяли инфу по ячейке приема
+    SELECT * INTO celli_rec__
+        FROM cell
+        WHERE sname = cg_cell_sname_
+            AND repository_part_id = rp_id_;
+    SELECT is_transit_between_part INTO can_transit_
+        FROM repository;
+    SELECT reserve_empty_cell_on_track INTO recot_
+        FROM repository_part
+        WHERE id = rp_id_;
+    last_save_cell_npp__ := 0;
+    FOR ll IN (
+        SELECT cmd.*
+            FROM command cmd
+            INNER JOIN cell c
+                ON c.id = cmd.cell_dest_id
+            WHERE cmd.rp_dest_id = rp_id_
+                AND hi_level_type = 1
+                AND date_time_create > LOCALTIMESTAMP - INTERVAL '1 day'
+                AND state = 5
+            ORDER BY cmd.date_time_end DESC,
+                cmd.id DESC
+    ) LOOP
+        last_save_cell_npp__ := ll.npp_dest;
+        CALL obj_cmd_gas.log('  last_save_cell_npp__=' || last_save_cell_npp__);
+        EXIT;
+    END LOOP;
+    -- ищем ячейку
+    IF (recot_ = 1) THEN
+        -- откуда отборы активные
+        src_npp_for_transfer_ := '';
+        FOR cga IN (
+            SELECT *
+                FROM command_gas
+                WHERE rp_id = rp_id_
+                    AND command_type_id = 14
+                    AND state IN (0)
+                    AND obj_rpart.get_cell_track_npp(
+                        obj_rpart.get_cell_id_by_name(rp_id_,cell_name)
+                    ) = celli_rec__.track_npp
+        ) LOOP
+            FOR cnt IN (
+                SELECT track_npp
+                    FROM container cn
+                    INNER JOIN cell cl
+                        ON cn.cell_id = cl.id
+                    WHERE cn.id = cga.container_id
+            ) LOOP
+                src_npp_for_transfer_ := src_npp_for_transfer_ || '[' || cnt.track_npp || ']';
+            END LOOP;
+        END LOOP;
+        CALL obj_cmd_gas.log('src_npp_for_transfer_=' || src_npp_for_transfer_);
+        FOR ncl IN (
+            SELECT cl.*
+                FROM cell cl
+                INNER JOIN repository_part rp
+                    ON rp.id = cl.repository_part_id
+                WHERE is_full = 0
+                    AND coalesce(blocked_by_ci_id, 0) = 0
+                    AND max_full_size > (
+                        SELECT count(*)
+                            FROM cell_cmd_lock
+                            WHERE cell_id = cl.id
+                    )
+                    AND coalesce(is_error, 0) = 0
+                    AND hi_level_type = 1
+                    AND zone_id <> 0
+                    AND cell_size <= cnt_rec__.type
+                    AND rp.id = rp_id_
+                    AND (
+                        src_npp_for_transfer_ IS null AND obj_rpart.calc_track_free_cell(rp.id,track_npp) > 1
+                        OR
+                        coalesce(position('[' || track_npp || ']' IN src_npp_for_transfer_), 0) > 0
+                    )
+                ORDER BY abs(cell_size - cnt_rec__.type), -- наиболее подходящая ячейка размера
+                    abs(cnt_rang__ - zone_id),
+                    trunc(obj_rpart.calc_min_distance(
+                            rp.repository_type,
+                            max_npp,
+                            obj_cmd_gas.get_acc_cell_src_npp_rp(
+                                celli_rec__.track_npp,
+                                celli_rec__.repository_part_id,
+                                rp.id),
+                            cl.track_npp
+                    ) / 5), -- неважна точность, важно примерное расстояние
+                    abs(cl.track_npp - last_save_cell_npp__) DESC, -- важна разность чтоб два робота напрягать
+                    abs(ascii(substring(orientaition FROM 1 FOR 1)) - ascii(substring(sbros_prev_orient FROM 1 FOR 1))) DESC
+        ) LOOP
+            CALL obj_cmd_gas.log(' obj_cmd_gas.get_cell_name_for_accept - найдена ячейка для хранения ' || ncl.sname || ' зона товара ' || cnt_rang__);
+            result := ncl.sname;
+            RETURN;
+        END LOOP;
+        FOR ncl IN (
+            SELECT cl.*
+                FROM cell cl
+                INNER JOIN repository_part rp
+                    ON rp.id = cl.repository_part_id
+                WHERE is_full = 0
+                    AND coalesce(blocked_by_ci_id, 0) = 0
+                    AND max_full_size > (
+                        SELECT count(*) FROM cell_cmd_lock WHERE cell_id = cl.id
+                    )
+                    AND coalesce(is_error, 0) = 0
+                    AND hi_level_type = 1
+                    AND zone_id <> 0
+                    AND cell_size <= cnt_rec__.type
+                    AND rp.id = rp_id_
+                    AND obj_rpart.calc_track_free_cell(rp.id,track_npp) > 1
+                ORDER BY abs(cell_size - cnt_rec__.type), -- наиболее подходящая ячейка размера
+                    abs(cnt_rang__ - zone_id),
+                    trunc(obj_rpart.calc_min_distance(
+                            rp.repository_type,
+                            max_npp,
+                            obj_cmd_gas.get_acc_cell_src_npp_rp(
+                                celli_rec__.track_npp,
+                                celli_rec__.repository_part_id,
+                                rp.id
+                            ),
+                            cl.track_npp
+                    ) / 5), -- неважна точность, важно примерное расстояние
+                    abs(cl.track_npp - last_save_cell_npp__) DESC, -- важна разность чтоб два робота напрягать
+                    abs(ascii(substring(orientaition FROM 1 FOR 1))-ascii(substring(sbros_prev_orient FROM 1 FOR 1))) DESC
+        ) LOOP
+            CALL obj_cmd_gas.log(' obj_cmd_gas.get_cell_name_for_accept 2 - найдена ячейка для хранения ' || ncl.sname || ' зона товара ' || cnt_rang__);
+            result := ncl.sname;
+            RETURN;
+        END LOOP;
+    ELSE -- не надо дыру держать в каждом треке
+        FOR ncl IN (
+            SELECT cl.*
+                FROM cell cl
+                INNER JOIN repository_part rp
+                    ON rp.id = cl.repository_part_id
+                WHERE is_full = 0
+                    AND coalesce(blocked_by_ci_id, 0) = 0
+                    --AND obj_ask.is_cell_locked_by_cmd(cl.id)=0
+                    AND max_full_size > (
+                        SELECT count(*) FROM cell_cmd_lock WHERE cell_id = cl.id
+                    )
+                    AND coalesce(is_error, 0) = 0
+                    AND hi_level_type = 1
+                    AND zone_id <> 0
+                    AND cell_size <= cnt_rec__.type
+                    AND (can_transit_ = 1 OR rp.id = rp_id_)
+                ORDER BY abs(repository_part_id - rp_id_ ), -- ищем на ближайшем подскладе
+                    abs(cell_size - cnt_rec__.type), -- наиболее подходящая ячейка размера
+                    --instr(src_npp_for_transfer_,'['||track_npp||']') desc, -- при возврате-приходе сразу пытаемся забрать
+                    abs (cnt_rang__ - zone_id),
+                    trunc(obj_rpart.calc_min_distance(
+                            rp.repository_type,
+                            max_npp,
+                            obj_cmd_gas.get_acc_cell_src_npp_rp(
+                                celli_rec__.track_npp,
+                                celli_rec__.repository_part_id,
+                                rp.id),
+                            cl.track_npp
+                    ) / 5), -- неважна точность, важно примерное расстояние
+                    abs(cl.track_npp - last_save_cell_npp__) DESC, -- важна разность чтоб два робота напрягать
+                    abs(ascii(substr(orientaition,1,1))-ascii(substr(sbros_prev_orient,1,1))) DESC
+        ) LOOP
+            IF ncl.repository_part_id <> rp_id_
+                AND obj_rpart.is_exists_cell_type(rp_id_, obj_ask."CELL_TYPE_TR_CELL"()) = 0
+                AND obj_rpart.is_exists_cell_type(rp_id_, obj_ask."CELL_TYPE_TR_CELL_OUTCOMING"()) = 0
+            THEN
+                CALL obj_cmd_gas.log(' obj_cmd_gas.get_cell_name_for_accept - нет мест для хранения ');
+                EXIT;
+            END IF;
+            new_rp_id_ := ncl.repository_part_id;
+            CALL obj_cmd_gas.log(' obj_cmd_gas.get_cell_name_for_accept - найдена ячейка для хранения ' || ncl.sname || ' зона товара ' || cnt_rang__);
+            result := ncl.sname;
+            RETURN;
+        END LOOP;
+    END IF;
+    CALL obj_cmd_gas.log('ERROR - не найдена ячейка для хранения ');
+    result := '-';
+    RETURN;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.get_cell_name_for_accept(bigint, bigint, bigint, text, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.get_cell_name_for_accept(bigint, bigint, bigint, text, bigint)
+    IS 'возвращает название и подсклад ячейки для хранения контейнера
+принимает: склад, контейнер, команду, ячейку-источник, склад команды
+возвращает - название ячейки и подсклад';
+
+
+-- vim: ft=pgsql
