@@ -15,9 +15,9 @@ jobs:
       with:
         ref: ${{ github.head_ref }}
 
-    - name: Run php-cs-fixer
+    - name: Calculate progress
       run: |
-        TOTAL=$(grep '\[ \]' "$GITHUB_WORKSPACE/postgres-robots/README.md" | wc -l)
+        TOTAL=$(grep '\[[ x]\]' "$GITHUB_WORKSPACE/postgres-robots/README.md" | wc -l)
         FINISHED=$(grep '\[x\]' "$GITHUB_WORKSPACE/postgres-robots/README.md" | wc -l)
         PRECENTAGE=$(bc -l <<< "scale=0;$FINISHED * 100 / $TOTAL")
         sed -i "s/\(progress-bar.dev\/\)[0-9]*/\1$PRECENTAGE/" "$GITHUB_WORKSPACE/postgres-robots/README.md"
