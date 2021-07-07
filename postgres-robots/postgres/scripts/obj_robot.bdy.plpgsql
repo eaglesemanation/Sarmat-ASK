@@ -431,6 +431,457 @@ COMMENT ON FUNCTION obj_robot.is_robot_ready_for_cmd_inner(bigint)
     IS 'робот готов для подкоманд перемещения контейнера (load/unload)?';
 
 
+CREATE OR REPLACE FUNCTION obj_robot.get_ci_cnt_bc(
+    rid_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr robot;
+    crp command_rp;
+    cc container;
+BEGIN
+    FOR rr IN (
+        SELECT * FROM robot WHERE id = rid_
+    ) LOOP
+        FOR crp IN (
+            SELECT * FROM command_rp WHERE id = rr.command_rp_id
+        ) LOOP
+            FOR cc IN (
+                SELECT * FROM container WHERE id = crp.container_id
+            ) LOOP
+                RETURN cc.barcode;
+            END LOOP;
+        END LOOP;
+    END LOOP;
+    RETURN '';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_ci_cnt_bc(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_ci_cnt_bc(bigint)
+    IS 'взять ШК контейнера команды перемещения контейнера по id роботу';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.get_ci_cell_src(
+    rid_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr robot;
+    ci command_inner;
+    cc cell;
+BEGIN
+    FOR rr IN (
+        SELECT * FROM robot WHERE id = rid_
+    ) LOOP
+        FOR ci IN (
+            SELECT * FROM command_inner WHERE id = rr.command_inner_id
+        ) LOOP
+            FOR cc IN (
+                SELECT * FROM cell WHERE id = ci.cell_src_id
+            ) LOOP
+                RETURN cc.sname;
+            END LOOP;
+        END LOOP;
+    END LOOP;
+    RETURN '';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_ci_cell_src(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_ci_cell_src(bigint)
+    IS 'взять имя ячейки источника команды робота по id роботу';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.get_ci_cell_dst(
+    rid_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr robot;
+    ci command_inner;
+    crp command_rp;
+    cc cell;
+BEGIN
+    FOR rr IN (
+        SELECT * FROM robot WHERE id = rid_
+    ) LOOP
+        FOR ci IN (
+            SELECT * FROM command_inner WHERE id = rr.command_inner_id
+        ) LOOP
+            FOR crp IN (
+                SELECT * FROM command_rp WHERE id = ci.command_rp_id
+            ) LOOP
+                FOR cc IN (
+                    SELECT * FROM cell WHERE id = crp.cell_dest_id
+                ) LOOP
+                    RETURN cc.sname;
+                END LOOP;
+            END LOOP;
+        END LOOP;
+    END LOOP;
+    RETURN '';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_ci_cell_dst(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_ci_cell_dst(bigint)
+    IS 'взять имя ячейки назначения команды робота по id роботу';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_cell_src(
+    rid_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr RECORD;
+BEGIN
+    FOR rr IN (
+        SELECT /*+RULE*/ crp.cell_src_sname
+            FROM robot r
+            INNER JOIN command_rp crp
+                ON coalesce(r.command_rp_id, 0) = crp.id
+            WHERE r.id = rid_
+    ) LOOP
+        RETURN rr.cell_src_sname;
+    END LOOP;
+    RETURN '';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_cell_src(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_cell_src(bigint)
+    IS 'получить имя ячейки-источника для команды перемещения контейнера по ID робота';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_cell_dest(
+    rid_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr RECORD;
+BEGIN
+    FOR rr IN (
+        SELECT /*+RULE*/  crp.cell_dest_sname
+            FROM robot r
+            INNER JOIN command_rp crp
+                ON coalesce(r.command_rp_id, 0) = crp.id
+            WHERE r.id = rid_
+    ) LOOP
+        RETURN rr.cell_dest_sname;
+    END LOOP;
+    RETURN '';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_cell_dest(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_cell_dest(bigint)
+    IS 'получить имя ячейки назначения для команды перемещения контейнера по ID робота';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_container(
+    rid_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr RECORD;
+BEGIN
+    FOR rr IN (
+        SELECT /*+RULE*/ cnt.barcode
+            FROM robot r
+            INNER JOIN command_rp crp
+                ON coalesce(r.command_rp_id, 0) = crp.id
+            INNER JOIN container cnt
+                ON crp.container_id = cnt.id
+            WHERE r.id = rid_
+    ) LOOP
+        RETURN rr.barcode;
+    END LOOP;
+    RETURN '';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_container(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_container(bigint)
+    IS 'получить ШК контейнера команды перемещения контейнера по ID робота';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_dir(
+    rid_ bigint,
+    nnm_ bigint DEFAULT 1)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr RECORD;
+BEGIN
+    FOR rr IN (
+        SELECT /*+RULE*/ crp.direction_1, crp.direction_2
+            FROM robot r
+            INNER JOIN command_rp crp
+                ON coalesce(r.command_rp_id,0) = crp.id
+            WHERE r.id = rid_
+    ) LOOP
+        IF (nnm_ = 1) THEN
+            RETURN rr.direction_1;
+        ELSE
+            RETURN rr.direction_2;
+        END IF;
+    END LOOP;
+    RETURN null;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_dir(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_dir(bigint, bigint)
+    IS 'получить направление команды перемещения контейнера по ID робота (доп. параметр - часть команды)';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_inner_checkpoint(
+    cmd_inner_id_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    new_id_ BIGINT;
+    last_sended_ DATE;
+    ci command_inner;
+    ls_ RECORD;
+    rr robot;
+    chp command_inner_checkpoint;
+BEGIN
+    FOR ci IN (
+        SELECT *
+            FROM command_inner
+            WHERE id = cmd_inner_id_
+                AND (LOCALTIMESTAMP - coalesce(date_time_begin, LOCALTIMESTAMP)) > INTERVAL '5 seconds'
+    ) LOOP -- чтоб после начала слало только
+        last_sended_ := LOCALTIMESTAMP - INTERVAL '1 day';
+        FOR ls_ IN (
+            SELECT date_time_sended
+                FROM command_inner_checkpoint
+                WHERE cmd_inner_id_ = command_inner_id
+                    AND date_time_sended IS NOT null
+                ORDER BY date_time_sended DESC
+        ) LOOP
+            last_sended_ := ls_.date_time_sended;
+            EXIT;
+        END LOOP;
+        IF (
+            LOCALTIMESTAMP - last_sended_ <= INTERVAL '3 seconds'
+        ) THEN -- еще слишком мало прошло времени с последней подачи команды промежуточной
+            RAISE NOTICE 'Слишком рано %', to_char(last_sended_,'dd.mm.yy hh24:mi:ss');
+            RETURN '-1';
+        END IF;
+        FOR rr IN (
+            SELECT *
+                FROM robot
+                WHERE id = ci.robot_id
+                    AND coalesce(wait_for_problem_resolve, 0) = 0
+                    AND state = 1
+        ) LOOP -- только для работающего робота не в состоянии ошибки
+            FOR chp IN (
+                SELECT *
+                    FROM command_inner_checkpoint
+                    WHERE cmd_inner_id_ = command_inner_id
+                        AND status < 3
+                    ORDER BY id DESC
+            ) LOOP
+                IF (chp.npp = obj_robot.get_cmd_inner_npp_dest(cmd_inner_id_)) THEN
+                    IF coalesce(chp.gv_ci_id, 0) > 0 THEN
+                        new_id_ := chp.gv_ci_id;
+                        --update command_inner_checkpoint set DATE_TIME_SENDED=sysdate where id=chp.id;
+                    ELSE
+                        new_id_ := nextval('seq_command_inner');
+                        UPDATE command_inner_checkpoint
+                            SET gv_ci_id = new_id_ /*, DATE_TIME_SENDED=sysdate */
+                            WHERE id = chp.id;
+                    END IF;
+                    COMMIT;
+                    RETURN new_id_ || ';-1'; -- уже достигли конечной точки, передает необходимость delete checkpoint
+                ELSE
+                    IF coalesce(chp.gv_ci_id, 0) > 0 THEN
+                        new_id_ := chp.gv_ci_id;
+                        --update command_inner_checkpoint set DATE_TIME_SENDED=sysdate where id=chp.id;
+                    ELSE
+                        new_id_ := nextval('seq_command_inner');
+                        UPDATE command_inner_checkpoint
+                            SET gv_ci_id = new_id_/*, DATE_TIME_SENDED=sysdate */
+                            WHERE id = chp.id;
+                    END IF;
+                    COMMIT;
+                    RETURN new_id_ || ';' || chp.npp;
+                END IF;
+            END LOOP;
+        END LOOP;
+    END LOOP;
+    RETURN '-1';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_inner_checkpoint(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_inner_checkpoint(bigint)
+    IS 'возвращает ID и NPP промежуточной точки команды, или -1 если нет такой - для сервера штабелров для команды checkpoint';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_inner_cp_process(
+    cmd_inner_id_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    res_ TEXT;
+    tmp_ BIGINT;
+    cc command_inner;
+    rr robot;
+    chp command_inner_checkpoint;
+BEGIN
+    res_ := '';
+    FOR cc IN (
+        SELECT *
+            FROM command_inner
+            WHERE id = cmd_inner_id_
+    ) LOOP
+        FOR rr IN (
+            SELECT *
+                FROM robot
+                WHERE id = cc.robot_id
+                    AND is_use_checkpoint = 1
+        ) LOOP
+            tmp_ := null;
+            FOR chp IN (
+                SELECT *
+                    FROM command_inner_checkpoint
+                    WHERE cmd_inner_id_ = command_inner_id
+                    ORDER BY id DESC
+            ) LOOP
+                tmp_ := chp.npp;
+                EXIT;
+            END LOOP;
+            IF (tmp_ IS null) THEN
+                RETURN '-';
+            ELSE
+                res_ := tmp_ || '/';
+                tmp_ := null;
+                FOR chp IN (
+                    SELECT *
+                        FROM command_inner_checkpoint
+                        WHERE cmd_inner_id_ = command_inner_id
+                            AND status = 3
+                        ORDER BY id DESC
+                ) LOOP
+                    tmp_ := chp.npp;
+                    EXIT;
+                END LOOP;
+                IF (tmp_ IS null) THEN
+                    RETURN res_ || '-';
+                ELSE
+                    RETURN res_ || tmp_;
+                END IF;
+            END IF;
+        END LOOP;
+    END LOOP;
+    RETURN res_;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_inner_cp_process(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_inner_cp_process(bigint)
+    IS 'возвращает строку лога работы с промежуточными точками по команде';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_inner_dtb(
+    cid_ bigint)
+    RETURNS date
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    ci__ command_inner;
+BEGIN
+    FOR ci__ IN (
+        SELECT *
+            FROM command_inner
+            WHERE id = cid_
+    ) LOOP
+        RETURN ci__.date_time_begin;
+    END LOOP;
+    RETURN null;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_inner_dtb(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_inner_dtb(bigint)
+    IS 'получить дату-время начала команды робота по ID';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_inner_imi_type(
+    cid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    cp_npp_ BIGINT;
+    dest_ BIGINT;
+    ci command_inner;
+BEGIN
+    FOR ci IN (
+        SELECT *
+            FROM command_inner
+            WHERE id = cid_
+    ) LOOP
+        IF (ci.command_type_id = obj_robot."CMD_MOVE_TYPE_ID"()) THEN
+            RETURN ci.command_type_id;
+        ELSIF (ci.check_point IS null) THEN
+            RETURN ci.command_type_id;
+        ELSE
+            cp_npp_ := obj_robot.get_cmd_inner_last_checkpoint(cid_);
+            dest_ := obj_robot.get_cmd_inner_npp_dest(cid_);
+            IF (cp_npp_ = dest_) THEN
+                RETURN ci.command_type_id;
+            ELSE
+                RETURN obj_robot."CMD_MOVE_TYPE_ID"();
+            END IF;
+        END IF;
+    END LOOP;
+    RETURN null;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_inner_imi_type(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_inner_imi_type(bigint)
+    IS 'получить тип команда для имитационного моделирования (с учетом перемещений попромежуточным точкам)';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_inner_last_checkpoint(
+    IN cmd_inner_id_ bigint,
+    IN in_status_ bigint DEFAULT null)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    ci command_inner;
+    chp command_inner_checkpoint;
+BEGIN
+    FOR ci IN (
+        SELECT *
+            FROM command_inner
+            WHERE id = cmd_inner_id_
+                AND check_point IS NOT null
+    ) LOOP
+        FOR chp IN (
+            SELECT *
+                FROM command_inner_checkpoint
+                WHERE cmd_inner_id_ = command_inner_id
+                    AND status = coalesce(in_status_, status)
+                ORDER BY id DESC
+        ) LOOP
+            RETURN chp.npp;
+        END LOOP;
+        RETURN ci.check_point;
+    END LOOP;
+    RETURN -1;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_inner_last_checkpoint(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_inner_last_checkpoint(bigint, bigint)
+    IS 'возвращает NPP последней промежуточной точки команды, или -1 если нет такой';
+
+
 CREATE OR REPLACE FUNCTION obj_robot.get_cmd_inner_npp_dest(
     IN cid_ bigint,
     IN is_use_cp_ bigint DEFAULT 0)
@@ -477,39 +928,111 @@ COMMENT ON FUNCTION obj_robot.get_cmd_inner_npp_dest(bigint, bigint)
     IS 'получить № целевого трека команды робота';
 
 
-CREATE OR REPLACE FUNCTION obj_robot.get_cmd_inner_last_checkpoint(
-    IN cmd_inner_id_ bigint,
-    IN in_status_ bigint DEFAULT null)
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_inner_time_work(
+    cid_ bigint)
     RETURNS bigint
     LANGUAGE 'plpgsql'
 AS $BODY$
 DECLARE
-    ci command_inner;
-    chp command_inner_checkpoint;
+    delta__ INTERVAL;
+    max_d__ INTERVAL;
+    ci__ command_inner;
 BEGIN
-    FOR ci IN (
+    max_d__ := INTERVAL '6 minutes';
+    FOR ci__ IN (
         SELECT *
             FROM command_inner
-            WHERE id = cmd_inner_id_
-                AND check_point IS NOT null
+            WHERE id = cid_
     ) LOOP
-        FOR chp IN (
-            SELECT *
-                FROM command_inner_checkpoint
-                WHERE cmd_inner_id_ = command_inner_id
-                    AND status = coalesce(in_status_, status)
-                ORDER BY id DESC
-        ) LOOP
-            RETURN chp.npp;
-        END LOOP;
-        RETURN ci.check_point;
+        delta__ := LOCALTIMESTAMP - coalesce(ci__.date_time_begin, ci__.date_time_create);
+        IF (delta__ >= max_d__) THEN
+            RETURN extract(epoch FROM max_d__);
+        ELSE
+            RETURN extract(epoch FROM delta__);
+        END IF;
     END LOOP;
     RETURN -1;
 END;
 $BODY$;
-ALTER FUNCTION obj_robot.get_cmd_inner_last_checkpoint(bigint, bigint) OWNER TO postgres;
-COMMENT ON FUNCTION obj_robot.get_cmd_inner_last_checkpoint(bigint, bigint)
-    IS 'возвращает NPP последней промежуточной точки команды, или -1 если нет такой';
+ALTER FUNCTION obj_robot.get_cmd_inner_time_work(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_inner_time_work(bigint)
+    IS 'получить сколько времени в секундах уже работает команда работа (но не более 6 минут)';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_inner_txt(
+    rid_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr RECORD;
+BEGIN
+    FOR rr IN (
+        SELECT /*+RULE*/ ci.command_to_run
+            FROM robot r
+            INNER JOIN command_inner ci
+                ON coalesce(r.command_inner_id, 0) = ci.id
+            WHERE r.id = rid_
+    ) LOOP
+        RETURN rr.command_to_run;
+    END LOOP;
+    RETURN '';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_inner_txt(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_inner_txt(bigint)
+    IS 'получить текст команды робота по ID робота';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_inner_type(
+    rid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr RECORD;
+BEGIN
+    FOR rr IN (
+        SELECT /*+RULE*/ ci.command_type_id
+            FROM robot r
+            INNER JOIN command_inner ci
+                ON coalesce(r.command_inner_id, 0) = ci.id
+            WHERE r.id = rid_
+    ) LOOP
+        RETURN rr.command_type_id;
+    END LOOP;
+    RETURN -1;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_inner_type(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_inner_type(bigint)
+    IS 'получить тип команды робота по ID робота';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_robot_name(
+    cmd_id_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr RECORD;
+BEGIN
+    FOR rr IN (
+        SELECT r.name
+            FROM command_rp crp
+            INNER JOIN robot r
+                ON crp.robot_id = r.id
+            WHERE command_id = cmd_id_
+            ORDER BY crp.id DESC
+    ) LOOP
+        RETURN rr.name;
+    END LOOP;
+    RETURN '';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_robot_name(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_robot_name(bigint)
+    IS 'возвращает робота, который делал команду перемещения контейнеров';
 
 
 CREATE FUNCTION obj_robot.get_cmd_text_another_dir(IN ct text)
@@ -530,6 +1053,35 @@ $BODY$;
 ALTER FUNCTION obj_robot.get_cmd_text_another_dir(text) OWNER TO postgres;
 COMMENT ON FUNCTION obj_robot.get_cmd_text_another_dir(text)
     IS 'возвращает текст команды робота с иным направлением движения по/против часовой стрелке';
+
+
+CREATE FUNCTION obj_robot.get_cmd_text_new_cp(
+    IN ct_ text,
+    IN new_cp_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    lp_ BIGINT;
+    ncitext TEXT;
+BEGIN
+    ncitext := obj_robot.get_cmd_text_wo_cp(ct_); -- убрали, если было
+    lp_ := position(';' IN ncitext);
+    IF (new_cp_ IS null) THEN
+        RAISE EXCEPTION 'Нельзя менять промежуточную секцию на пустоту!'
+            USING errcode = 50003;
+    END IF;
+    IF (lp_ > 0) THEN -- есть ;
+        -- FIXME: Casting from BIGINT to INT, possible data loss
+        RETURN trim(substring(ncitext FROM 1 FOR lp_::int - 1)) || ' cp=' || new_cp_ || substring(ncitext FROM lp_::int);
+    ELSE -- нет ';', просто лупим в конец
+        RETURN ncitext || ' cp=' || new_cp_;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_cmd_text_new_cp(text, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_cmd_text_new_cp(text, bigint)
+    IS 'заменяет ''cp=NNN'' в тексте команды на другую секцию';
 
 
 CREATE FUNCTION obj_robot.get_cmd_text_wo_cp(IN ct_ text)
@@ -561,33 +1113,144 @@ COMMENT ON FUNCTION obj_robot.get_cmd_text_wo_cp(text)
     IS 'исключает ''cp=NNN'' из текста команды';
 
 
-CREATE FUNCTION obj_robot.get_cmd_text_new_cp(
-    IN ct_ text,
-    IN new_cp_ bigint)
+CREATE FUNCTION obj_robot.get_robot_name(
+    rid_ bigint)
     RETURNS text
     LANGUAGE 'plpgsql'
 AS $BODY$
 DECLARE
-    lp_ BIGINT;
-    ncitext TEXT;
+    rr RECORD;
 BEGIN
-    ncitext := obj_robot.get_cmd_text_wo_cp(ct_); -- убрали, если было
-    lp_ := position(';' IN ncitext);
-    IF (new_cp_ IS null) THEN
-        RAISE EXCEPTION 'Нельзя менять промежуточную секцию на пустоту!'
-            USING errcode = 50003;
-    END IF;
-    IF (lp_ > 0) THEN -- есть ;
-        -- FIXME: Casting from BIGINT to INT, possible data loss
-        RETURN trim(substring(ncitext FROM 1 FOR lp_::int - 1)) || ' cp=' || new_cp_ || substring(ncitext FROM lp_::int);
-    ELSE -- нет ';', просто лупим в конец
-        RETURN ncitext || ' cp=' || new_cp_;
-    END IF;
+    FOR rr IN (
+        SELECT r.name, r.port, rp.name rpname
+            FROM robot r
+            INNER JOIN repository_part rp
+                ON r.repository_part_id = rp.id
+            WHERE r.id = rid_
+    ) LOOP
+        RETURN rr.rpname || ':' || rr.name || ':' || rr.port;
+    END LOOP;
+    RETURN '';
 END;
 $BODY$;
-ALTER FUNCTION obj_robot.get_cmd_text_new_cp(text, bigint) OWNER TO postgres;
-COMMENT ON FUNCTION obj_robot.get_cmd_text_new_cp(text, bigint)
-    IS 'заменяет ''cp=NNN'' в тексте команды на другую секцию';
+ALTER FUNCTION obj_robot.get_robot_name(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_robot_name(bigint)
+    IS 'получить имя робота по его ID для отчета';
+
+
+CREATE FUNCTION obj_robot.get_robot_rp_id(
+    rid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr robot;
+BEGIN
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE id = rid_
+    ) LOOP
+        RETURN rr.repository_part_id;
+    END LOOP;
+    RETURN -1;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_robot_rp_id(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_robot_rp_id(bigint)
+    IS 'получить подсклад робота по его ID';
+
+
+CREATE FUNCTION obj_robot.get_robot_rp_name(
+    rid_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr RECORD;
+BEGIN
+    FOR rr IN (
+        SELECT rp.name
+            FROM robot r
+            INNER JOIN repository_part rp
+                ON r.repository_part_id = rp.id
+            WHERE r.id = rid_
+    ) LOOP
+        RETURN rr.name;
+    END LOOP;
+    RETURN '';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_robot_rp_name(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_robot_rp_name(bigint)
+    IS 'получить имя подсклада робота по ID робота';
+
+
+CREATE FUNCTION obj_robot.get_robot_state(
+    rid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr robot;
+BEGIN
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE id = rid_
+    ) LOOP
+        RETURN rr.state;
+    END LOOP;
+    RETURN null;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_robot_state(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_robot_state(bigint)
+    IS 'получить состояние робота по его ID';
+
+
+CREATE FUNCTION obj_robot.get_problem_resolve_text(
+    comp_name_ text)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    ci_id_ BIGINT;
+    cc RECORD;
+    pr problem_resolving;
+BEGIN
+    ci_id_ := obj_robot.get_last_comp_ci(comp_name_);
+    IF (ci_id_ > 0) THEN
+        FOR cc IN (
+            SELECT ci.*, r.platform_busy
+                FROM command_inner ci
+                INNER JOIN robot r
+                    ON r.id = ci.robot_id
+                WHERE ci.id = ci_id_
+                    AND ci.state NOT IN (2,5)
+                ORDER BY ci.id DESC
+        ) LOOP
+            FOR pr IN (
+                SELECT *
+                    FROM problem_resolving
+                    WHERE command_type_id = cc.command_type_id
+                        AND (
+                            platform_busy IS null
+                            OR
+                            coalesce(platform_busy, -1) = cc.platform_busy
+                        )
+            ) LOOP
+                RETURN pr.text;
+            END LOOP;
+            EXIT;
+        END LOOP;
+    END IF;
+    RETURN '';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_problem_resolve_text(text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_problem_resolve_text(text)
+    IS 'берем простой вариант запроса для решения проблемы (Да/нет), чтобы потом задать его оператору';
 
 
 CREATE OR REPLACE PROCEDURE obj_robot.set_command_inner(

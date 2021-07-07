@@ -97,32 +97,32 @@
     - [x] log
     - [x] is_robot_ready_for_cmd
     - [x] is_robot_ready_for_cmd_inner
-    - [ ] get_ci_cnt_bc
-    - [ ] get_ci_cell_src
-    - [ ] get_ci_cell_dst
-    - [ ] Get_Cmd_Cell_Src
-    - [ ] Get_Cmd_Cell_Dest
-    - [ ] Get_Cmd_Container
-    - [ ] Get_Cmd_Dir
-    - [ ] Get_Cmd_Inner_Checkpoint
-    - [ ] Get_Cmd_Inner_CP_Process
-    - [ ] get_cmd_inner_dtb
-    - [ ] Get_Cmd_Inner_Imi_Type
+    - [x] get_ci_cnt_bc
+    - [x] get_ci_cell_src
+    - [x] get_ci_cell_dst
+    - [x] get_cmd_cell_src
+    - [x] get_cmd_cell_dest
+    - [x] get_cmd_container
+    - [x] get_cmd_dir
+    - [x] get_cmd_inner_checkpoint
+    - [x] get_cmd_inner_cp_process
+    - [x] get_cmd_inner_dtb
+    - [x] get_cmd_inner_imi_type
     - [x] get_cmd_inner_last_checkpoint
     - [x] get_cmd_inner_npp_dest
-    - [ ] Get_Cmd_Inner_Time_Work
-    - [ ] Get_Cmd_Inner_Txt
-    - [ ] Get_Cmd_Inner_Type
-    - [ ] get_cmd_robot_name
+    - [x] get_cmd_inner_time_work
+    - [x] get_cmd_inner_txt
+    - [x] get_cmd_inner_type
+    - [x] get_cmd_robot_name
     - [x] get_cmd_text_another_dir
     - [x] get_cmd_text_new_cp
     - [x] get_cmd_text_wo_cp
-    - [ ] Get_Robot_Name
-    - [ ] Get_Robot_RP_ID
-    - [ ] Get_Robot_RP_name
-    - [ ] Get_Robot_State
-    - [ ] get_problem_resolve_text
-    - [ ] Get_robot_problem_resolve_cs
+    - [x] get_robot_name
+    - [x] get_robot_rp_id
+    - [x] get_robot_rp_name
+    - [x] get_robot_state
+    - [x] get_problem_resolve_text
+    - [ ] get_robot_problem_resolve_cs
     - [ ] get_last_comp_ci
     - [ ] set_mode_to_repair
     - [ ] set_repair_done
