@@ -14,7 +14,7 @@ BEGIN
     SELECT exists(
         SELECT *
             FROM command_gas
-            WHERE gd_party_id = OLD.id
+            WHERE gd_party_id = OLD.id::BIGINT
     ) INTO exst;
     IF exst THEN
         RAISE EXCEPTION 'Нельзя удалять партии, по которым были команды!'
@@ -23,7 +23,7 @@ BEGIN
     SELECT exists(
         SELECT *
             FROM command_order
-            WHERE gd_party_id = OLD.id
+            WHERE gd_party_id = OLD.id::BIGINT
     ) INTO exst;
     IF exst THEN
         RAISE EXCEPTION 'Нельзя удалять партии, по которым были команды!'
@@ -32,7 +32,7 @@ BEGIN
     SELECT exists(
         SELECT *
             FROM doc_content
-            WHERE gdp_id = OLD.id
+            WHERE gdp_id = OLD.id::BIGINT
     ) INTO exst;
     IF exst THEN
         RAISE EXCEPTION 'Нельзя удалять партии, по которым были документы!'
@@ -41,7 +41,7 @@ BEGIN
     SELECT exists(
         SELECT *
             FROM command_gas_container_content
-            WHERE gdp_id = OLD.id
+            WHERE gdp_id = OLD.id::BIGINT
     ) INTO exst;
     IF exst THEN
         RAISE EXCEPTION 'Нельзя удалять партии, по которым были команды на приме товара!'

@@ -59,7 +59,7 @@ BEGIN
         IF coalesce(party_id_, 0) <> 0 THEN
             rparty_id_ := party_id_;
         ELSE
-            SELECT id INTO rparty_id_
+            SELECT id::BIGINT INTO rparty_id_
                 FROM gd_party
                 WHERE pname IS null
                     AND gd_id = gd_id_;
@@ -68,7 +68,7 @@ BEGIN
         IF coalesce(rparty_id_, 0) > 0 THEN
             SELECT pname INTO pname_
                 FROM gd_party
-                WHERE id = rparty_id_;
+                WHERE id::BIGINT = rparty_id_;
         ELSE
             pname_ := '';
         END IF;

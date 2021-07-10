@@ -540,16 +540,16 @@ BEGIN
                     SELECT sum(quantity)
                         FROM container_content
                         WHERE good_desc_id = gd.id
-                            AND gdp_id = gdp.id
+                            AND gdp_id = gdp.id::BIGINT
                 ) hh
                 FROM gd_party gdp
                 INNER JOIN good_desc gd
-                    ON gdp.gd_id = gd.good_desc_id
+                    ON gdp.gd_id::BIGINT = gd.good_desc_id
                 WHERE (qty + qty_reserved) <> (
                     SELECT coalesce(sum(quantity), 0)
                         FROM container_content
                         WHERE good_desc_id = gd.id
-                            AND gdp_id = gdp.id
+                            AND gdp_id = gdp.id::BIGINT
                             AND container_id NOT IN (
                                 SELECT container_id
                                     FROM command_gas
