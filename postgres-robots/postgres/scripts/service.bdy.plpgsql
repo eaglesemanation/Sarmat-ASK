@@ -114,6 +114,24 @@ COMMENT ON FUNCTION service.bkp_to_file(text, text)
 строку в журнал';
 
 
+CREATE OR REPLACE FUNCTION service.to_number_my(
+    ss text)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN ss::BIGINT;
+EXCEPTION WHEN others THEN
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION service.to_number_my(text) OWNER TO postgres;
+COMMENT ON FUNCTION service.to_number_my(text)
+    IS 'преобразовать строку в число';
+
+
 CREATE OR REPLACE FUNCTION service.ml_get_rus_eng_val(
     in_rus text,
     in_eng text)

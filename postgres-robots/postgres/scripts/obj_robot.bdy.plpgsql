@@ -700,7 +700,6 @@ BEGIN
                             SET gv_ci_id = new_id_ /*, DATE_TIME_SENDED=sysdate */
                             WHERE id = chp.id;
                     END IF;
-                    COMMIT;
                     RETURN new_id_ || ';-1'; -- уже достигли конечной точки, передает необходимость delete checkpoint
                 ELSE
                     IF coalesce(chp.gv_ci_id, 0) > 0 THEN
@@ -712,7 +711,6 @@ BEGIN
                             SET gv_ci_id = new_id_/*, DATE_TIME_SENDED=sysdate */
                             WHERE id = chp.id;
                     END IF;
-                    COMMIT;
                     RETURN new_id_ || ';' || chp.npp;
                 END IF;
             END LOOP;
@@ -1257,6 +1255,1272 @@ COMMENT ON FUNCTION obj_robot.get_problem_resolve_text(text)
     IS 'берем простой вариант запроса для решения проблемы (Да/нет), чтобы потом задать его оператору';
 
 
+CREATE FUNCTION obj_robot.get_robot_problem_resolve_cs(
+    rid_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr robot;
+    ci command_inner;
+    pr problem_resolving;
+    case_elmt XML;
+    cases_elmt XML;
+    root_elmt XML;
+BEGIN
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE id = rid_
+                AND coalesce(wait_for_problem_resolve, 0) = 1
+    ) LOOP
+        FOR ci IN (
+            SELECT *
+                FROM command_inner
+                WHERE id = coalesce(rr.command_inner_id, 0)
+        ) LOOP
+            FOR pr IN (
+                SELECT *
+                    FROM problem_resolving
+                    WHERE command_type_id = ci.command_type_id
+                        AND rr.platform_busy = coalesce(pr.platform_busy, rr.platform_busy)
+                    ORDER BY order_
+            ) LOOP
+                case_elmt := xmlelement(name case, xmlattributes(
+                        pr.id as id,
+                        pr.text as name,
+                        pr.question as question
+                ));
+                cases_elmt := xmlconcat(cases_elmt, case_elmt);
+            END LOOP;
+        END LOOP;
+        root_elmt := xmlelement(name rprw, cases_elmt);
+        RETURN xmlserialize(DOCUMENT root_elmt AS TEXT);
+    END LOOP;
+    RETURN '';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_robot_problem_resolve_cs(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_robot_problem_resolve_cs(bigint)
+    IS 'возвращает в XML варианты решения проблемы';
+
+
+CREATE FUNCTION obj_robot.get_last_comp_ci(
+    comp_name_ text)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    cg command_gas;
+    cc command_inner;
+begin
+    FOR cg IN (
+        SELECT *
+            FROM command_gas
+            WHERE comp_name = comp_name_
+                AND state NOT IN (2,5)
+            ORDER BY id DESC
+    ) LOOP
+        FOR cc IN (
+            select ci.*
+                FROM command cmd
+                INNER JOIN command_rp crp
+                    ON crp.command_id = cmd.id
+                INNER JOIN command_inner ci
+                    ON crp.id = ci.command_rp_id
+                WHERE cmd.command_gas_id = cg.id
+                    AND ci.state NOT IN (2,5)
+                ORDER BY ci.id DESC
+        ) LOOP
+            RETURN cc.id;
+        END LOOP;
+        EXIT;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_last_comp_ci(text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_last_comp_ci(text)
+    IS 'возвращает последнюю команду _inner от компьютера оператора';
+
+
+CREATE FUNCTION obj_robot.smtr_cancel_command(
+    cid_ bigint,
+    crp_id_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+AS $BODY$
+BEGIN
+    UPDATE command_inner -- типа успешно завершаем
+        SET state = 2
+        WHERE id = cid_;
+    UPDATE command_rp
+        SET robot_id = null,
+            state = 1,
+            direction_1 = null,
+            direction_2 = null,
+            substate = null,
+            calc_cost = null,
+            date_time_begin = null
+        WHERE id = crp_id_;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.smtr_cancel_command(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.smtr_cancel_command(bigint, bigint)
+    IS 'Migrated inline procedure for obj_robot.set_mode_to_repair';
+
+
+CREATE FUNCTION obj_robot.smtr_finish_command_by_hand(
+    cid_ bigint,
+    crp_id_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    cinew BIGINT;
+    crp command_rp;
+BEGIN
+    UPDATE command_inner -- типа успешно завершаем
+        SET state = 5,
+            date_time_end = LOCALTIMESTAMP
+        WHERE id = cid_;
+    FOR crp IN (
+        SELECT *
+            FROM command_rp
+            WHERE id = crp_id_
+    ) LOOP
+        INSERT INTO command_inner(
+            command_type_id, rp_id, cell_dest_sname,
+            state, command_rp_id, robot_id,
+            command_to_run, track_dest_id, direction,
+            cell_dest_id, npp_dest, track_id_begin, track_npp_begin, container_id,
+            cell_src_id, date_time_begin, date_time_end,
+            track_src_id, npp_src, cell_sname_begin
+        ) VALUES (
+            5, crp.rp_id, crp.cell_dest_sname,
+            0, crp.id, crp.robot_id,
+            'UNLOAD ' || crp.cell_dest_sname, crp.track_dest_id, 1,
+            crp.cell_dest_id, crp.npp_dest, 0, 0, crp.container_id,
+            0, LOCALTIMESTAMP, LOCALTIMESTAMP,
+            0, 0, crp.cell_src_sname
+        ) RETURNING id INTO cinew;
+        UPDATE command_inner SET state = 1 WHERE id = cinew;
+        UPDATE command_inner SET state = 3 WHERE id = cinew;
+        UPDATE command_inner SET state = 5 WHERE id = cinew;
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.smtr_finish_command_by_hand(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.smtr_finish_command_by_hand(bigint, bigint)
+    IS 'Migrated inline procedure for obj_robot.set_mode_to_repair';
+
+
+CREATE FUNCTION obj_robot.set_mode_to_repair(
+    rid_ bigint,
+    npp_rep bigint,
+    param bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    npp1 BIGINT;
+    npp2 BIGINT;
+    tl1 BIGINT;
+    tid_rep BIGINT;
+    cinew BIGINT;
+    was_load BIGINT;
+    bri BIGINT;
+    rr RECORD;
+    rob robot;
+    rp RECORD;
+    tr track;
+    ci command_inner;
+    cmd command_inner;
+    sqlerrm__ TEXT;
+BEGIN
+    FOR rr IN (SELECT is_work FROM repository) LOOP
+        IF (rr.is_work = 1) THEN
+            RETURN 'Operation is possible only for ASK in PAUSE mode!';
+        END IF;
+    END LOOP;
+    PERFORM obj_robot.log(rid_,'set_mode_to_repair - начало');
+    FOR rob IN (
+        SELECT *
+            FROM robot
+            WHERE id = rid_
+    ) LOOP
+        FOR rp IN (
+            SELECT id, spacing_of_robots sorb, max_npp
+                FROM repository_part
+                WHERE id = rob.repository_part_id
+        ) LOOP
+            IF (rob.state = 6) THEN
+                RETURN 'Robot is already in repair mode!';
+            END IF;
+            FOR tr IN (
+                SELECT *
+                    FROM track
+                    WHERE repository_part_id = rob.repository_part_id
+                        AND npp = npp_rep
+            ) LOOP
+                tid_rep := obj_rpart.get_track_id_by_robot_and_npp(rid_, npp_rep);
+                npp1 := obj_rpart.inc_spacing_of_robots(npp_rep, 1, rp.sorb, rp.id);
+                npp2 := obj_rpart.inc_spacing_of_robots(npp_rep, obj_rpart.get_another_direction(1), rp.sorb, rp.id);
+                IF (service.is_way_free_for_robot(rid_, npp2, npp1) <> 1) THEN
+                    RETURN 'Desired area is locked by another robot!';
+                END IF;
+                -- делаем действия
+                -- были ли команда?
+                IF coalesce(rob.command_inner_id, 0) > 0 THEN
+                    FOR ci in (
+                        SELECT *
+                            FROM command_inner
+                            WHERE id = coalesce(rob.command_inner_id, 0)
+                    ) LOOP
+                        IF (ci.command_type_id = 5) THEN -- unload
+                            UPDATE command_inner -- типа успешно завершаем
+                                SET state = 5,
+                                    date_time_end = LOCALTIMESTAMP
+                                WHERE id = ci.id;
+                        ELSIF (ci.command_type_id = 6) THEN -- move
+                            IF coalesce(ci.command_rp_id, 0) = 0 THEN -- простая команда освобождения пути
+                                UPDATE command_inner -- типа успешно завершаем
+                                    SET state = 5,
+                                        date_time_end = LOCALTIMESTAMP
+                                    WHERE id = ci.id;
+                            ELSE -- есть команда command_rp - анализируем дальше
+                                was_load := 0;
+                                FOR cmd IN (
+                                    SELECT *
+                                        FROM command_inner t
+                                        WHERE t.command_rp_id = coalesce(ci.command_rp_id, 0)
+                                            AND robot_id = rid_
+                                            AND state = 5
+                                            AND command_type_id IN (4,5)
+                                        ORDER BY id DESC
+                                ) LOOP
+                                    was_load := 1;
+                                END LOOP;
+                                IF (was_load = 1) THEN -- была загрузка, значит, вручную доделали, прописываем
+                                    PERFORM obj_robot.smtr_finish_command_by_hand(ci.id, ci.command_rp_id);
+                                ELSE -- не было еще загрузки, отменяем команду
+                                    PERFORM obj_robot.smtr_cancel_command(ci.id, ci.command_rp_id);
+                                END IF;
+                            END IF;
+                        ELSIF (ci.command_type_id = 4) THEN -- load
+                            IF (param = 1) THEN -- контейнер все еще в ячейке
+                                PERFORM obj_robot.smtr_cancel_command(ci.id, ci.command_rp_id);
+                            ELSE -- контейнер на роботе - значит, вручную переместили уже
+                                PERFORM obj_robot.smtr_finish_command_by_hand(ci.id, ci.command_rp_id);
+                            END IF;
+                        END IF;
+                    END LOOP;
+                END IF;
+                -- были ли команда назначена , но не выдана?
+                IF coalesce(rob.command_inner_id, 0) = 0
+                    AND coalesce(rob.command_inner_assigned_id, 0) <> 0
+                THEN
+                    FOR ci IN (
+                        SELECT *
+                            FROM command_inner
+                            WHERE id = coalesce(rob.command_inner_assigned_id, 0)
+                    ) LOOP
+                        PERFORM obj_robot.smtr_cancel_command(ci.id, ci.command_rp_id);
+                    END LOOP;
+                END IF;
+                -- были ли команды назначенные имит.моделированием, но не дошедшие до робота
+                UPDATE command_rp crps
+                    SET date_time_begin = null,
+                        robot_id = null,
+                        direction_1 = null,
+                        direction_2 = null,
+                        substate = null,
+                        calc_cost = null
+                    WHERE coalesce(robot_id, 0) = rid_
+                        AND state = 1
+                        AND NOT exists(
+                            SELECT *
+                                FROM command_inner
+                                WHERE command_rp_id = crps.id
+                        );
+                -- универсальные действия независимо от
+                UPDATE track
+                    SET locked_by_robot_id = 0
+                    WHERE locked_by_robot_id = rid_;
+                INSERT INTO robot_trigger_ignore (
+                    robot_id
+                ) VALUES (
+                    rid_
+                );
+                --ie_tools.disable_table_trigger('ROBOT');
+                BEGIN
+                    UPDATE robot
+                        SET state = 6,
+                            current_track_id = tid_rep,
+                            current_track_npp = npp_rep,
+                            command_rp_id = null,
+                            command_inner_assigned_id = 0,
+                            wait_for_problem_resolve = 0,
+                            command_inner_id = null,
+                            old_cur_track_npp = npp_rep
+                        WHERE id = rid_;
+                EXCEPTION WHEN others THEN
+                    DELETE FROM robot_trigger_ignore
+                        WHERE robot_id = rid_;
+                    GET STACKED DIAGNOSTICS sqlerrm__ = MESSAGE_TEXT;
+                    RAISE EXCEPTION '%', sqlerrm__
+                        USING errcode = 50003;
+                END;
+                DELETE FROM robot_trigger_ignore
+                    WHERE robot_id = rid_;
+                --ie_tools.enable_table_trigger('ROBOT');
+                --tl1:=manager.try_to_lock(rid_, npp_rep,1,-1 );
+                tl1 := obj_rpart.try_track_lock_robot_around(rid_, npp_rep);
+                IF (tl1 <> 1) THEN
+                    --FIXME: Replace RETURN with RAISE EXCEPTION so transactions could be reverted
+                    RETURN 'Attempt to lock new track area was failed!';
+                END IF;
+                DELETE FROM track_order WHERE robot_id = rid_;
+                RETURN '';
+            END LOOP;
+            RETURN 'Track ' || npp_rep || ' is not in repository ' || rob.repository_part_id || '!';
+        END LOOP;
+        RETURN 'Repository part is not found for robot!';
+    END LOOP;
+    RETURN 'Robot ID=' || rid_ || ' is not found!';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.set_mode_to_repair(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.set_mode_to_repair(bigint, bigint, bigint)
+    IS 'перевести робота в режим починки';
+
+
+CREATE FUNCTION obj_robot.set_repair_done(
+    rid_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+BEGIN
+    UPDATE robot
+        SET state = 0
+        WHERE id = rid_;
+    RETURN '';
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.set_repair_done(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.set_repair_done(bigint)
+    IS 'выйти из режима починки робота в нормальный рабочий режим';
+
+
+CREATE FUNCTION obj_robot.get_repair_stop_param(
+    rid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr robot;
+    cmd command_inner;
+    ci command_inner;
+BEGIN
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE id = rid_
+    ) LOOP
+        IF coalesce(rr.command_inner_id, 0) <> 0 THEN
+            FOR cmd IN (
+                SELECT *
+                    FROM command_inner
+                    WHERE id = rr.command_inner_id
+            ) LOOP
+                IF (cmd.command_type_id = 5) then -- UNLOAD
+                    RETURN 1; -- напоминание, что нужно вручную завершить операцию
+                ELSIF (cmd.command_type_id = 4) THEN -- LOAD
+                    RETURN 2; -- напоминание, что нужно спросить о том, ячейка на роботе или нет?
+                ELSIF (cmd.command_type_id = 6) THEN -- MOVE
+                    IF coalesce(cmd.command_rp_id, 0) = 0 THEN -- просто перемещение для освбождения пути - нет необходимости в доп. огр.
+                        RETURN 0;
+                    ELSE -- есть команда command_rp для move
+                        FOR ci IN (
+                            SELECT *
+                                FROM command_inner
+                                WHERE command_rp_id = coalesce(cmd.command_rp_id, 0)
+                                    AND robot_id = rid_
+                                    AND state = 5
+                                    AND command_type_id IN (4,5)
+                                ORDER BY id DESC
+                        ) LOOP
+                            IF (ci.command_type_id = 4) THEN -- load уже ранее произведен был
+                                RETURN 1; -- напоминание про необходимость завершить операцию
+                            ELSIF (ci.command_type_id = 5) THEN -- unload
+                                null; -- иакого быть не может
+                            END IF;
+                        END LOOP;
+                        RETURN 0; -- не успели напакостить
+                    END IF;
+                END IF;
+            END LOOP;
+        END IF;
+    END LOOP;
+    RETURN 0; -- нет никаких доп. моментов
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_repair_stop_param(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_repair_stop_param(bigint)
+    IS 'получение информации о дополнительных параметрах для перевода робота в режим почники по ID робота';
+
+
+CREATE FUNCTION obj_robot.change_only_move_status(
+    rid_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rr robot;
+    cnt BIGINT;
+    nor BIGINT;
+    iw BIGINT;
+    errm__ TEXT;
+BEGIN
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE id = rid_
+    ) LOOP
+        SELECT num_of_robots INTO nor
+            FROM repository_part
+            WHERE id = rr.repository_part_id;
+        SELECT is_work INTO iw
+            FROM repository;
+        IF (rr.forbid_load_unload = 0) THEN -- проверить бы надо, не все ли роботы склада сейчас станут MoveOnly
+            SELECT count(*) INTO cnt
+                FROM robot
+                WHERE repository_part_id = rr.repository_part_id
+                    AND forbid_load_unload = 1;
+            IF (cnt = nor - 1) THEN
+                errm__ := 'ERROR - нельзя делать MoveOnly все роботы подсклада!';
+                PERFORM obj_robot.log(rid_, errm__);
+                RAISE EXCEPTION '%', errm__
+                    USING errcode = 50003;
+            END IF;
+        END IF;
+        IF (iw = 1) AND (rr.forbid_load_unload = 0) THEN
+            errm__ := 'ERROR - нельзя делать робота MoveOnly в работающем АСК! Поставьте АСК на паузу вначале!';
+            PERFORM obj_robot.log(rid_, errm__);
+            RAISE EXCEPTION '%', errm__
+                USING errcode = 50003;
+        END IF;
+        UPDATE robot
+            SET forbid_load_unload = (CASE WHEN forbid_load_unload = 0 THEN 1 ELSE 0 END)
+            WHERE id = rid_;
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.change_only_move_status(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.change_only_move_status(bigint)
+    IS 'сменить у робота режим "Only Move"';
+
+
+CREATE FUNCTION obj_robot.ifs_ilog(
+    txt_ text,
+    rid_ bigint,
+    rez_ text,
+    INOUT log_prefix_was_ boolean)
+    RETURNS boolean
+    LANGUAGE 'plpgsql'
+AS $BODY$
+BEGIN
+    IF NOT log_prefix_was_ THEN
+      PERFORM obj_robot.log(rid_, '');
+      PERFORM obj_robot.log(rid_, '****************** пришло INFO по роботу ' || rez_);
+      log_prefix_was_ := true;
+    END IF;
+    PERFORM obj_robot.log(rid_, txt_);
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.ifs_ilog(text, bigint, text, boolean) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.ifs_ilog(text, bigint, text, boolean)
+    IS 'Migrated inline procedure from obj_robot.info_from_sarmat';
+
+
+CREATE FUNCTION obj_robot.info_from_sarmat(
+    rid_ bigint,
+    rez_ text)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    ncmt__ BOOLEAN;
+    rowcount__ BIGINT;
+    robot_state__ TEXT;
+    cmdid__ BIGINT;
+    cmdans__  TEXT;
+    cmd_err_code__ BIGINT;
+    log_prefix_was__ BOOLEAN DEFAULT false;
+    ttl__ BIGINT;
+    errm__ TEXT;
+    v_array TEXT[]; --apex_application_global.vc_arr2;
+    new_track_id__ BIGINT;
+    new_track_npp__ BIGINT;
+    rp_id__ BIGINT;
+    nor__ BIGINT;
+    new_dir_ BIGINT;
+    uchp BIGINT;
+    rr robot;
+BEGIN
+    ncmt__ := false;
+    PERFORM obj_robot.ifs_ilog('Начало цикла INFO', rid_, rez_, log_prefix_was__);
+    IF (rez_ IS null) THEN -- нет связи
+        UPDATE robot
+            SET state = 8
+            WHERE id = rid_
+                AND state <> 8;
+        GET DIAGNOSTICS rowcount__ := ROW_COUNT;
+        IF (rowcount__ > 0) THEN
+            PERFORM obj_robot.ifs_ilog('Смена состояния робота в [Нет связи]', rid_, rez_, log_prefix_was__);
+        END IF;
+        RETURN;
+    END IF;
+    rp_id__ := obj_robot.get_robot_rp_id(rid_);
+    nor__ := obj_rpart.get_rp_num_of_robots(rp_id__);
+    SELECT is_use_checkpoint INTO uchp
+        FROM robot
+        WHERE id = rid_;
+    -- разбираем ответ от робота INFO
+    --v_array := extend.parse_csv_string(rez_);--apex_util.string_to_table(rez_, ';');
+    v_array := regexp_split_to_array(rez_, ',');
+    -- считываем ID команды
+    IF v_array[19] IS NOT null THEN
+        cmdid__ := service.to_number_my(v_array[19]);
+    ELSE
+        cmdid__ := null;
+    END IF;
+    IF (cmdid__ IS NOT null) AND (uchp = 1) THEN
+        cmdid__ := obj_robot.correct_ci_id_on_checkpoint(cmdid__); -- корректируем ID команды, если вернутое есть ID промежуточной точки. Заодно помечаем кмд промежут как переданную
+    END IF;
+    -- не было ли перегруза агента?
+    IF coalesce(cmdid__, 0) <= 0 THEN
+        FOR rr IN (
+            SELECT *
+                FROM robot
+                WHERE id = rid_
+                    AND coalesce(command_inner_id, 0) <> 0
+        ) LOOP -- команда прошла, и связь порвалась
+            IF coalesce(rr.wait_for_problem_resolve, 0) = 0 THEN
+                errm__ := '  ERROR for robot=' || rid_ || ' команда значится, а агент пустоту возвращает';
+                PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), rr.repository_part_id, rr.id, errm__);
+                PERFORM obj_robot.ifs_ilog(errm__, rid_, rez_, log_prefix_was__);
+            END IF;
+        END LOOP;
+    END IF;
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE id = rid_
+                AND coalesce(command_inner_id, 0) = 0
+                AND coalesce(command_inner_assigned_id, 0) <> 0
+                and coalesce(command_inner_assigned_id, 0) = coalesce(cmdid__, 0) -- команда прошла, и связь порвалась
+    ) LOOP
+        PERFORM obj_robot.ifs_ilog('Прервалась связь на посылке команды, помечаем, что команда прошла ок!', rid_, rez_, log_prefix_was__);
+        PERFORM obj_robot.mark_cmd_inner_send_to_robot(rid_, cmdid__);
+    END LOOP;
+    -- состояние
+    robot_state__ := v_array[3];
+    IF position('ERROR' IN robot_state__) > 0 THEN
+        UPDATE robot
+            SET state = 2
+            WHERE id = rid_
+                AND state <> 2;
+        GET DIAGNOSTICS rowcount__ := ROW_COUNT;
+        IF (rowcount__ > 0) THEN
+            PERFORM obj_robot.ifs_ilog('Смена состояния робота на 2', rid_, rez_, log_prefix_was__);
+            ncmt__ := true;
+        END IF;
+        RETURN; -- выходим, т.к. ничего неясно
+    END IF;
+    IF position('READY' IN robot_state__) > 0 THEN
+        UPDATE robot
+            SET state = 0
+            WHERE id = rid_
+                AND state <> 0;
+        GET DIAGNOSTICS rowcount__ := ROW_COUNT;
+        IF (rowcount__ > 0) THEN
+            PERFORM obj_robot.ifs_ilog('Смена состояния робота на 0', rid_, rez_, log_prefix_was__);
+            ncmt__ := true;
+        END IF;
+    END IF;
+    -- проверка на корректность нового трека
+    new_track_npp__ := obj_rpart.get_track_npp_by_npp(v_array[2], obj_robot.get_robot_rp_id(rid_));
+    IF (nor__ > 1) THEN
+        PERFORM obj_rpart.check_new_robot_npp_correct(rid_, new_track_npp__);
+    END IF;
+    UPDATE robot
+        SET real_npp = new_track_npp__
+        WHERE id = rid_
+            AND coalesce(real_npp, -1) <> new_track_npp__;
+    GET DIAGNOSTICS rowcount__ := ROW_COUNT;
+    IF (rowcount__ > 0) THEN
+        PERFORM obj_robot.ifs_ilog('Смена текущего реального трека на ' || new_track_npp__, rid_, rez_, log_prefix_was__);
+        ncmt__ := true;
+    END IF;
+    -- ниже нужно будет переделать, чтою смотреть, можно ли проставлять трек такой
+    new_track_id__ := obj_rpart.get_track_id_by_npp(new_track_npp__, obj_robot.get_robot_rp_id(rid_));
+    UPDATE robot
+        SET current_track_id = new_track_id__
+            --current_track_npp=v_array(2) -- само в триггере определяется
+        WHERE id = rid_
+            AND current_track_id <> new_track_id__;
+    GET DIAGNOSTICS rowcount__ := ROW_COUNT;
+    IF (rowcount__ > 0) THEN
+        PERFORM obj_robot.ifs_ilog('Смена текущего трек ID на '||new_track_id__||' (npp пришел '||v_array(2)||')', rid_, rez_, log_prefix_was__);
+        ncmt__ := true;
+        SELECT current_track_npp INTO new_track_npp__
+            FROM robot
+            WHERE id = rid_;
+        PERFORM obj_robot.ifs_ilog('  новый трек NPP триггерно выставился ' || new_track_npp__, rid_, rez_, log_prefix_was__);
+        IF (obj_rpart.check_lock_robot_around(rid_, new_track_npp__) <> 1) THEN
+            errm__ := 'ERROR - не получается заблокировать вокруг робота в секции ' || v_array[2];
+            PERFORM obj_robot.ifs_ilog(errm__, rid_, rez_, log_prefix_was__);
+            RAISE EXCEPTION '%', errm__
+                USING errcode = 50012;
+        END IF;
+    END IF;
+    -- платформа
+    IF (v_array[6] = 'FREE') THEN
+        UPDATE robot
+            SET platform_busy = 0
+            WHERE id = rid_
+                AND platform_busy <> 0;
+        GET DIAGNOSTICS rowcount__ := ROW_COUNT;
+        IF (rowcount__ > 0) THEN
+            PERFORM obj_robot.ifs_ilog('Смена занятости платформы на 0', rid_, rez_, log_prefix_was__);
+            ncmt__ := true;
+        END IF;
+    ELSIF (v_array[6] = 'BUSY') THEN
+        UPDATE robot
+            SET platform_busy = 1
+            WHERE id = rid_
+                AND platform_busy <> 1;
+        IF (rowcount__ > 0) THEN
+            PERFORM obj_robot.ifs_ilog('Смена занятости платформы на 1', rid_, rez_, log_prefix_was__);
+            ncmt__ := true;
+        END IF;
+    END IF;
+    -- направление
+    IF (v_array[17] IS NOT null) THEN
+        IF (v_array[17] = 'CCW') THEN
+            new_dir_ := obj_robot."DIR_CCW"();
+        ELSIF (v_array[17] = 'CW') THEN
+            new_dir_ := obj_robot."DIR_CW"();
+        ELSE
+            new_dir_ := obj_robot."DIR_NONE"();
+        END IF;
+    ELSE
+        new_dir_ := obj_robot."DIR_CW"();
+    END IF;
+    UPDATE robot
+        SET direction = new_dir_
+        WHERE id = rid_
+            AND direction <> new_dir_;
+    GET DIAGNOSTICS rowcount__ := ROW_COUNT;
+    IF (rowcount__ > 0) THEN
+        PERFORM obj_robot.ifs_ilog('Смена направления движения робота на '||new_dir_, rid_, rez_, log_prefix_was__);
+        ncmt__ := true;
+    END IF;
+    cmd_err_code__ := service.to_number_my(v_array[21]);
+    cmdans__ := v_array[20];
+    -- разобрали ответ
+    IF position('READY' IN robot_state__) > 0 THEN
+        FOR rr IN (
+            SELECT *
+                FROM robot
+                WHERE id = rid_
+                    AND coalesce(command_inner_id, 0) <> 0
+                    AND coalesce(wait_for_problem_resolve, 0) = 0
+        ) LOOP
+            PERFORM obj_robot.ifs_ilog('Робот свободен, и на нём числится команда, разбираемся в ситуации', rid_, rez_, log_prefix_was__);
+            PERFORM obj_robot.real_cmd_report(rid_ , cmdid__, cmdans__, cmd_err_code__);
+        END LOOP;
+    END IF;
+    IF position('WORK' IN robot_state__) > 0 THEN
+        UPDATE robot
+            SET state = 1
+            WHERE id = rid_
+                AND state <> 1;
+        GET DIAGNOSTICS rowcount__ := ROW_COUNT;
+        IF (rowcount__ > 0) THEN
+            PERFORM obj_robot.ifs_ilog('Смена состояния робота на 1', rid_, rez_, log_prefix_was__);
+            ncmt__ := true;
+        END IF;
+    END IF;
+    IF position('INITIALIZATION' IN robot_state__) > 0 THEN
+        UPDATE robot
+            SET state = 3
+            WHERE id = rid_
+                AND state <> 3;
+        GET DIAGNOSTICS rowcount__ := ROW_COUNT;
+        IF (rowcount__ > 0) THEN
+            PERFORM obj_robot.ifs_ilog('Смена состояния робота на 3', rid_, rez_, log_prefix_was__);
+            ncmt__ := true;
+        END IF;
+    END IF;
+    -- ответ робота о треке корректен
+    IF position('INITIALIZATION' IN robot_state__) > 0
+        OR position('WORK' IN robot_state__) > 0
+        OR position('READY' IN robot_state__) > 0
+    THEN
+        UPDATE robot
+            SET last_npp_info_dt = LOCALTIMESTAMP
+            WHERE id = rid_;
+        ncmt__ := true;
+    END IF;
+    PERFORM obj_robot.ifs_ilog('Завершение такта цикла INFO', rid_, rez_, log_prefix_was__);
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.info_from_sarmat(bigint, text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.info_from_sarmat(bigint, text)
+    IS 'доклад SQL серверу о состоянии робота с Sarmat';
+
+
+CREATE FUNCTION obj_robot.mark_cmd_inner_send_to_robot(
+    robot_id_ bigint,
+    cmd_inner_id_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+AS $BODY$
+BEGIN
+    PERFORM obj_robot.log(robot_id_,'Пришло сообщение об успешной назначении команды ' || cmd_inner_id_ || ' на робота');
+    UPDATE command_inner
+        SET state = 3
+        WHERE id = cmd_inner_id_;
+    UPDATE robot
+        SET command_inner_id = cmd_inner_id_
+        WHERE id = robot_id_;
+    PERFORM obj_robot.log(robot_id_,'Команда '||cmd_inner_id_||' успешно назначена на робота');
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.mark_cmd_inner_send_to_robot(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.mark_cmd_inner_send_to_robot(bigint, bigint)
+    IS 'отмечаем, что команда успешно отдана роботу на исполнение';
+
+
+CREATE FUNCTION obj_robot.mark_ci_cp_send_to_robot(
+    cpcg_id_ bigint,
+    new_status_ bigint DEFAULT 1)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    cpf command_inner_checkpoint;
+BEGIN
+    FOR cpf IN (
+        SELECT *
+            FROM command_inner_checkpoint
+            WHERE gv_ci_id = cpcg_id_
+    ) LOOP
+        UPDATE command_inner_checkpoint
+            SET status = new_status_
+            WHERE command_inner_id = cpf.command_inner_id
+                AND id <= cpf.id
+                AND status <> new_status_;
+        IF (new_status_ = 1) THEN
+            UPDATE command_inner_checkpoint
+                SET date_time_sended = LOCALTIMESTAMP
+                WHERE id = cpf.id;
+        ELSE
+            UPDATE command_inner_checkpoint
+                SET date_time_acc_robot = LOCALTIMESTAMP
+                WHERE id = cpf.id
+                    AND date_time_acc_robot IS null;
+        END IF;
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.mark_ci_cp_send_to_robot(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.mark_ci_cp_send_to_robot(bigint, bigint)
+    IS 'пометить промежуточные точки как посланные роботу';
+
+
+CREATE FUNCTION obj_robot.set_cmdrp(
+    crp_id_ bigint,
+    robot_id_ bigint,
+    dir1_ bigint,
+    dir2_ bigint,
+    calc_cost_ bigint,
+    pri_inner_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    errm__ TEXT;
+    cnt__ BIGINT;
+    sqlerrm__ TEXT;
+BEGIN
+    PERFORM obj_robot.log(robot_id_, 'Пришло назначение команды ' || crp_ID_
+        || ' на робота ' || robot_id_
+        || ' Dir1=' || dir1_
+        || ' Dir2=' || dir2_
+        || ' calc_cost=' || calc_cost_
+        || ' Pri_Inner_=' || pri_inner_);
+    SELECT count(*) INTO cnt__
+        FROM command_rp
+        WHERE id = crp_ID_;
+    IF (cnt__ = 0) THEN -- уже удалили команду, отбой
+        errm__ := 'ERROR - ошибка назначения команды - command_rp с id=' || crp_ID_ || ' уже удалена!';
+        PERFORM obj_robot.log(robot_id_, errm__);
+        RAISE EXCEPTION '%', errm__
+            USING errcode = 50003;
+    END IF;
+    SELECT count(*) INTO cnt__
+        FROM robot
+        WHERE id = robot_id_
+            AND NOT (coalesce(command_rp_id, 0) IN (0, crp_id_));
+    IF (cnt__ > 0) THEN -- уже есть какая-то назначенная команда, отбой
+        errm__ := 'ERROR - ошибка назначения команды - на робота уже есть команда command_rp';
+        PERFORM obj_robot.log(robot_id_, errm__);
+        RAISE EXCEPTION '%', errm__
+            USING errcode = 50003;
+    ELSE
+        BEGIN
+            UPDATE robot
+                SET command_rp_id = crp_id_
+                WHERE id = robot_id_;
+            UPDATE command_rp
+                SET robot_id = robot_id_,
+                    direction_1 = dir1_,
+                    direction_2 = dir2_,
+                    calc_cost = calc_cost_,
+                    substate = 1,
+                    date_time_begin = LOCALTIMESTAMP,
+                    priority_inner = pri_inner_
+                WHERE id = crp_id_;
+            PERFORM obj_robot.log(robot_id_, '  команда успешно назначилась');
+        EXCEPTION WHEN others THEN
+            GET STACKED DIAGNOSTICS sqlerrm__ = MESSAGE_TEXT;
+            errm__ := 'ERROR - ошибка назначения команды ' || sqlerrm__;
+            PERFORM obj_robot.log(robot_id_,errm__);
+            RAISE EXCEPTION '%', errm__
+                USING errcode = 50003;
+        END;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.set_cmdrp(bigint, bigint, bigint, bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.set_cmdrp(bigint, bigint, bigint, bigint, bigint, bigint)
+    IS 'назначает команду на SQL сервере на робота с оптимизатора Sarmat';
+
+
+CREATE FUNCTION obj_robot.change_cmd_unload_goal(
+    cmd_inner_id_ bigint,
+    new_cell_goal_id_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    ci_ RECORD;
+    cl cell;
+    old_rp command_rp;
+    cc RECORD;
+    crp command_rp;
+    cmd command;
+BEGIN
+    FOR ci_ IN (
+        SELECT ci.*, cn.type cnt_type
+            FROM command_inner ci
+            INNER JOIN container cn
+                ON ci.container_id = cn.id
+            WHERE ci.id = cmd_inner_id_
+                AND command_type_id = obj_robot."CMD_UNLOAD_TYPE_ID"()
+                AND ci.state IN (0,1,3)
+    ) LOOP
+        FOR cl IN (
+            SELECT *
+                FROM cell
+                WHERE id = new_cell_goal_id_
+                    AND is_full = 0
+                    AND cell_size <= ci_.cnt_type
+                    AND NOT exists(
+                        SELECT *
+                            FROM command_rp
+                            WHERE cell_dest_id = cell.id
+                                AND state IN (0,1,3)
+                    )
+        ) LOOP
+            SELECT * INTO old_rp
+                FROM command_rp
+                WHERE id = ci_.command_rp_id;
+            FOR cc IN (
+                SELECT c.sname, s.track_id , t.npp, hi_level_type
+                    FROM cell c
+                    INNER JOIN shelving s
+                        ON c.shelving_id = s.id
+                    INNER JOIN track t
+                        ON s.track_id = t.id
+                    WHERE c.id = new_cell_goal_id_
+            ) LOOP
+                UPDATE cell_cmd_lock
+                    SET cell_id = new_cell_goal_id_,
+                        sname = cc.sname
+                    WHERE cell_id = ci_.cell_dest_id
+                        AND cmd_id = old_rp.command_id;
+                UPDATE command_rp
+                    SET cell_dest_id = new_cell_goal_id_,
+                        cell_dest_sname = cc.sname,
+                        track_dest_id = cc.track_id,
+                        npp_dest = cc.npp
+                    WHERE id = ci_.command_rp_id;
+                IF (cc.hi_level_type = 1) THEN -- выгружаем на хранение
+                    FOR crp IN (
+                        SELECT *
+                            FROM command_rp
+                            WHERE id = ci_.command_rp_id
+                    ) LOOP
+                        UPDATE command
+                            SET cell_dest_sname = cc.sname,
+                                cell_dest_id = new_cell_goal_id_,
+                                npp_dest = cc.npp,
+                                track_dest_id = cc.track_id
+                            WHERE id = crp.command_id;
+                        -- а теперь command_gas правим
+                        FOR cmd IN (
+                            SELECT *
+                                FROM command
+                                WHERE id = crp.command_id
+                        ) LOOP
+                            UPDATE command_gas
+                                SET cell_out_name = cc.sname
+                                WHERE command_type_id IN (11,18)
+                                    AND id = cmd.command_gas_id;
+                        END LOOP;
+                    END LOOP;
+                END IF;
+            END LOOP;
+                -- если ошибка выгрузки в занятую ячейку, то разруливаем
+            FOR ci_ IN (
+                SELECT ci.*
+                    FROM command_inner ci
+                    INNER JOIN robot r
+                        ON ci.robot_id = r.id
+                    WHERE ci.id = cmd_inner_id_
+                        AND ci.state = 3
+                        AND wait_for_problem_resolve = 1
+            ) LOOP
+                UPDATE command_inner
+                    SET state = 2
+                    WHERE id = ci_.id;
+                UPDATE robot
+                    SET wait_for_problem_resolve = 0,
+                        command_inner_id = null,
+                        command_inner_assigned_id = 0
+                    WHERE id = ci_.robot_id;
+            END LOOP;
+            RETURN;
+        END LOOP;
+        RAISE EXCEPTION 'неверная новая целевая ячейка %', cmd_inner_id_
+            USING errcode = 50003;
+    END LOOP;
+    RAISE EXCEPTION 'неверная команда %', cmd_inner_id_
+        USING errcode = 50003;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.change_cmd_unload_goal(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.change_cmd_unload_goal(bigint, bigint)
+    IS 'изменить целевую ячейку команды для робота (Unload)';
+
+
+CREATE FUNCTION obj_robot.change_wpr_dir(
+    ci_id_ bigint,
+    new_dir_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    ci command_inner;
+BEGIN
+    FOR ci IN (
+        SELECT *
+            FROM command_inner
+            WHERE id = ci_id_
+    ) LOOP
+        UPDATE command_inner
+            SET direction = new_dir_,
+                command_to_run = obj_robot.get_cmd_text_another_dir(command_to_run)
+            WHERE id = ci.id;
+        PERFORM obj_rpart.robot_cmd_rp_change_dir(ci.robot_id);
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.change_wpr_dir(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.change_wpr_dir(bigint, bigint)
+    IS 'изменить направление команды робота на противоположное';
+
+
+CREATE FUNCTION obj_robot.problem_resolve(
+    comp_name_ text)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    ci_id_ BIGINT;
+    pr_ BIGINT;
+    cc RECORD;
+BEGIN
+    ci_id_ := obj_robot.get_last_comp_ci(comp_name_);
+    RAISE NOTICE 'ci_id_=%', ci_id_;
+    IF (ci_id_ > 0) THEN
+        FOR cc IN (
+            SELECT ci.*, r.platform_busy
+                FROM command_inner ci
+                INNER JOIN robot r
+                    ON r.id = ci.robot_id
+                WHERE ci.id = ci_id_
+                    AND ci.state NOT IN (2,5)
+                ORDER BY ci.id DESC
+        ) LOOP
+            SELECT coalesce(id, 0) INTO pr_
+                FROM problem_resolving
+                WHERE command_type_id = cc.command_type_id
+                    AND (
+                        coalesce(platform_busy, 0) = coalesce(cc.platform_busy, 0)
+                        OR
+                        platform_busy IS null
+                    );
+            RETURN obj_robot.problem_resolve(cc.robot_id, cc.command_type_id, cc.platform_busy, pr_);
+        END LOOP;
+    END IF;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.problem_resolve(text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.problem_resolve(text)
+    IS 'решение с компьютера оператора, простое';
+
+
+CREATE FUNCTION obj_robot.problem_resolve(
+    rid_ bigint,
+    cit_ bigint,
+    pb_ bigint,
+    pr_id_ bigint,
+    ans_ text DEFAULT '')
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    msg_ TEXT;
+    rr RECORD;
+    pr problem_resolving;
+    sqlerrm__ TEXT;
+BEGIN
+    msg_ := 'Пришло решение проблемы робот ' || rid_
+        || ' cit_=' || cit_
+        || ' pb_=' || pb_
+        || ' ID решения=' || pr_id_
+        || ' ans=' || ans_;
+    RAISE NOTICE '%', msg_;
+    PERFORM obj_robot.log(rid_, msg_);
+    FOR rr IN (
+        SELECT ci.id, ci.command_type_id, r.platform_busy, r.wait_for_problem_resolve
+            FROM robot r
+            INNER JOIN command_inner ci
+                ON r.command_inner_id = ci.id
+            WHERE r.id = rid_
+    ) LOOP
+        IF coalesce(rr.wait_for_problem_resolve, 0) <> 1 THEN
+            msg_ := 'ERROR - проблема уже решена!';
+            PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), null, rid_, msg_);
+            PERFORM obj_robot.log(rid_, msg_);
+            RETURN 0;
+        END IF;
+        msg_ := 'Определена команда, что решать проблему  ' || rr.id;
+        RAISE NOTICE '%', msg_;
+        PERFORM obj_robot.log(rid_, msg_);
+        IF (rr.command_type_id <> cit_) OR (rr.platform_busy <> pb_) THEN
+            msg_ := 'ERROR - по мере решения проблемы сменилась ситуация ' || cit_
+                || ' ' || pb_
+                || ' ' || rr.command_type_id
+                || ' ' || rr.platform_busy;
+            PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), null, rid_, msg_);
+            PERFORM obj_robot.log(rid_, msg_);
+            RETURN 0;
+        ELSE
+            FOR pr IN (
+                SELECT * FROM problem_resolving
+                    WHERE command_type_id = cit_
+                        AND pb_ = coalesce(platform_busy, pb_)
+                        AND id = pr_id_
+            ) LOOP
+                BEGIN
+                    RAISE NOTICE 'update command_inner  set problem_resolving_id=% where id=%', pr.id, rr.id;
+                    UPDATE command_inner
+                        SET problem_resolving_id = pr.id,
+                            problem_resolving_par = ans_
+                        WHERE id = rr.id;
+                    RETURN 1;
+                EXCEPTION WHEN others THEN
+                    GET STACKED DIAGNOSTICS sqlerrm__ = MESSAGE_TEXT;
+                    msg_ := 'ERROR - ошибка решения проблемы ' || sqlerrm__;
+                    RAISE NOTICE '%', msg_;
+                    PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(),null,rid_,msg_);
+                    PERFORM obj_robot.log(rid_,msg_);
+                    RAISE EXCEPTION '%', msg_
+                        USING errcode = 50003;
+                    RETURN 0;
+                END;
+            END LOOP;
+        END IF;
+    END LOOP;
+    -- раз дошли сюда, то значит, что команды не было, проверяем и делаем
+    FOR rr IN (
+        SELECT *
+            FROM robot r
+            WHERE r.id = rid_
+                AND coalesce(command_inner_id, 0) = 0
+    ) LOOP
+        PERFORM obj_robot.log(rid_, '  проблема выполнения команды есть, а самой команды нет, убираем нафиг состояние решения проблемы ');
+        IF coalesce(rr.wait_for_problem_resolve, 0) <> 1 THEN
+            msg_ := 'ERROR - проблема уже решена!';
+            PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), null, rid_, msg_);
+            PERFORM obj_robot.log(rid_, msg_);
+            RETURN 0;
+        ELSE
+            UPDATE robot
+                SET wait_for_problem_resolve = 0
+                WHERE id = rid_
+                    AND coalesce(wait_for_problem_resolve, 0) = 1;
+            RETURN 1;
+        END IF;
+    END LOOP;
+    -- проблема команды есть, а самой команды нет, переводим в режим что все ок - возможно, сисадмин напутал
+    msg_ := 'ERROR - проблема команды есть, а самой команды нет, переводим в режим что все ок - возможно, сисадмин напутал';
+    PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), null, rid_, msg_);
+    PERFORM obj_robot.log(rid_, msg_);
+    UPDATE robot
+        SET wait_for_problem_resolve = 0
+        WHERE id = rid_
+            AND coalesce(wait_for_problem_resolve, 0) = 1;
+    RETURN 0;
+end;
+$BODY$;
+ALTER FUNCTION obj_robot.problem_resolve(bigint, bigint, bigint, bigint, text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.problem_resolve(bigint, bigint, bigint, bigint, text)
+    IS 'решение проблемы команды сложное, с параметрами';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.redirect_robot_to_new_cell(
+    robot_id_ bigint,
+    cmd_rp_id_ bigint,
+    container_id_ bigint,
+    ci_npp_dest_ bigint,
+    ci_cell_dest_id_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rr robot;
+    cellrec cell;
+    direction_ BIGINT;
+BEGIN
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE id = robot_id_
+                AND platform_busy = 1
+    ) LOOP
+        IF obj_rpart.has_free_cell_by_cnt(container_id_, rr.repository_part_id) > 0 -- есть еще место на складе
+            AND ci_npp_dest_ = rr.current_track_npp  -- чтоб точно быть уверенным, что дело именно в этом
+            AND obj_rpart.is_poss_ass_new_unload_cell(ci_cell_dest_id_, robot_id_) = 1 -- а можно ли выгрузить в какую-нить другую ячейку  принципе?
+        THEN
+            PERFORM obj_rpart.try_assign_new_unload_cell(ci_cell_dest_id_, robot_id_, cellrec, direction_);
+            IF (cellrec.track_npp IS NOT null) THEN
+                UPDATE robot
+                    SET state = 0, command_inner_id = null, cmd_error_descr = null
+                    WHERE id = robot_id_;
+                --update command_inner set state=2, error_code_id=error_code  where id=cirec.id;
+                --update cell set is_error=1 where id=cirec.cell_dest_id;
+                PERFORM obj_rpart.change_cmd_rp_goal(cmd_rp_id_, cellrec.id);
+                UPDATE command_rp
+                    SET substate = 3, direction_2 = direction_
+                    WHERE id = cmd_rp_id_;
+                RETURN;
+            END IF;
+        END IF;
+    END LOOP;
+    RAISE EXCEPTION 'Невозможно перенаправить робота в другую ячейку!'
+        USING errcode = 50003;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.redirect_robot_to_new_cell(bigint, bigint, bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.redirect_robot_to_new_cell(bigint, bigint, bigint, bigint, bigint)
+    IS 'перенаправить робота в новую целевую ячейку (Unload)';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.inity_if_ness(
+    rid_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    ci_id BIGINT;
+    cnt BIGINT;
+    ciy_id BIGINT;
+    rr robot;
+BEGIN
+    FOR rr IN (
+        SELECT *
+            FROM robot r
+            WHERE id = rid_
+                AND coalesce(inity_freq, 0) > 0
+                AND obj_robot.is_robot_ready_for_cmd(r.id) = 1
+    ) LOOP
+        SELECT coalesce(max(id), 0) INTO ci_id
+            FROM command_inner
+            WHERE robot_id = rr.id
+                AND command_type_id <> 32;
+        IF (ci_id <> 0) THEN
+            SELECT state INTO cnt
+                FROM command_inner
+                WHERE id = ci_id;
+            IF (cnt <> 5) THEN
+                CONTINUE;
+            END IF;
+        END IF;
+        SELECT coalesce(max(id), 0) INTO ciy_id
+            FROM command_inner
+            WHERE robot_id = rr.id
+                AND command_type_id = 32
+                AND state IN (5,3);
+        cnt := 0;
+        IF (ciy_id > 0) THEN
+            SELECT count(*) INTO cnt
+                FROM command_inner
+                WHERE robot_id = rr.id
+                    AND command_type_id <> 32
+                    AND state = 5
+                    AND id > ciy_id;
+        END IF;
+        IF (ciy_id = 0) OR (cnt > rr.inity_freq) THEN
+            PERFORM obj_robot.log(rid_, '');
+            PERFORM obj_robot.log(rid_, '************************************************* ');
+            PERFORM obj_robot.log(rid_, 'суем inity ');
+            PERFORM obj_robot.set_command_inner(
+                rr.id, 0, 3, 32, 0,
+                obj_rpart.get_cell_name_by_track_id(rr.current_track_id),
+                obj_rpart.get_cell_name_by_track_id(rr.current_track_id),
+                'INITY;'
+            );
+        END IF;
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.inity_if_ness(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.inity_if_ness(bigint)
+    IS 'даем команду роботу INITY, если нужно';
+
+
 CREATE OR REPLACE FUNCTION obj_robot.set_command_inner(
     robot_id_ bigint,
     crp_id_ bigint,
@@ -1438,54 +2702,69 @@ COMMENT ON FUNCTION obj_robot.set_command_inner(bigint, bigint, bigint, bigint, 
     IS 'выдаем роботу простую команду типа load/Unload/Move';
 
 
-CREATE OR REPLACE FUNCTION obj_robot.redirect_robot_to_new_cell(
-    robot_id_ bigint,
-    cmd_rp_id_ bigint,
-    container_id_ bigint,
-    ci_npp_dest_ bigint,
-    ci_cell_dest_id_ bigint)
+CREATE OR REPLACE FUNCTION obj_robot.cmd_rp_cancel(
+    robot_id_ bigint)
     RETURNS void
     LANGUAGE 'plpgsql'
     COST 100
     VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
+    err__ TEXT;
+    cnt__ BIGINT;
     rr robot;
-    cellrec cell;
-    direction_ BIGINT;
+    cii command_inner;
 BEGIN
+    PERFORM obj_robot.log(robot_id_,'');
+    PERFORM obj_robot.log(robot_id_,'****************************************************');
+    PERFORM obj_robot.log(robot_id_,'Пришел запрос на отмену command_rp с робота');
     FOR rr IN (
         SELECT *
             FROM robot
             WHERE id = robot_id_
-                AND platform_busy = 1
+                AND coalesce(command_rp_id, 0) > 0
+                AND coalesce(command_inner_id, 0) = 0
+                AND coalesce(command_inner_assigned_id, 0) = 0
     ) LOOP
-        IF obj_rpart.has_free_cell_by_cnt(container_id_, rr.repository_part_id) > 0 -- есть еще место на складе
-            AND ci_npp_dest_ = rr.current_track_npp  -- чтоб точно быть уверенным, что дело именно в этом
-            AND obj_rpart.is_poss_ass_new_unload_cell(ci_cell_dest_id_, robot_id_) = 1 -- а можно ли выгрузить в какую-нить другую ячейку  принципе?
-        THEN
-            PERFORM obj_rpart.try_assign_new_unload_cell(ci_cell_dest_id_, robot_id_, cellrec, direction_);
-            IF (cellrec.track_npp IS NOT null) THEN
-                UPDATE robot
-                    SET state = 0, command_inner_id = null, cmd_error_descr = null
-                    WHERE id = robot_id_;
-                --update command_inner set state=2, error_code_id=error_code  where id=cirec.id;
-                --update cell set is_error=1 where id=cirec.cell_dest_id;
-                PERFORM obj_rpart.change_cmd_rp_goal(cmd_rp_id_, cellrec.id);
-                UPDATE command_rp
-                    SET substate = 3, direction_2 = direction_
-                    WHERE id = cmd_rp_id_;
-                RETURN;
-            END IF;
+        SELECT count(*) INTO cnt__
+            FROM command_inner
+            WHERE command_rp_id = rr.command_rp_id;
+        IF (cnt__ = 0) THEN
+            PERFORM obj_robot.log(robot_id_,'  вроде можно отменить, отменяем');
+            UPDATE command_rp
+                SET robot_id = null, direction_1 = null, direction_2 = null
+                WHERE id = rr.command_rp_id;
+            UPDATE robot
+                SET command_rp_id = 0
+                WHERE id = robot_id_;
+            FOR cii IN (
+                SELECT *
+                    FROM command_inner
+                    WHERE robot_id = robot_id_
+                        AND state = 3
+                        AND command_type_id = 32
+            ) LOOP
+                PERFORM obj_robot.log(robot_id_, '  была команда InitY с ID=' || cii.id || ', удаляем');
+                DELETE FROM command_inner
+                    WHERE id = cii.id;
+            END LOOP;
+            RETURN;
+        ELSE
+            err__ := '  ERROR - Нет возможности отменить назначенную command_rp с робота - есть CI';
+            PERFORM obj_robot.log(robot_id_, err__);
+            RAISE EXCEPTION '%', err__
+                USING errcode = 50003;
         END IF;
     END LOOP;
-    RAISE EXCEPTION 'Невозможно перенаправить робота в другую ячейку!'
+    err__ := '  ERROR - Нет возможности отменить назначенную command_rp с робота';
+    PERFORM obj_robot.log(robot_id_,err__);
+    RAISE EXCEPTION '%', err__
         USING errcode = 50003;
 END;
 $BODY$;
-ALTER FUNCTION obj_robot.redirect_robot_to_new_cell(bigint, bigint, bigint, bigint, bigint) OWNER TO postgres;
-COMMENT ON FUNCTION obj_robot.redirect_robot_to_new_cell(bigint, bigint, bigint, bigint, bigint)
-    IS 'перенаправить робота в новую целевую ячейку (Unload)';
+ALTER FUNCTION obj_robot.cmd_rp_cancel(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.cmd_rp_cancel(bigint)
+    IS 'снимает назначенную команду с робота, если еще процесс не пошел';
 
 
 -- vim: ft=pgsql

@@ -122,24 +122,24 @@
     - [x] get_robot_rp_name
     - [x] get_robot_state
     - [x] get_problem_resolve_text
-    - [ ] get_robot_problem_resolve_cs
-    - [ ] get_last_comp_ci
-    - [ ] set_mode_to_repair
-    - [ ] set_repair_done
-    - [ ] get_repair_stop_param
-    - [ ] Change_only_move_status
-    - [ ] Info_From_Sarmat
-    - [ ] Mark_Cmd_Inner_Send_To_Robot
-    - [ ] Mark_CI_CP_Send_To_Robot
-    - [ ] Set_CmdRP
-    - [ ] change_cmd_unload_goal
-    - [ ] change_wpr_dir
-    - [ ] Problem_Resolve
-    - [ ] Problem_Resolve
+    - [x] get_robot_problem_resolve_cs
+    - [x] get_last_comp_ci
+    - [x] set_mode_to_repair
+    - [x] set_repair_done
+    - [x] get_repair_stop_param
+    - [x] change_only_move_status
+    - [x] info_from_sarmat
+    - [x] mark_cmd_inner_send_to_robot
+    - [x] mark_ci_cp_send_to_robot
+    - [x] set_cmdrp
+    - [x] change_cmd_unload_goal
+    - [x] change_wpr_dir
+    - [x] problem_resolve (simplified)
+    - [x] problem_resolve
     - [x] redirect_robot_to_new_cell
-    - [ ] InitY_If_Ness
+    - [x] inity_if_ness
     - [x] set_command_inner
-    - [ ] Cmd_RP_Cancel
+    - [x] cmd_rp_cancel
 
 - obj_rpart
     - [x] log
@@ -287,7 +287,7 @@
     - [ ] op_last_cmd_mark_as_ok
     - [ ] test
     - [ ] test_raise_wrap
-    - [ ] to_number_my
+    - [x] to_number_my
     - [ ] to_number_from_left
     - [ ] shelving_has_error_cell
     - [ ] set_robot_mode_to_repair
