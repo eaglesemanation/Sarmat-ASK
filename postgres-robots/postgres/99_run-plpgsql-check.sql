@@ -19,4 +19,5 @@ FROM
          pg_trigger.tgfoid IS NOT NULL)
     OFFSET 0
 ) ss
+WHERE (pcf).sqlstate <> '00000' -- Ignore warnings
 ORDER BY (pcf).functionid::regprocedure::text, (pcf).lineno

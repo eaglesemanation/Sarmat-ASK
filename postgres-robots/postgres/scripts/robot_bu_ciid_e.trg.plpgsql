@@ -18,10 +18,10 @@ BEGIN
     IF (coalesce(OLD.command_inner_id, 0) <> coalesce(NEW.command_inner_id, 0))
         AND (coalesce(NEW.command_inner_id, 0) <> 0)
     THEN
-        CALL obj_robot.log(NEW.id, '  триггер robot_bu_ciid_e - назначилась новая команда inner=' || coalesce(NEW.command_inner_id, 0));
+        PERFORM obj_robot.log(NEW.id, '  триггер robot_bu_ciid_e - назначилась новая команда inner=' || coalesce(NEW.command_inner_id, 0));
         IF (NEW.state <> 1) THEN
             NEW.state:=1;
-            CALL obj_robot.log(NEW.id, '  триггер robot_bu_ciid_e - сменили состояние робота на 1');
+            PERFORM obj_robot.log(NEW.id, '  триггер robot_bu_ciid_e - сменили состояние робота на 1');
         END IF;
         UPDATE command_inner
             SET
@@ -35,7 +35,7 @@ BEGIN
     IF (coalesce(OLD.command_inner_id, 0) <> coalesce(NEW.command_inner_id, 0))
         AND (coalesce(NEW.command_inner_id, 0) = 0)
     THEN
-        CALL obj_robot.log(NEW.id, '  триггер robot_bu_ciid_e - убрали команду inner=' || coalesce(OLD.command_inner_id, 0));
+        PERFORM obj_robot.log(NEW.id, '  триггер robot_bu_ciid_e - убрали команду inner=' || coalesce(OLD.command_inner_id, 0));
         NEW.command_inner_assigned_id := 0;
     END IF;
 
@@ -53,6 +53,6 @@ CREATE TRIGGER robot_bu_ciid_e
     BEFORE UPDATE OF command_inner_id
     ON robot
     FOR EACH ROW
-    EXECUTE FUNCTION robot_bu_ciid_e();
+    EXECUTE PROCEDURE robot_bu_ciid_e();
 
 -- vim: ft=pgsql

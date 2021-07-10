@@ -19,4 +19,4 @@ CREATE TRIGGER shnd_bi_e
     BEFORE INSERT
     ON shelving_need_to_redraw
     FOR EACH ROW
-    EXECUTE FUNCTION shnd_bi_e();
+    EXECUTE PROCEDURE shnd_bi_e();

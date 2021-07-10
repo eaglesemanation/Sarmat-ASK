@@ -1,21 +1,28 @@
-CREATE OR REPLACE PROCEDURE obj_cmd_gas.log(
+CREATE OR REPLACE FUNCTION obj_cmd_gas.log(
     s_ text)
-LANGUAGE 'plpgsql'
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 BEGIN
     RAISE NOTICE '%', s_;
-    CALL obj_ask.log(s_);
+    PERFORM obj_ask.log(s_);
 END;
 $BODY$;
-COMMENT ON PROCEDURE obj_cmd_gas.log(text)
+ALTER FUNCTION obj_cmd_gas.log(text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.log(text)
     IS 'добавить строку в журнал (лог)';
 
 
-CREATE OR REPLACE PROCEDURE obj_cmd_gas.parse_cg_cc(
+CREATE OR REPLACE FUNCTION obj_cmd_gas.parse_cg_cc(
     cg_id bigint,
     ccont text,
     cmgd bigint)
-LANGUAGE 'plpgsql'
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
     s TEXT;
@@ -117,7 +124,8 @@ BEGIN
     --end;
 END;
 $BODY$;
-COMMENT ON PROCEDURE obj_cmd_gas.parse_cg_cc(bigint, text, bigint)
+ALTER FUNCTION obj_cmd_gas.parse_cg_cc(bigint, text, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.parse_cg_cc(bigint, text, bigint)
     IS 'парсит строку товара в таблицу';
 
 
@@ -184,7 +192,7 @@ DECLARE
     ncl RECORD;
     cnt RECORD;
 BEGIN
-    CALL obj_cmd_gas.log('get_cell_name_for_accept rp_id_=' || rp_id_
+    PERFORM obj_cmd_gas.log('get_cell_name_for_accept rp_id_=' || rp_id_
         || ' cnt_id_=' || cnt_id_
         || ' cg_type_id_=' || cg_type_id_
         || ' cg_cell_sname_=' || cg_cell_sname_
@@ -223,7 +231,7 @@ BEGIN
                 cmd.id DESC
     ) LOOP
         last_save_cell_npp__ := ll.npp_dest;
-        CALL obj_cmd_gas.log('  last_save_cell_npp__=' || last_save_cell_npp__);
+        PERFORM obj_cmd_gas.log('  last_save_cell_npp__=' || last_save_cell_npp__);
         EXIT;
     END LOOP;
     -- ищем ячейку
@@ -250,7 +258,7 @@ BEGIN
                 src_npp_for_transfer_ := src_npp_for_transfer_ || '[' || cnt.track_npp || ']';
             END LOOP;
         END LOOP;
-        CALL obj_cmd_gas.log('src_npp_for_transfer_=' || src_npp_for_transfer_);
+        PERFORM obj_cmd_gas.log('src_npp_for_transfer_=' || src_npp_for_transfer_);
         FOR ncl IN (
             SELECT cl.*
                 FROM cell cl
@@ -287,7 +295,7 @@ BEGIN
                     abs(cl.track_npp - last_save_cell_npp__) DESC, -- важна разность чтоб два робота напрягать
                     abs(ascii(substring(orientaition FROM 1 FOR 1)) - ascii(substring(sbros_prev_orient FROM 1 FOR 1))) DESC
         ) LOOP
-            CALL obj_cmd_gas.log(' obj_cmd_gas.get_cell_name_for_accept - найдена ячейка для хранения ' || ncl.sname || ' зона товара ' || cnt_rang__);
+            PERFORM obj_cmd_gas.log(' obj_cmd_gas.get_cell_name_for_accept - найдена ячейка для хранения ' || ncl.sname || ' зона товара ' || cnt_rang__);
             result := ncl.sname;
             RETURN;
         END LOOP;
@@ -322,7 +330,7 @@ BEGIN
                     abs(cl.track_npp - last_save_cell_npp__) DESC, -- важна разность чтоб два робота напрягать
                     abs(ascii(substring(orientaition FROM 1 FOR 1))-ascii(substring(sbros_prev_orient FROM 1 FOR 1))) DESC
         ) LOOP
-            CALL obj_cmd_gas.log(' obj_cmd_gas.get_cell_name_for_accept 2 - найдена ячейка для хранения ' || ncl.sname || ' зона товара ' || cnt_rang__);
+            PERFORM obj_cmd_gas.log(' obj_cmd_gas.get_cell_name_for_accept 2 - найдена ячейка для хранения ' || ncl.sname || ' зона товара ' || cnt_rang__);
             result := ncl.sname;
             RETURN;
         END LOOP;
@@ -363,16 +371,16 @@ BEGIN
                 AND obj_rpart.is_exists_cell_type(rp_id_, obj_ask."CELL_TYPE_TR_CELL"()) = 0
                 AND obj_rpart.is_exists_cell_type(rp_id_, obj_ask."CELL_TYPE_TR_CELL_OUTCOMING"()) = 0
             THEN
-                CALL obj_cmd_gas.log(' obj_cmd_gas.get_cell_name_for_accept - нет мест для хранения ');
+                PERFORM obj_cmd_gas.log(' obj_cmd_gas.get_cell_name_for_accept - нет мест для хранения ');
                 EXIT;
             END IF;
             new_rp_id_ := ncl.repository_part_id;
-            CALL obj_cmd_gas.log(' obj_cmd_gas.get_cell_name_for_accept - найдена ячейка для хранения ' || ncl.sname || ' зона товара ' || cnt_rang__);
+            PERFORM obj_cmd_gas.log(' obj_cmd_gas.get_cell_name_for_accept - найдена ячейка для хранения ' || ncl.sname || ' зона товара ' || cnt_rang__);
             result := ncl.sname;
             RETURN;
         END LOOP;
     END IF;
-    CALL obj_cmd_gas.log('ERROR - не найдена ячейка для хранения ');
+    PERFORM obj_cmd_gas.log('ERROR - не найдена ячейка для хранения ');
     result := '-';
     RETURN;
 END;

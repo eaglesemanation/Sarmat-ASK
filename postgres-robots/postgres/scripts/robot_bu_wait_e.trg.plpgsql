@@ -16,10 +16,10 @@ BEGIN
     END IF;
     IF (coalesce(NEW.wait_for_problem_resolve, 0) <> coalesce(OLD.wait_for_problem_resolve, 0)) THEN
         IF (coalesce(NEW.wait_for_problem_resolve, 0) = 1) THEN
-            CALL obj_robot.log(NEW.id, 'Установили режим решения проблемы');
+            PERFORM obj_robot.log(NEW.id, 'Установили режим решения проблемы');
             NEW.platform_busy_on_problem_set := NEW.platform_busy;
         ELSE
-            CALL obj_robot.log(NEW.id, 'Сняли режим решения проблемы');
+            PERFORM obj_robot.log(NEW.id, 'Сняли режим решения проблемы');
             NEW.platform_busy_on_problem_set := null;
         END IF;
     END IF;
@@ -37,6 +37,6 @@ CREATE TRIGGER robot_bu_wait_e
     BEFORE UPDATE OF wait_for_problem_resolve
     ON public.robot
     FOR EACH ROW
-    EXECUTE FUNCTION public.robot_bu_wait_e();
+    EXECUTE PROCEDURE public.robot_bu_wait_e();
 
 -- vim: ft=pgsql

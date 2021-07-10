@@ -47,6 +47,6 @@ CREATE TRIGGER container_aiu_some_e
     AFTER INSERT OR UPDATE OF location, cell_id, robot_id, cell_goal_id
     ON container
     FOR EACH ROW
-    EXECUTE FUNCTION container_aiu_some_e();
+    EXECUTE PROCEDURE container_aiu_some_e();
 
 -- vim: ft=pgsql

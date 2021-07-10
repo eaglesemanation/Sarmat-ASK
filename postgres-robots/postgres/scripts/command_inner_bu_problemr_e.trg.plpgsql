@@ -81,7 +81,7 @@ BEGIN
                 PERFORM trigger.cmd_retry(NEW);
             ELSIF (NEW.problem_resolving_id = obj_robot."PR_UNLOAD_MARK_BAD_REDIRECT"()) THEN
                 -- перенаправить в другую ячейку
-                CALL obj_robot.redirect_robot_to_new_cell(
+                PERFORM obj_robot.redirect_robot_to_new_cell(
                     NEW.robot_id,
                     NEW.command_rp_id,
                     NEW.container_id,
@@ -93,14 +93,14 @@ BEGIN
                     WHERE id = NEW.cell_dest_id;
             ELSIF (NEW.problem_resolving_id = obj_robot."PR_UNLOAD_INDICATE_REDIRECT"()) THEN
                 -- перенаправить в другую ячейку, а целевую пометить как занятую другим контейнером
-                CALL obj_robot.redirect_robot_to_new_cell(
+                PERFORM obj_robot.redirect_robot_to_new_cell(
                     NEW.robot_id,
                     NEW.command_rp_id,
                     NEW.container_id,
                     NEW.npp_dest,
                     NEW.cell_dest_id);
                 PERFORM trigger.cmd_cancel(NEW, 'None');
-                CALL obj_rpart.container_change_placement(
+                PERFORM obj_rpart.container_change_placement(
                     NEW.problem_resolving_par,
                     NEW.command_rp_id,
                     NEW.cell_dest_id);
@@ -136,6 +136,6 @@ CREATE TRIGGER command_inner_bu_problemr_e
     BEFORE UPDATE OF problem_resolving_id
     ON command_inner
     FOR EACH ROW
-    EXECUTE FUNCTION command_inner_bu_problemr_e();
+    EXECUTE PROCEDURE command_inner_bu_problemr_e();
 
 -- vim: ft=pgsql

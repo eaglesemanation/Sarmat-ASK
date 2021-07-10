@@ -347,10 +347,13 @@ COMMENT ON FUNCTION obj_robot.get_log_file_name(numeric)
 получить имя файла лога';
 
 
-CREATE OR REPLACE PROCEDURE obj_robot.log(
+CREATE OR REPLACE FUNCTION obj_robot.log(
     robot_id_ bigint,
     txt_ text)
-LANGUAGE 'plpgsql'
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
     filename TEXT;
@@ -363,7 +366,8 @@ BEGIN
     );
 END;
 $BODY$;
-COMMENT ON PROCEDURE obj_robot.log(bigint, text)
+ALTER FUNCTION obj_robot.log(bigint, text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.log(bigint, text)
     IS 'Adds timestamped entry into log for specified robot
 процедура ведения журнала';
 
@@ -1253,7 +1257,7 @@ COMMENT ON FUNCTION obj_robot.get_problem_resolve_text(text)
     IS 'берем простой вариант запроса для решения проблемы (Да/нет), чтобы потом задать его оператору';
 
 
-CREATE OR REPLACE PROCEDURE obj_robot.set_command_inner(
+CREATE OR REPLACE FUNCTION obj_robot.set_command_inner(
     robot_id_ bigint,
     crp_id_ bigint,
     new_cmd_state_ bigint,
@@ -1264,7 +1268,10 @@ CREATE OR REPLACE PROCEDURE obj_robot.set_command_inner(
     cmd_text_ text,
     container_id_ bigint DEFAULT 0,
     check_point_ bigint DEFAULT NULL::bigint)
-LANGUAGE 'plpgsql'
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
     rob_rec__ RECORD;
@@ -1281,7 +1288,7 @@ BEGIN
     SELECT * INTO rob_rec__ FROM robot WHERE id = robot_id_;
     rp_id__ := rob_rec__.repository_part_id;
     SELECT num_of_robots INTO nomr__ FROM repository_part WHERE id = rp_id__;
-    CALL obj_robot.log(robot_id_, 'set_command_inner: robot_id_=' || robot_id_
+    PERFORM obj_robot.log(robot_id_, 'set_command_inner: robot_id_=' || robot_id_
                                     || '; crp_id_=' || crp_id_
                                     || '; new_cmd_state=' || new_cmd_state_
                                     || '; cmd_inner_type=' || cmd_inner_type_
@@ -1292,23 +1299,23 @@ BEGIN
     SELECT count(*) INTO cnt__ FROM command_inner WHERE robot_id = robot_id_ AND state = 3;
     IF (cnt__ <> 0) THEN
         errmm__ := 'ERROR постановки команды - назначается новая, а есть еще старая ';
-        CALL obj_robot.log(robot_id_, errmm__);
+        PERFORM obj_robot.log(robot_id_, errmm__);
         RAISE EXCEPTION '%', errmm__ USING errcode = 50003;
     END IF;
     IF (rob_rec__.state <> 0) THEN
         errmm__ := 'ERROR постановки команды для робота ' || robot_id_ || ' - робот занят!';
-        CALL obj_robot.log(robot_id_, errmm__);
+        PERFORM obj_robot.log(robot_id_, errmm__);
         RAISE EXCEPTION '%', errmm__ USING errcode = 50012;
     END IF;
     IF (coalesce(rob_rec__.command_inner_assigned_id, 0) <> 0) THEN
         errmm__ := 'ERROR постановки команды для робота ' || robot_id_ ||
             ' - уже закреплена но не запущена команда ' || rob_rec__.command_inner_assigned_id;
-        CALL obj_robot.log(robot_id_, errmm__);
+        PERFORM obj_robot.log(robot_id_, errmm__);
         RAISE EXCEPTION '%', errmm__ USING errcode = 50012;
     END IF;
     IF (cell_src_sname_ IS NULL) AND (cell_dest_sname_ IS NULL) THEN
         errmm__ := 'ERROR постановки команды для робота ' || robot_id_ || ' - пустые и источник и приемник!';
-        CALL obj_robot.log(robot_id_, errmm__);
+        PERFORM obj_robot.log(robot_id_, errmm__);
         RAISE EXCEPTION '%', errmm__ USING errcode = 50012;
     END IF;
     rob_rec__.state := 1;
@@ -1349,8 +1356,8 @@ BEGIN
         IF (rob_rec__.platform_busy = 0) THEN
             UPDATE robot SET wait_for_problem_resolve = 1 WHERE id = robot_id_;
             errmm__ := '  ERROR for robot=' || robot_id_ || ' rob_rec.platform_busy=0';
-            CALL obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), rp_id__, robot_id_, errmm__);
-            CALL obj_robot.log(robot_id_, errmm__);
+            PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), rp_id__, robot_id_, errmm__);
+            PERFORM obj_robot.log(robot_id_, errmm__);
             RETURN;
             --raise_application_error (-20012, 'Неовзможно дать команду unload при пустой плафторме');
         END IF;
@@ -1358,8 +1365,8 @@ BEGIN
         IF (rob_rec__.platform_busy = 1) THEN
             UPDATE robot SET wait_for_problem_resolve = 1 WHERE id = robot_id_;
             errmm__ := '  ERROR for robot=' || robot_id_ || ' rob_rec.platform_busy=1';
-            CALL obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), rp_id__, robot_id_, errmm__);
-            CALL obj_robot.log(robot_id_, errmm__);
+            PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), rp_id__, robot_id_, errmm__);
+            PERFORM obj_robot.log(robot_id_, errmm__);
             RETURN;
         END IF;
     END IF;
@@ -1376,8 +1383,8 @@ BEGIN
             errmm__ := 'ERROR - Ошибка постановки команды для робота ' || robot_id_
                         || ' - команды ' || cmd_text_
                         || ' - незаблокирован трек до секции ' || npp_rd__ || '!';
-            CALL obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT_RP"(), rp_id__, robot_id_, errmm__);
-            CALL obj_robot.log(robot_id_, errmm__);
+            PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT_RP"(), rp_id__, robot_id_, errmm__);
+            PERFORM obj_robot.log(robot_id_, errmm__);
             RAISE EXCEPTION '%', errmm__ USING errcode = 50012;
         END IF;
     END IF;
@@ -1392,8 +1399,8 @@ BEGIN
                 errmm__ := 'ERROR - Ошибка постановки команды для робота ' || robot_id_
                             || ' - команды ' || cmd_text_
                             || ' - ячейка - источник для LOAD пуста!';
-                CALL obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), rp_id__, robot_id_, errmm__);
-                CALL obj_robot.log(robot_id_, errmm__);
+                PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), rp_id__, robot_id_, errmm__);
+                PERFORM obj_robot.log(robot_id_, errmm__);
                 RAISE EXCEPTION '%', errmm__ USING errcode = 50012;
             END IF;
         ELSIF (cmd_inner_type_ = obj_robot."CMD_UNLOAD_TYPE_ID"()) THEN
@@ -1405,8 +1412,8 @@ BEGIN
                 errmm__ := 'ERROR - Ошибка постановки команды для робота ' || robot_id_
                             || ' - команды ' || cmd_text_
                             || ' - ячейка - приемник для UNLOAD переполнена!';
-                CALL obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), rp_id__, robot_id_, errmm__);
-                CALL obj_robot.log(robot_id_, errmm__);
+                PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), rp_id__, robot_id_, errmm__);
+                PERFORM obj_robot.log(robot_id_, errmm__);
                 RAISE EXCEPTION '%', errmm__ USING errcode = 50012;
             END IF;
         END IF;
@@ -1423,20 +1430,24 @@ BEGIN
         1, crp_id_, robot_id_, cmd_text_, dir_, container_id_, check_point_)
     RETURNING id INTO ciid__;
     UPDATE robot SET command_inner_assigned_id = ciid__ WHERE id = robot_id_;
-    CALL obj_robot.log(robot_id_, 'Успешно назначили cmd_inner id=' || ciid__);
+    PERFORM obj_robot.log(robot_id_, 'Успешно назначили cmd_inner id=' || ciid__);
 END;
 $BODY$;
-COMMENT ON PROCEDURE obj_robot.set_command_inner(bigint, bigint, bigint, bigint, bigint, text, text, text, bigint, bigint)
+ALTER FUNCTION obj_robot.set_command_inner(bigint, bigint, bigint, bigint, bigint, text, text, text, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.set_command_inner(bigint, bigint, bigint, bigint, bigint, text, text, text, bigint, bigint)
     IS 'выдаем роботу простую команду типа load/Unload/Move';
 
 
-CREATE OR REPLACE PROCEDURE obj_robot.redirect_robot_to_new_cell(
+CREATE OR REPLACE FUNCTION obj_robot.redirect_robot_to_new_cell(
     robot_id_ bigint,
     cmd_rp_id_ bigint,
     container_id_ bigint,
     ci_npp_dest_ bigint,
     ci_cell_dest_id_ bigint)
-LANGUAGE 'plpgsql'
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
     rr robot;
@@ -1453,14 +1464,14 @@ BEGIN
             AND ci_npp_dest_ = rr.current_track_npp  -- чтоб точно быть уверенным, что дело именно в этом
             AND obj_rpart.is_poss_ass_new_unload_cell(ci_cell_dest_id_, robot_id_) = 1 -- а можно ли выгрузить в какую-нить другую ячейку  принципе?
         THEN
-            CALL obj_rpart.try_assign_new_unload_cell(ci_cell_dest_id_, robot_id_, cellrec, direction_);
+            PERFORM obj_rpart.try_assign_new_unload_cell(ci_cell_dest_id_, robot_id_, cellrec, direction_);
             IF (cellrec.track_npp IS NOT null) THEN
                 UPDATE robot
                     SET state = 0, command_inner_id = null, cmd_error_descr = null
                     WHERE id = robot_id_;
                 --update command_inner set state=2, error_code_id=error_code  where id=cirec.id;
                 --update cell set is_error=1 where id=cirec.cell_dest_id;
-                CALL obj_rpart.change_cmd_rp_goal(cmd_rp_id_, cellrec.id);
+                PERFORM obj_rpart.change_cmd_rp_goal(cmd_rp_id_, cellrec.id);
                 UPDATE command_rp
                     SET substate = 3, direction_2 = direction_
                     WHERE id = cmd_rp_id_;
@@ -1472,7 +1483,8 @@ BEGIN
         USING errcode = 50003;
 END;
 $BODY$;
-COMMENT ON PROCEDURE obj_robot.redirect_robot_to_new_cell(bigint, bigint, bigint, bigint, bigint)
+ALTER FUNCTION obj_robot.redirect_robot_to_new_cell(bigint, bigint, bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.redirect_robot_to_new_cell(bigint, bigint, bigint, bigint, bigint)
     IS 'перенаправить робота в новую целевую ячейку (Unload)';
 
 

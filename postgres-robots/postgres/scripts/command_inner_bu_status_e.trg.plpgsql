@@ -6,7 +6,7 @@ CREATE OR REPLACE FUNCTION command_inner_bu_status_e()
 AS $BODY$
 BEGIN
     IF OLD.state = 3 AND NEW.state = 5 THEN -- команда успешно выполнилась
-        CALL service.log2file('  триггер command_inner_bu_status_e - команда '
+        PERFORM service.log2file('  триггер command_inner_bu_status_e - команда '
                                 || NEW.id || ' для робота '
                                 || NEW.robot_id || ' успешно выполнилась');
         INSERT INTO tmp_cmd_inner (ci_id) VALUES (NEW.id);
@@ -17,13 +17,13 @@ BEGIN
         where id=NEW.command_rp_id;*/
         NEW.date_time_end := LOCALTIMESTAMP;
         IF (NEW.command_type_id = 8) THEN -- transfer
-            CALL service.mark_cell_as_full(NEW.cell_dest_id, NEW.container_id, NEW.robot_id);
-            CALL service.mark_cell_as_free(NEW.cell_src_id, NEW.container_id, NEW.robot_id);
+            PERFORM service.mark_cell_as_full(NEW.cell_dest_id, NEW.container_id, NEW.robot_id);
+            PERFORM service.mark_cell_as_free(NEW.cell_src_id, NEW.container_id, NEW.robot_id);
         ELSIF (NEW.command_type_id = 4) THEN -- load
-            CALL service.mark_cell_as_free(NEW.cell_src_id, NEW.container_id, NEW.robot_id);
+            PERFORM service.mark_cell_as_free(NEW.cell_src_id, NEW.container_id, NEW.robot_id);
             INSERT INTO tmp_cmd_inner (ci_id, action) VALUES (NEW.id, 'L');
         ELSIF (NEW.command_type_id = 5) THEN -- unload
-            CALL service.mark_cell_as_full(NEW.cell_dest_id, NEW.container_id, NEW.robot_id);
+            PERFORM service.mark_cell_as_full(NEW.cell_dest_id, NEW.container_id, NEW.robot_id);
             INSERT INTO tmp_cmd_inner (ci_id, action) VALUES (NEW.id,'G');
         END IF;
     ELSIF OLD.state = 1 AND NEW.state = 3 THEN -- команда успешно назначена
@@ -47,6 +47,6 @@ CREATE TRIGGER command_inner_bu_status_e
     BEFORE UPDATE OF state
     ON command_inner
     FOR EACH ROW
-    EXECUTE FUNCTION command_inner_bu_status_e();
+    EXECUTE PROCEDURE command_inner_bu_status_e();
 
 -- vim: ft=pgsql

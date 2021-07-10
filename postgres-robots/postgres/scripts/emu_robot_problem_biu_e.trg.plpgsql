@@ -122,6 +122,6 @@ CREATE TRIGGER emu_robot_problem_biu_e
     BEFORE INSERT OR UPDATE
     ON emu_robot_problem
     FOR EACH ROW
-    EXECUTE FUNCTION emu_robot_problem_biu_e();
+    EXECUTE PROCEDURE emu_robot_problem_biu_e();
 
 -- vim: ft=pgsql

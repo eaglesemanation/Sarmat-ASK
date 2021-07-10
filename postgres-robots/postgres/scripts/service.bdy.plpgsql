@@ -15,10 +15,13 @@ COMMENT ON FUNCTION service.bkp_to_file_active()
 писать в лог короткий бэкап?';
 
 
-CREATE OR REPLACE PROCEDURE service.log2filen(
+CREATE OR REPLACE FUNCTION service.log2filen(
     filename text,
     txt text)
-LANGUAGE 'plpgsql'
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 BEGIN
     PERFORM pg_catalog.pg_file_write(
@@ -28,15 +31,19 @@ BEGIN
     );
 END;
 $BODY$;
-COMMENT ON PROCEDURE service.log2filen(text, text)
+ALTER FUNCTION service.log2filen(text, text) OWNER TO postgres;
+COMMENT ON FUNCTION service.log2filen(text, text)
     IS 'Add timestamped entry into file.
 записать строку в файл';
 
 
-CREATE OR REPLACE PROCEDURE service.log2file(
+CREATE OR REPLACE FUNCTION service.log2file(
     txt text,
     prefix text DEFAULT 'log_'::text)
-LANGUAGE 'plpgsql'
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
     filename TEXT;
@@ -60,15 +67,19 @@ BEGIN
     END LOOP;
 END;
 $BODY$;
-COMMENT ON PROCEDURE service.log2file(text, text)
+ALTER FUNCTION service.log2file(text, text) OWNER TO postgres;
+COMMENT ON FUNCTION service.log2file(text, text)
     IS 'Adds timestamped entry into log file separating it into 250 characters lines.
 записать строку в лог';
 
 
-CREATE OR REPLACE PROCEDURE service.bkp_to_file(
+CREATE OR REPLACE FUNCTION service.bkp_to_file(
     filename text,
     txt text)
-LANGUAGE 'plpgsql'
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
     append BOOLEAN;
@@ -97,7 +108,8 @@ BEGIN
     END LOOP;
 END;
 $BODY$;
-COMMENT ON PROCEDURE service.bkp_to_file(text, text)
+ALTER FUNCTION service.bkp_to_file(text, text) OWNER TO postgres;
+COMMENT ON FUNCTION service.bkp_to_file(text, text)
     IS 'Adds timestamped entry into backup file separated into 250 char lines
 строку в журнал';
 
@@ -204,18 +216,21 @@ COMMENT ON FUNCTION service.get_container_sum_qty(bigint)
     IS 'сколько штук товара в контейнере?';
 
 
-CREATE OR REPLACE PROCEDURE service.mark_cell_as_free(
+CREATE OR REPLACE FUNCTION service.mark_cell_as_free(
     cid bigint,
     container_id_ bigint,
     robot_id_ bigint)
-LANGUAGE 'plpgsql'
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
     crec cell;
     sn TEXT;
     cmd_id_ BIGINT DEFAULT 0;
 BEGIN
-    CALL service.log2file('mark_cell_as_free ' || cid || ' ' || container_id_ || ' ' || robot_id_);
+    PERFORM service.log2file('mark_cell_as_free ' || cid || ' ' || container_id_ || ' ' || robot_id_);
     SELECT * INTO crec FROM cell WHERE id = cid;
     BEGIN
         SELECT command_id INTO cmd_id_
@@ -227,7 +242,7 @@ BEGIN
         null;
     END;
     IF (cmd_id_ <> 0) THEN -- есть команда, от имени которой разблокировать
-        CALL service.cell_unlock_from_cmd(cid, cmd_id_);
+        PERFORM service.cell_unlock_from_cmd(cid, cmd_id_);
     END IF;
     UPDATE cell
         SET is_full = is_full - 1,
@@ -243,14 +258,14 @@ BEGIN
         SET container_id = container_id_
         WHERE id = robot_id_;
     IF (crec.hi_level_type = 7) THEN
-        CALL service.add_shelving_need_to_redraw(crec.shelving_id);
+        PERFORM service.add_shelving_need_to_redraw(crec.shelving_id);
         sn := crec.sname;
         SELECT * INTO crec
             FROM cell
             WHERE sname = sn
                 AND hi_level_type = 8;
         IF (cmd_id_ <> 0) THEN -- есть команда, от имени которой разблокировать
-            CALL service.cell_unlock_from_cmd(crec.id, cmd_id_);
+            PERFORM service.cell_unlock_from_cmd(crec.id, cmd_id_);
         END IF;
         UPDATE cell
             SET is_full = is_full - 1,
@@ -258,18 +273,22 @@ BEGIN
                 container_id = 0
             WHERE id = crec.id;
     END IF;
-    CALL service.add_shelving_need_to_redraw(crec.shelving_id);
+    PERFORM service.add_shelving_need_to_redraw(crec.shelving_id);
 END;
 $BODY$;
-COMMENT ON PROCEDURE service.mark_cell_as_free(bigint, bigint, bigint)
+ALTER FUNCTION service.mark_cell_as_free(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION service.mark_cell_as_free(bigint, bigint, bigint)
     IS 'пометить ячейку как свободную';
 
 
-CREATE OR REPLACE PROCEDURE service.mark_cell_as_full(
+CREATE OR REPLACE FUNCTION service.mark_cell_as_full(
     cid bigint,
     container_id_ bigint,
     robot_id_ bigint)
-LANGUAGE 'plpgsql'
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
     crec cell;
@@ -290,7 +309,7 @@ BEGIN
         SET container_id = 0
         WHERE id = robot_id_;
     IF (crec.hi_level_type = 8) THEN
-        CALL service.add_shelving_need_to_redraw(crec.shelving_id);
+        PERFORM service.add_shelving_need_to_redraw(crec.shelving_id);
         sn := crec.sname;
         SELECT * INTO crec
             FROM cell
@@ -306,16 +325,20 @@ BEGIN
                 location = 1
             WHERE id = container_id_;
     END IF;
-    CALL service.add_shelving_need_to_redraw(crec.shelving_id);
+    PERFORM service.add_shelving_need_to_redraw(crec.shelving_id);
 END;
 $BODY$;
-COMMENT ON PROCEDURE service.mark_cell_as_full(bigint, bigint, bigint)
+ALTER FUNCTION service.mark_cell_as_full(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION service.mark_cell_as_full(bigint, bigint, bigint)
     IS 'пометить ячейку как полную';
 
 
-CREATE OR REPLACE PROCEDURE service.add_shelving_need_to_redraw(
+CREATE OR REPLACE FUNCTION service.add_shelving_need_to_redraw(
     shelving_id_ bigint)
-LANGUAGE 'plpgsql'
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 BEGIN
     INSERT INTO shelving_need_to_redraw (shelving_id)
@@ -324,7 +347,8 @@ EXCEPTION WHEN others THEN
     null;
 END;
 $BODY$;
-COMMENT ON PROCEDURE service.add_shelving_need_to_redraw(bigint)
+ALTER FUNCTION service.add_shelving_need_to_redraw(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION service.add_shelving_need_to_redraw(bigint)
     IS 'добавить стеллаж к списку для перерисования';
 
 
@@ -437,6 +461,7 @@ COMMENT ON FUNCTION service.cell_acc_only_1_robot(bigint, bigint)
     IS 'Check if cell is only accessible by 1 robot.
 ячейка достижима лишь для одного робота? (для линейных огурцов)';
 
+
 CREATE OR REPLACE FUNCTION service.is_cell_over_locked(
     cid bigint)
     RETURNS bigint
@@ -541,31 +566,40 @@ ALTER FUNCTION service.is_free_way(bigint, bigint, bigint, bigint, bigint, bigin
 COMMENT ON FUNCTION service.is_free_way(bigint, bigint, bigint, bigint, bigint, bigint)
     IS 'путь свободен?';
 
-CREATE OR REPLACE PROCEDURE service.cell_unlock_from_cmd(
+
+CREATE OR REPLACE FUNCTION service.cell_unlock_from_cmd(
     cid bigint,
     cmd_id_ bigint)
-LANGUAGE 'plpgsql'
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
     cnt BIGINT;
 BEGIN
-    CALL service.log2file('cell_unlock_from_cmd cmd_id=' || cmd_id_ || ' cid=' || cid);
+    PERFORM service.log2file('cell_unlock_from_cmd cmd_id=' || cmd_id_ || ' cid=' || cid);
     SELECT count(*) INTO cnt
         FROM cell_cmd_lock
         WHERE cell_id = cid and cmd_id = cmd_id_;
     IF (cnt = 0) THEN
-        CALL service.log2file('Unlock Error! Its not cell_lock w cell_id=' || cid || ' and cmd_id=' || cmd_id_);
+        PERFORM service.log2file('Unlock Error! Its not cell_lock w cell_id=' || cid || ' and cmd_id=' || cmd_id_);
     ELSE
         DELETE FROM cell_cmd_lock
             WHERE cell_id = cid and cmd_id = cmd_id_;
     END IF;
 END;
 $BODY$;
-COMMENT ON PROCEDURE service.cell_unlock_from_cmd(bigint, bigint)
+ALTER FUNCTION service.cell_unlock_from_cmd(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION service.cell_unlock_from_cmd(bigint, bigint)
     IS 'разблокируем ячейку от команды';
 
-CREATE OR REPLACE PROCEDURE service.unlock_all_not_ness(IN rid bigint)
-LANGUAGE 'plpgsql'
+
+CREATE OR REPLACE FUNCTION service.unlock_all_not_ness(IN rid bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
     rr RECORD;
@@ -624,20 +658,27 @@ BEGIN
     END LOOP;
 END;
 $BODY$;
-COMMENT ON PROCEDURE service.unlock_all_not_ness(bigint)
+ALTER FUNCTION service.unlock_all_not_ness(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION service.unlock_all_not_ness(bigint)
     IS 'разблокируем все, заблокированное текущим роботом кроме расстояния вокруг робота';
 
-CREATE OR REPLACE PROCEDURE service.cell_lock_by_cmd(
+
+CREATE OR REPLACE FUNCTION service.cell_lock_by_cmd(
     cid bigint,
     cmd_id_ bigint)
-LANGUAGE 'plpgsql'
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 BEGIN
     INSERT INTO cell_cmd_lock(cell_id, cmd_id) VALUES (cid, cmd_id_);
 END;
 $BODY$;
-COMMENT ON PROCEDURE service.cell_lock_by_cmd(bigint, bigint)
+ALTER FUNCTION service.cell_lock_by_cmd(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION service.cell_lock_by_cmd(bigint, bigint)
     IS 'заблокировать ячейку командой';
+
 
 CREATE OR REPLACE FUNCTION service.calc_ideal_crp_cost(
     rp_id_ bigint,
@@ -736,6 +777,7 @@ $BODY$;
 ALTER FUNCTION service.calc_ideal_crp_cost(bigint, bigint, bigint) OWNER TO postgres;
 COMMENT ON FUNCTION service.calc_ideal_crp_cost(bigint, bigint, bigint)
     IS 'посчитать идеальную цену команды перемещения контейнера';
+
 
 CREATE OR REPLACE FUNCTION service.get_ust_cell_dir(
     rid bigint,

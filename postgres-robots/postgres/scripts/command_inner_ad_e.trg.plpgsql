@@ -32,6 +32,6 @@ CREATE TRIGGER command_inner_ad_e
     AFTER DELETE
     ON command_inner
     FOR EACH ROW
-    EXECUTE FUNCTION command_inner_ad_e();
+    EXECUTE PROCEDURE command_inner_ad_e();
 
 -- vim: ft=pgsql

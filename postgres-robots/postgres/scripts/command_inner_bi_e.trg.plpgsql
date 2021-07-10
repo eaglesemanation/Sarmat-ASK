@@ -90,6 +90,6 @@ CREATE TRIGGER command_inner_bi_e
     BEFORE INSERT
     ON command_inner
     FOR EACH ROW
-    EXECUTE FUNCTION command_inner_bi_e();
+    EXECUTE PROCEDURE command_inner_bi_e();
 
 -- vim: ft=pgsql

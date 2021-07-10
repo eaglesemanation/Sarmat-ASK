@@ -92,7 +92,7 @@ BEGIN
             WHERE coalesce(is_allow_desktop, 0) = 0
     ) LOOP
         IF (NEW.command_type_id IN (12,27,11,14)) THEN
-            CALL obj_doc_expense.check_last_doc_end(NEW.pri_doc_number);
+            PERFORM obj_doc_expense.check_last_doc_end(NEW.pri_doc_number);
         END IF;
     END LOOP;
 
@@ -177,7 +177,7 @@ BEGIN
                 USING errcode = 50070;
         END IF;
         --RAISE EXCEPTION(-20070,length(NEW.content)||' '||NEW.content);
-        CALL service.log2file('Container.Accept ' || NEW.content);
+        PERFORM service.log2file('Container.Accept ' || NEW.content);
         -- проверка на фирму
         IF (sb_firm = 1) AND coalesce(NEW.firm_id, 0) = 0 THEN
             RAISE EXCEPTION 'firm must be not Null!'
@@ -457,7 +457,7 @@ BEGIN
 
         -- разбор строки состава принимаемого контейнера
         IF (NEW.content IS NOT null) THEN
-            CALL obj_cmd_gas.parse_cg_cc(NEW.id, NEW.content, cmgd);
+            PERFORM obj_cmd_gas.parse_cg_cc(NEW.id, NEW.content, cmgd);
             SELECT count(*) INTO cnt
                 FROM command_gas_container_content cgcc
                 WHERE command_gas_id = NEW.id
@@ -605,7 +605,7 @@ BEGIN
             ) VALUES (
                 NEW.id, 1
             );
-            CALL obj_doc_expense.strong_pri_check(NEW.id, NEW.pri_doc_number);
+            PERFORM obj_doc_expense.strong_pri_check(NEW.id, NEW.pri_doc_number);
         END LOOP;
 
 
@@ -707,7 +707,7 @@ BEGIN
     -- Container.Remove
     --------------------------
     ELSIF (NEW.command_type_id = 13) THEN
-        CALL service.log2file('  команда Container.Remove box='
+        PERFORM service.log2file('  команда Container.Remove box='
             || NEW.container_barcode || '; cmd_type=' || NEW.command_type_id);
         IF coalesce(NEW.container_id, 0) <> 0 THEN
             SELECT barcode INTO NEW.container_barcode
@@ -1054,7 +1054,7 @@ BEGIN
         END LOOP;
 
         -- даем команду таки
-        CALL obj_ask.set_command(
+        PERFORM obj_ask.set_command(
             NEW.id, 1, rp_s_id, cell_sname_,
             NEW.rp_id, NEW.cell_name,
             NEW.priority, container_id_
@@ -1171,7 +1171,7 @@ BEGIN
             RAISE EXCEPTION 'Container with barcode <%> doesn''t contain enough good with id=%. Need to remove%!', NEW.container_barcode, NEW.good_desc_id, NEW.quantity
                 USING errcode = 50070;
         END IF;
-        CALL service.log2file('  команда Container.Content.Remove box=' || NEW.container_barcode
+        PERFORM service.log2file('  команда Container.Content.Remove box=' || NEW.container_barcode
             || '; cmd_type=' || NEW.command_type_id
             || '; qty=' || NEW.quantity
             || '; good_desc_id=' || NEW.good_desc_id);
@@ -1385,7 +1385,7 @@ BEGIN
                 FROM container
                 WHERE barcode = NEW.container_barcode;
         END IF;
-        CALL service.log2file('  команда Container.Content.Add box=' || NEW.container_barcode
+        PERFORM service.log2file('  команда Container.Content.Add box=' || NEW.container_barcode
             || '; cmd_type=' || NEW.command_type_id
             || '; qty=' || NEW.quantity
             || '; good_desc_id=' ||NEW.good_desc_id);
@@ -1490,7 +1490,7 @@ BEGIN
             ) VALUES (
                 NEW.id, 1
             );
-            CALL obj_doc_expense.strong_pri_check1(NEW.good_desc_id, NEW.gd_party_id, NEW.quantity, NEW.pri_doc_number);
+            PERFORM obj_doc_expense.strong_pri_check1(NEW.good_desc_id, NEW.gd_party_id, NEW.quantity, NEW.pri_doc_number);
         END LOOP;
         NEW.date_time_end := LOCALTIMESTAMP;
 
@@ -1522,13 +1522,13 @@ BEGIN
                 WHERE barcode = NEW.container_barcode;
             container_id_ := NEW.container_id;
         END IF;
-        CALL service.log2file('  команда Container.Content.Inventory box=' || NEW.container_barcode
+        PERFORM service.log2file('  команда Container.Content.Inventory box=' || NEW.container_barcode
             || '; cmd_type=' || NEW.command_type_id
             || '; qty=' || NEW.quantity
             || '; gd_id_s=' || NEW.content);
 
         -- разбор строки состава принимаемого контейнера
-        CALL obj_cmd_gas.parse_cg_cc(NEW.id, NEW.content, cmgd);
+        PERFORM obj_cmd_gas.parse_cg_cc(NEW.id, NEW.content, cmgd);
         -- удаляем то, что удалили прям строкой во время ревизии
         FOR del_cc IN (
             SELECT DISTINCT cc_.id, cc_.good_desc_id, quantity, gdp_id
@@ -1987,7 +1987,7 @@ BEGIN
                     AND is_full <> 0
                     AND hi_level_type = 15
         ) LOOP
-            CALL service.log2file('  возврат - случай когда контейнер [' || NEW.container_barcode
+            PERFORM service.log2file('  возврат - случай когда контейнер [' || NEW.container_barcode
                 || '] был в другой ячейке ' || ccel.sname);
             UPDATE cell
                 SET is_full = is_full - 1,
@@ -2003,7 +2003,7 @@ BEGIN
                 AND location = 1;
         IF (cnt <> 0) THEN
             -- есть уже контейнер в ячейке возврата, можно сразу давать команду
-            CALL service.log2file('  возврат - случай когда контейнер в ячейке возврата уже ' || NEW.rp_id
+            PERFORM service.log2file('  возврат - случай когда контейнер в ячейке возврата уже ' || NEW.rp_id
                 || ' ' || NEW.container_id
                 || ' ' || NEW.command_type_id
                 || ' ' || NEW.cell_name
@@ -2026,7 +2026,7 @@ BEGIN
                 RAISE EXCEPTION 'Container collection with id=% is not finished yet!', cc.id
                     USING errcode = 50070;
             END LOOP;
-            CALL service.log2file('  ячейка для хранения определена как =' || cell_sname_
+            PERFORM service.log2file('  ячейка для хранения определена как =' || cell_sname_
                 || ' rp_id=' || new_rp_id);
             IF (cell_sname_ <> '-') THEN
                 NEW.cell_out_name := cell_sname_;
@@ -2043,7 +2043,7 @@ BEGIN
                 ELSE
                     pri_ := obj_rpart.get_cmd_max_priority(NEW.rp_id);
                 END IF;
-                CALL obj_ask.set_command(
+                PERFORM obj_ask.set_command(
                     NEW.id, 1, NEW.rp_id,
                     NEW.cell_name, new_rp_id,
                     cell_sname_,pri_, NEW.container_id);
@@ -2113,6 +2113,6 @@ CREATE TRIGGER command_gas_bi_e
     BEFORE INSERT
     ON command_gas
     FOR EACH ROW
-    EXECUTE FUNCTION command_gas_bi_e();
+    EXECUTE PROCEDURE command_gas_bi_e();
 
 -- vim: ft=pgsql

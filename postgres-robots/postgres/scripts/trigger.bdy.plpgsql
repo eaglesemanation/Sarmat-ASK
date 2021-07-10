@@ -9,7 +9,7 @@ DECLARE
     cg RECORD;
     cnt BIGINT;
 BEGIN
-    CALL service.log2file('  триггер command_bu_cis_e - procedure finish_command');
+    PERFORM service.log2file('  триггер command_bu_cis_e - procedure finish_command');
     NEW.date_time_end := LOCALTIMESTAMP;
     NEW.state := 5;
     IF (coalesce(NEW.command_gas_id, 0) <> 0) THEN
@@ -29,13 +29,13 @@ BEGIN
                 WHERE id = NEW.command_gas_id
                 AND command_type_id = 12
         ) LOOP
-            CALL service.log2file('  триггер command_bu_cis_e - cg_type=12 :new.command_gas_id=' || NEW.command_gas_id || ' :new.container_id=' || NEW.container_id || ' :new.cell_dest_sname' || NEW.cell_dest_sname);
+            PERFORM service.log2file('  триггер command_bu_cis_e - cg_type=12 :new.command_gas_id=' || NEW.command_gas_id || ' :new.container_id=' || NEW.container_id || ' :new.cell_dest_sname' || NEW.cell_dest_sname);
             UPDATE command_gas
                 SET state = 1
                 WHERE id = NEW.command_gas_id AND state < 1;
             -- если команда не промежуточная, то выдаем на гора
             IF (NEW.is_intermediate = 0) THEN
-                CALL service.log2file('  триггер command_bu_cis_e - перед доб command_gas_out_container ');
+                PERFORM service.log2file('  триггер command_bu_cis_e - перед доб command_gas_out_container ');
                 INSERT INTO command_gas_out_container(
                     cmd_gas_id, container_id, container_barcode, good_desc_id, quantity, cell_name, gd_party_id
                 ) SELECT
@@ -47,7 +47,7 @@ BEGIN
                     AND cg.good_desc_id = ccn.good_desc_id
                     AND coalesce(cg.gd_party_id, 0) = coalesce(ccn.gdp_id, 0);
                 GET DIAGNOSTICS cnt = ROW_COUNT;
-                CALL service.log2file('  триггер command_bu_cis_e - после доб command_gas_out_container = ' || cnt);
+                PERFORM service.log2file('  триггер command_bu_cis_e - после доб command_gas_out_container = ' || cnt);
                 INSERT INTO tmp_cmd(id, action) VALUES (NEW.id, 3);
             END IF;
         END LOOP;
@@ -67,7 +67,7 @@ CREATE OR REPLACE FUNCTION trigger.finish_crp(
     VOLATILE PARALLEL UNSAFE
 AS $BODY$
 BEGIN
-	CALL service.log2file('  триггер command_rp_bu_cis_e - пуск finish_crp');
+	PERFORM service.log2file('  триггер command_rp_bu_cis_e - пуск finish_crp');
 	NEW.state := 5;
 	NEW.substate := 5;
 	NEW.date_time_end := LOCALTIMESTAMP;
@@ -88,7 +88,7 @@ CREATE OR REPLACE FUNCTION trigger.cmd_retry(
     VOLATILE PARALLEL UNSAFE
 AS $BODY$
 BEGIN
-    CALL service.log2file('trigger command_inner_bu_problemr_e - Пришло решение проблемы "повторить" от '
+    PERFORM service.log2file('trigger command_inner_bu_problemr_e - Пришло решение проблемы "повторить" от '
         || current_user || ' для робота '
         || NEW.robot_id ||' команды '
         || NEW.id);
@@ -122,7 +122,7 @@ CREATE OR REPLACE FUNCTION trigger.cmd_cancel(
     VOLATILE PARALLEL UNSAFE
 AS $BODY$
 BEGIN
-    CALL service.log2file('trigger command_inner_bu_problemr_e - Пришло решение проблемы "отменить" от '
+    PERFORM service.log2file('trigger command_inner_bu_problemr_e - Пришло решение проблемы "отменить" от '
                             || current_user || ' для робота '
                             || NEW.robot_id || ' команды '
                             || NEW.id);
@@ -141,7 +141,7 @@ BEGIN
         INSERT INTO tmp_cmd_inner (ci_id, action)
             VALUES (NEW.id, action_);
     END IF;
-    CALL obj_rpart.unlock_track_after_cmd_error(NEW.robot_id);
+    PERFORM obj_rpart.unlock_track_after_cmd_error(NEW.robot_id);
 END;
 $BODY$;
 ALTER FUNCTION trigger.cmd_cancel(command_inner, text) OWNER TO postgres;
@@ -161,7 +161,7 @@ DECLARE
     ress BIGINT;
     ana RECORD;
 BEGIN
-    CALL service.log2file('trigger command_inner_bu_problemr_e - Пришло решение проблемы "выполнена вручную" от '
+    PERFORM service.log2file('trigger command_inner_bu_problemr_e - Пришло решение проблемы "выполнена вручную" от '
                             || current_user || ' для робота '
                             || NEW.robot_id || ' команды '
                             || NEW.id);
@@ -191,13 +191,13 @@ BEGIN
     DELETE FROM track_order WHERE robot_id = NEW.robot_id;
     INSERT INTO tmp_cmd_inner (ci_id)
         VALUES (NEW.id);
-    CALL obj_rpart.unlock_track_after_cmd_error(NEW.robot_id);
+    PERFORM obj_rpart.unlock_track_after_cmd_error(NEW.robot_id);
     IF (NEW.command_type_id = 4) THEN -- load
-        CALL service.mark_cell_as_free(NEW.cell_src_id, NEW.container_id, NEW.robot_id);
+        PERFORM service.mark_cell_as_free(NEW.cell_src_id, NEW.container_id, NEW.robot_id);
         INSERT INTO tmp_cmd_inner (ci_id, action)
             VALUES (NEW.id, 'L');
     ELSIF (NEW.command_type_id = 5) THEN -- unload
-        CALL service.mark_cell_as_full(NEW.cell_dest_id, NEW.container_id, NEW.robot_id);
+        PERFORM service.mark_cell_as_full(NEW.cell_dest_id, NEW.container_id, NEW.robot_id);
         INSERT INTO tmp_cmd_inner (ci_id, action)
             VALUES (NEW.id, 'G');
     END IF;

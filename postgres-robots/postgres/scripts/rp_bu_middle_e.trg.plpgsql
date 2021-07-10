@@ -71,6 +71,6 @@ CREATE TRIGGER rp_bu_middle_e
     BEFORE UPDATE OF middle_npp
     ON repository_part
     FOR EACH ROW
-    EXECUTE FUNCTION rp_bu_middle_e();
+    EXECUTE PROCEDURE rp_bu_middle_e();
 
 -- vim: ft=pgsql

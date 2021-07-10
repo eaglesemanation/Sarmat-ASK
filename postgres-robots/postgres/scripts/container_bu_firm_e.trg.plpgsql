@@ -53,6 +53,6 @@ CREATE TRIGGER container_bu_firm_e
     BEFORE UPDATE OF firm_id
     ON container
     FOR EACH ROW
-    EXECUTE FUNCTION container_bu_firm_e();
+    EXECUTE PROCEDURE container_bu_firm_e();
 
 -- vim: ft=pgsql

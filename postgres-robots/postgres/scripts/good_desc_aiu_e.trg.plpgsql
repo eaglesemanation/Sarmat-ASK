@@ -5,7 +5,7 @@ CREATE OR REPLACE FUNCTION good_desc_aiu_e()
     VOLATILE NOT LEAKPROOF
 AS $BODY$
 BEGIN
-    CALL service.bkp_to_file('good_desc', NEW.id || ';'
+    PERFORM service.bkp_to_file('good_desc', NEW.id || ';'
         || NEW.name || ';'
         || NEW.abc_rang || ';'
         || NEW.quantity || ';'
@@ -23,6 +23,6 @@ CREATE TRIGGER good_desc_aiu_e
     AFTER INSERT OR UPDATE
     ON good_desc
     FOR EACH ROW
-    EXECUTE FUNCTION good_desc_aiu_e();
+    EXECUTE PROCEDURE good_desc_aiu_e();
 
 -- vim: ft=pgsql

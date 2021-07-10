@@ -5,7 +5,7 @@ CREATE OR REPLACE FUNCTION gd_party_aiu_e()
     VOLATILE NOT LEAKPROOF
 AS $BODY$
 BEGIN
-    CALL service.bkp_to_file('gd_party', NEW.id || ';'
+    PERFORM service.bkp_to_file('gd_party', NEW.id || ';'
         || NEW.gd_id || ';'
         || NEW.pname || ';'
         || NEW.qty ||';'
@@ -26,6 +26,6 @@ CREATE TRIGGER gd_party_aiu_e
     AFTER INSERT OR DELETE
     ON gd_party
     FOR EACH ROW
-    EXECUTE FUNCTION gd_party_aiu_e();
+    EXECUTE PROCEDURE gd_party_aiu_e();
 
 -- vim: ft=pgsql

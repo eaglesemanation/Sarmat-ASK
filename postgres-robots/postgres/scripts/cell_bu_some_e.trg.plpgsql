@@ -66,6 +66,6 @@ CREATE TRIGGER cell_bu_some_e
     BEFORE UPDATE OF is_full, is_error, container_id, emp_id
     ON cell
     FOR EACH ROW
-    EXECUTE FUNCTION cell_bu_some_e();
+    EXECUTE PROCEDURE cell_bu_some_e();
 
 -- vim: ft=pgsql

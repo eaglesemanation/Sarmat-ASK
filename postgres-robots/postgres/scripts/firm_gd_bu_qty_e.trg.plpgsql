@@ -22,6 +22,6 @@ CREATE TRIGGER firm_gd_bu_qty_e
     BEFORE UPDATE OF quantity, quantity_reserved
     ON firm_gd
     FOR EACH ROW
-    EXECUTE FUNCTION firm_gd_bu_qty_e();
+    EXECUTE PROCEDURE firm_gd_bu_qty_e();
 
 -- vim: ft=pgsql

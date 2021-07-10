@@ -5,7 +5,7 @@ CREATE OR REPLACE FUNCTION command_gas_ad_e()
     VOLATILE NOT LEAKPROOF
 AS $BODY$
 BEGIN
-    CALL service.log2file('удаление command_gas с id='||OLD.id);
+    PERFORM service.log2file('удаление command_gas с id='||OLD.id);
     DELETE FROM command
         WHERE command_gas_id = OLD.id;
     DELETE FROM command_gas_cell_in
@@ -29,6 +29,6 @@ CREATE TRIGGER command_gas_ad_e
     AFTER DELETE
     ON command_gas
     FOR EACH ROW
-    EXECUTE FUNCTION command_gas_ad_e();
+    EXECUTE PROCEDURE command_gas_ad_e();
 
 -- vim: ft=pgsql

@@ -5,7 +5,7 @@ CREATE OR REPLACE FUNCTION container_aiu_e()
     VOLATILE NOT LEAKPROOF
 AS $BODY$
 BEGIN
-    CALL service.bkp_to_file('container',
+    PERFORM service.bkp_to_file('container',
         NEW.id || ';' ||
         NEW.barcode || ';' ||
         NEW.type || ';' ||
@@ -30,6 +30,6 @@ CREATE TRIGGER container_aiu_e
     AFTER INSERT OR UPDATE
     ON container
     FOR EACH ROW
-    EXECUTE FUNCTION container_aiu_e();
+    EXECUTE PROCEDURE container_aiu_e();
 
 -- vim: ft=pgsql

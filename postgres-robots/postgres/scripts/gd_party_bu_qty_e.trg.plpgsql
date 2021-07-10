@@ -9,7 +9,7 @@ BEGIN
         SET quantity = quantity + (NEW.qty - OLD.qty),
             quantity_reserved = quantity_reserved + (NEW.qty_reserved - OLD.qty_reserved)
         WHERE good_desc_id=NEW.gd_id;
-    CALL service.log2file('  gd_party_bu_qty_e id=' || NEW.id
+    PERFORM service.log2file('  gd_party_bu_qty_e id=' || NEW.id
         || ' NEW.qty=' || NEW.qty
         || ' OLD.qty=' || OLD.qty
         || ' NEW.qty_doc=' || NEW.qty_doc);
@@ -29,6 +29,6 @@ CREATE TRIGGER gd_party_bu_qty_e
     BEFORE UPDATE OF qty, qty_reserved
     ON gd_party
     FOR EACH ROW
-    EXECUTE FUNCTION gd_party_bu_qty_e();
+    EXECUTE PROCEDURE gd_party_bu_qty_e();
 
 -- vim: ft=pgsql

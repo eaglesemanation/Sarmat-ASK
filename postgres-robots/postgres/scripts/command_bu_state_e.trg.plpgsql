@@ -69,6 +69,6 @@ CREATE TRIGGER command_bu_state_e
     BEFORE UPDATE OF state
     ON command
     FOR EACH ROW
-    EXECUTE FUNCTION command_bu_state_e();
+    EXECUTE PROCEDURE command_bu_state_e();
 
 -- vim: ft=pgsql

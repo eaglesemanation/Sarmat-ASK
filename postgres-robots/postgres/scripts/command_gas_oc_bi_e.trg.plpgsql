@@ -17,7 +17,7 @@ BEGIN
         FROM command_gas_out_container_plan
         WHERE cmd_gas_id = NEW.cmd_gas_id
             AND container_id = NEW.container_id;
-    CALL service.log2file('cooc: привезли контейнер ' || NEW.container_id
+    PERFORM service.log2file('cooc: привезли контейнер ' || NEW.container_id
         || ' со штрих-кодом ' || NEW.container_barcode
         || ' с товаром =' || NEW.good_desc_id
         || ' с партией ' || NEW.gd_party_id
@@ -31,7 +31,7 @@ BEGIN
         --raise_application_error (-20003, 'Container collection on container '||NEW.container_id||' already opened!', TRUE);
         null;
     ELSE
-        CALL service.log2file('cooc: добавляем  container_collection с  NEW.cmd_gas_id = ' || NEW.cmd_gas_id);
+        PERFORM service.log2file('cooc: добавляем  container_collection с  NEW.cmd_gas_id = ' || NEW.cmd_gas_id);
         -- начинаем отбор - открываем его
         INSERT INTO container_collection (
             cell_name, container_id, cmd_gas_id, container_barcode
@@ -50,23 +50,23 @@ BEGIN
                 group_number,
                 quantity_from_gas
     ) LOOP
-        CALL service.log2file('  cooc: есть куда распределить co.id=' || co.id);
+        PERFORM service.log2file('  cooc: есть куда распределить co.id=' || co.id);
         -- считаем, сколько надо еще подвезти
         SELECT coalesce(sum(quantity), 0) INTO qnt_early
             FROM command_order_out_container cooc
             WHERE cooc.cmd_order_id = co.id;
-        CALL service.log2file('  cooc: ранее было собрано ' || qnt_early);
+        PERFORM service.log2file('  cooc: ранее было собрано ' || qnt_early);
         qnt_need := co.quantity_promis - qnt_early;
-        CALL service.log2file('  cooc: надо добрать ' || qnt_need);
+        PERFORM service.log2file('  cooc: надо добрать ' || qnt_need);
         IF (qnt_need = 0) THEN
             -- странная ситуация - не в статусе 5, а все покрыто
-            CALL service.log2file('  cooc: !!! странная ситуация - не в статусе 5, а все покрыто');
+            PERFORM service.log2file('  cooc: !!! странная ситуация - не в статусе 5, а все покрыто');
             UPDATE command_order
                 SET state = 5
                 WHERE id = co.id;
         ELSE
             IF (qnt >= qnt_need) THEN -- хватает покрыть весь запрос
-                CALL service.log2file('  cooc: хватает покрыть весь запас: надо ' || qnt_need
+                PERFORM service.log2file('  cooc: хватает покрыть весь запас: надо ' || qnt_need
                     || ' а есть ' || qnt);
                 INSERT INTO command_order_out_container (
                     cmd_order_id, container_id, container_barcode,
@@ -77,19 +77,19 @@ BEGIN
                     NEW.good_desc_id, qnt_need, co.order_number, co.group_number,
                     NEW.cell_name, co.point_number, NEW.cmd_gas_id, NEW.gd_party_id
                 );
-                CALL service.log2file('  cooc: добавили в command_order_out_container');
+                PERFORM service.log2file('  cooc: добавили в command_order_out_container');
                 qnt := qnt - qnt_need;
                 UPDATE command_order
                     SET state = 5
                     WHERE id = co.id;
-                CALL service.log2file('  cooc: поменяли статус command_order в 5 id=' || co.id);
+                PERFORM service.log2file('  cooc: поменяли статус command_order в 5 id=' || co.id);
                 UPDATE command_gas_out_container_plan
                     SET quantity_was_picked = quantity_was_picked + qnt_need
                     WHERE cmd_gas_id = NEW.cmd_gas_id
                         AND container_id = NEW.container_id;
             ELSE
                 -- покрываем часть запроса
-                CALL service.log2file('  cooc: можно покрыть лишь часть: надо ' || qnt_need
+                PERFORM service.log2file('  cooc: можно покрыть лишь часть: надо ' || qnt_need
                     || ' а есть ' || qnt);
                 INSERT INTO command_order_out_container (
                     cmd_order_id, container_id, container_barcode,
@@ -104,7 +104,7 @@ BEGIN
                     SET state = 3
                     WHERE id = co.id
                         AND state = 1;
-                CALL service.log2file('  cooc: поменяли статус command_order в 3 id=' || co.id);
+                PERFORM service.log2file('  cooc: поменяли статус command_order в 3 id=' || co.id);
                 UPDATE command_gas_out_container_plan
                     SET quantity_was_picked = quantity_was_picked + qnt
                     WHERE cmd_gas_id = NEW.cmd_gas_id
@@ -127,6 +127,6 @@ CREATE TRIGGER command_gas_oc_bi_e
     BEFORE INSERT
     ON command_gas_out_container
     FOR EACH ROW
-    EXECUTE FUNCTION command_gas_oc_bi_e();
+    EXECUTE PROCEDURE command_gas_oc_bi_e();
 
 -- vim: ft=pgsql

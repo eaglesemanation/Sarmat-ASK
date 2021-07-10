@@ -60,7 +60,7 @@ BEGIN
                 FROM repository
                 WHERE coalesce(cycle_check_gdrest_consistance, 0) = 1
         ) LOOP
-            CALL obj_ask.check_gdrest_consistance();
+            PERFORM obj_ask.check_gdrest_consistance();
         END LOOP;
     END IF;
 
@@ -77,6 +77,6 @@ CREATE TRIGGER command_gas_aiu_e
     AFTER INSERT OR UPDATE
     ON command_gas
     FOR EACH ROW
-    EXECUTE FUNCTION command_gas_aiu_e();
+    EXECUTE PROCEDURE command_gas_aiu_e();
 
 -- vim: ft=pgsql

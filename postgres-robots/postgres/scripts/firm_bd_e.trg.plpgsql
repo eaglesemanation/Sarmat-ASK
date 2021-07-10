@@ -28,6 +28,6 @@ CREATE TRIGGER firm_bd_e
     BEFORE DELETE
     ON firm
     FOR EACH ROW
-    EXECUTE FUNCTION firm_bd_e();
+    EXECUTE PROCEDURE firm_bd_e();
 
 -- vim: ft=pgsql

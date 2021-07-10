@@ -108,9 +108,12 @@ COMMENT ON FUNCTION obj_ask.get_log_file_name()
 получить имя файла текущего лога';
 
 
-CREATE OR REPLACE PROCEDURE obj_ask.log(
+CREATE OR REPLACE FUNCTION obj_ask.log(
     txt_ text)
-LANGUAGE 'plpgsql'
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
     filename TEXT;
@@ -123,17 +126,21 @@ BEGIN
     );
 END;
 $BODY$;
-COMMENT ON PROCEDURE obj_ask.log(text)
+ALTER FUNCTION obj_ask.log(text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.log(text)
     IS 'Adds timestamped entry into log
 запись строки в журнал';
 
 
-CREATE OR REPLACE PROCEDURE obj_ask.global_error_log(
+CREATE OR REPLACE FUNCTION obj_ask.global_error_log(
     error_type_ bigint,
     repository_part_id_ bigint,
     robot_id_ bigint,
     errm_ text)
-LANGUAGE 'plpgsql'
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
     rp_id__ BIGINT;
@@ -157,10 +164,11 @@ BEGIN
     END IF;
 EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS exception_msg_ = MESSAGE_TEXT;
-    CALL obj_ask.log('Ошибка формирования записи global_error_log:' || exception_msg_);
+    PERFORM obj_ask.log('Ошибка формирования записи global_error_log:' || exception_msg_);
 END;
 $BODY$;
-COMMENT ON PROCEDURE obj_ask.global_error_log(bigint, bigint, bigint, text)
+ALTER FUNCTION obj_ask.global_error_log(bigint, bigint, bigint, text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.global_error_log(bigint, bigint, bigint, text)
     IS 'добавить лог о глобальной ошибке';
 
 
@@ -272,7 +280,7 @@ COMMENT ON FUNCTION obj_ask.calc_distance(bigint, bigint, bigint, bigint)
     IS 'вычисляет расстояние между двумя треками npp';
 
 
-CREATE OR REPLACE PROCEDURE obj_ask.set_command(
+CREATE OR REPLACE FUNCTION obj_ask.set_command(
     command_gas_id_ bigint,
     command_type_id_ bigint,
     rp_src_id_ bigint,
@@ -281,10 +289,13 @@ CREATE OR REPLACE PROCEDURE obj_ask.set_command(
     cell_dest_sname_ text,
     priority_ bigint,
     container_id_ bigint)
-LANGUAGE 'plpgsql'
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 BEGIN
-    CALL obj_ask.log('Ставим команду на выполнение command_gas_id_=' || command_gas_id_
+    PERFORM obj_ask.log('Ставим команду на выполнение command_gas_id_=' || command_gas_id_
         || ' command_type_id_=' || command_type_id_
         || ' rp_src_id_=' || rp_src_id_
         || ' cell_src_sname_=' || cell_src_sname_
@@ -310,12 +321,16 @@ BEGIN
     END IF;
 END;
 $BODY$;
-COMMENT ON PROCEDURE obj_ask.set_command(bigint, bigint, bigint, text, bigint, text, bigint, bigint)
+ALTER FUNCTION obj_ask.set_command(bigint, bigint, bigint, text, bigint, text, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.set_command(bigint, bigint, bigint, text, bigint, text, bigint, bigint)
     IS 'установить команду к выполнению';
 
 
-CREATE OR REPLACE PROCEDURE obj_ask.check_gdrest_consistance()
-LANGUAGE 'plpgsql'
+CREATE OR REPLACE FUNCTION obj_ask.check_gdrest_consistance()
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
     errm TEXT;
@@ -327,7 +342,7 @@ DECLARE
     gdpch RECORD;
 BEGIN
     msg := '  check_gdrest_consistance - начало' ;
-    CALL obj_ask.log(msg);
+    PERFORM obj_ask.log(msg);
     FOR rps IN (
         SELECT id
             FROM repository
@@ -373,7 +388,7 @@ BEGIN
                 || fgd_cc.firm_id || ' '
                 || fgd_cc.ccqty || ' '
                 || fgd_cc.fqty;
-            CALL obj_ask.log(errm);
+            PERFORM obj_ask.log(errm);
             RAISE EXCEPTION '%', errm
                 USING errcode = 50003;
         END LOOP;
@@ -392,7 +407,7 @@ BEGIN
                 WHERE ggd.qq <> ggd.ss
         ) LOOP
             errm := ' Ошибка сходимости состава остатков с остатками по клиентам для ' || ggd_.id;
-            CALL obj_ask.log(errm);
+            PERFORM obj_ask.log(errm);
             RAISE EXCEPTION '%', errm
                 USING errcode = 50003;
         END LOOP;
@@ -454,7 +469,7 @@ BEGIN
                 WHERE chc.qty + chc.qty_reserved <> chc.qpry + chc.qpry11 - chc.qras - chc.qras24 + chc.qinv
         ) LOOP
             errm := ' Ошибка сходимости товара по остаткам ' || gdch.id;
-            CALL obj_ask.log(errm);
+            PERFORM obj_ask.log(errm);
             RAISE EXCEPTION '%', errm
                 USING errcode = 50003;
         END LOOP;
@@ -513,7 +528,7 @@ BEGIN
                 )
         ) LOOP
             errm := ' Ошибка целостности остатков для товара ' || gdch.good_desc_id;
-            CALL obj_ask.log(errm);
+            PERFORM obj_ask.log(errm);
             RAISE EXCEPTION '%', errm
                 USING errcode = 50003;
         END LOOP;
@@ -545,16 +560,17 @@ BEGIN
                 )
         ) LOOP
             errm := 'Ошибка целостности остатков для партии товара ' || gdpch.gd_id;
-            CALL obj_ask.log(errm);
+            PERFORM obj_ask.log(errm);
             RAISE EXCEPTION '%', errm
                 USING errcode = 50003;
         END LOOP;
     END LOOP;
     msg := '  проверили сходимость остатков товара';
-    CALL obj_ask.log(msg);
+    PERFORM obj_ask.log(msg);
 END;
 $BODY$;
-COMMENT ON PROCEDURE obj_ask.check_gdrest_consistance()
+ALTER FUNCTION obj_ask.check_gdrest_consistance() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.check_gdrest_consistance()
     IS 'проверка остатков товара на консистентность';
 
 

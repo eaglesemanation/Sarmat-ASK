@@ -10,7 +10,7 @@ DECLARE
     cl RECORD;
     cd RECORD;
 BEGIN
-    CALL service.log2file('  триггер command_bu_cis_e - зашли ctype=' || NEW.command_type_id);
+    PERFORM service.log2file('  триггер command_bu_cis_e - зашли ctype=' || NEW.command_type_id);
     -- Successful execution
     -- команда успешно выполнилась
     IF (coalesce(OLD.command_rp_executed, 0) = 0) AND (coalesce(NEW.command_rp_executed, 0) <> 0) THEN
@@ -43,7 +43,7 @@ BEGIN
         ELSIF (NEW.command_type_id = 19) THEN -- верификация
             -- надо дать еще одну команду:
             IF (NEW.state <> 2) THEN
-                CALL service.log2file('  триггер command_bu_cis_e - выполнилась команда верификации по складу');
+                PERFORM service.log2file('  триггер command_bu_cis_e - выполнилась команда верификации по складу');
                 cnt := 0;
                 FOR cl IN (
                     SELECT c.*, sh.track_id
@@ -75,7 +75,7 @@ BEGIN
         ELSIF (NEW.command_type_id = 23) THEN -- тест механики
             -- надо дать еще одну команду:
             IF (NEW.state <> 2) THEN
-                CALL service.log2file('  триггер command_bu_cis_e - выполнилась команда тест мех по складу');
+                PERFORM service.log2file('  триггер command_bu_cis_e - выполнилась команда тест мех по складу');
                 NEW.priority := NEW.priority - 1;
                 IF (NEW.priority > 0) THEN
                     FOR cl IN (
@@ -111,8 +111,8 @@ BEGIN
                                 (SELECT track_id FROM shelving WHERE id = cd.shelving_id),
                                 cl.id, cd.id, cl.track_npp,cd.track_npp, cl.container_id
                             );
-                            CALL service.cell_lock_by_cmd(cl.id, NEW.id);
-                            CALL service.cell_lock_by_cmd(cd.id, NEW.id);
+                            PERFORM service.cell_lock_by_cmd(cl.id, NEW.id);
+                            PERFORM service.cell_lock_by_cmd(cd.id, NEW.id);
                             EXIT;
                         END LOOP;
                         EXIT;
@@ -142,6 +142,6 @@ CREATE TRIGGER command_bu_cis_e
     BEFORE UPDATE OF command_rp_executed
     ON command
     FOR EACH ROW
-    EXECUTE FUNCTION command_bu_cis_e();
+    EXECUTE PROCEDURE command_bu_cis_e();
 
 -- vim: ft=pgsql

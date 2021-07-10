@@ -24,6 +24,6 @@ CREATE TRIGGER rp_ad_e
     AFTER DELETE
     ON repository_part
     FOR EACH ROW
-    EXECUTE FUNCTION rp_ad_e();
+    EXECUTE PROCEDURE rp_ad_e();
 
 -- vim: ft=pgsql

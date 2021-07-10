@@ -44,7 +44,7 @@ BEGIN
                     AND command_type_id = 19
             ) INTO rbl;
             IF rbl THEN
-                CALL service.unlock_all_not_ness(cirec.robot_id);
+                PERFORM service.unlock_all_not_ness(cirec.robot_id);
             END IF;
         END IF;
         UPDATE command_rp
@@ -269,6 +269,6 @@ CREATE TRIGGER command_inner_au_state_e
     AFTER UPDATE OF state, problem_resolving_id
     ON command_inner
     FOR EACH ROW
-    EXECUTE FUNCTION command_inner_au_state_e();
+    EXECUTE PROCEDURE command_inner_au_state_e();
 
 -- vim: ft=pgsql

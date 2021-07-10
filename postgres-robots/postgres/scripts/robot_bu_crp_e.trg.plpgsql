@@ -6,7 +6,7 @@ CREATE OR REPLACE FUNCTION robot_bu_crp_e()
 AS $BODY$
 BEGIN
     IF (coalesce(OLD.command_rp_id, 0) <> coalesce(NEW.command_rp_id, 0)) THEN
-        CALL service.log2file(
+        PERFORM service.log2file(
             '  триггер robot_bu_ciaid_e - сменили команду rp='
             || coalesce(OLD.command_rp_id, 0)
             || ' на ' || coalesce(NEW.command_rp_id, 0)
@@ -26,6 +26,6 @@ CREATE TRIGGER robot_bu_crp_e
     BEFORE UPDATE OF command_rp_id
     ON robot
     FOR EACH ROW
-    EXECUTE FUNCTION robot_bu_crp_e();
+    EXECUTE PROCEDURE robot_bu_crp_e();
 
 -- vim: ft=pgsql

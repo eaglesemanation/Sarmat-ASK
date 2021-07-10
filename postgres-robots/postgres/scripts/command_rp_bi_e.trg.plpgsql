@@ -104,7 +104,7 @@ BEGIN
                         USING errcode = 50070;
                 END IF;
             END IF;
-            CALL obj_robot.set_command_inner(
+            PERFORM obj_robot.set_command_inner(
                 NEW.robot_id, NEW.id, 1, 6, NEW.direction_1, null, NEW.cell_dest_sname,
                 'MOVE ' || NEW.cell_dest_sname || ';' || obj_rpart.get_cmd_dir_text(NEW.direction_1)
             );
@@ -126,6 +126,6 @@ CREATE TRIGGER command_rp_bi_e
     BEFORE INSERT
     ON command_rp
     FOR EACH ROW
-    EXECUTE FUNCTION command_rp_bi_e();
+    EXECUTE PROCEDURE command_rp_bi_e();
 
 -- vim: ft=pgsql

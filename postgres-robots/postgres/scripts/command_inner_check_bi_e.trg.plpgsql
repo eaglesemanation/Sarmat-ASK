@@ -24,6 +24,6 @@ CREATE TRIGGER command_inner_check_bi_e
     BEFORE INSERT
     ON command_inner_checkpoint
     FOR EACH ROW
-    EXECUTE FUNCTION command_inner_check_bi_e();
+    EXECUTE PROCEDURE command_inner_check_bi_e();
 
 -- vim: ft=pgsql

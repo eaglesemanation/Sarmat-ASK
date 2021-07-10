@@ -50,11 +50,11 @@ else*/
                     IF (coalesce(NEW.substate, 0) IN (0,1,2)) THEN -- только начали выполняться ? до куда надо еще не доехали
                         IF (cirec.command_type_id = 4) THEN -- завершилась LOAD
                             NEW.substate := 3;
-                            CALL service.cell_unlock_from_cmd(NEW.cell_src_id, NEW.command_id);
+                            PERFORM service.cell_unlock_from_cmd(NEW.cell_src_id, NEW.command_id);
                         END IF;
                     ELSIF (coalesce(NEW.substate, 0) IN (3,4)) THEN -- все еще едем куда надо
                         IF (cirec.command_type_id = 5) THEN -- завершилась UNLOAD
-                            CALL service.cell_unlock_from_cmd(NEW.cell_dest_id, NEW.command_id);
+                            PERFORM service.cell_unlock_from_cmd(NEW.cell_dest_id, NEW.command_id);
                             NEW := trigger.finish_crp(NEW);
                         END IF;
                     END IF;
@@ -82,7 +82,7 @@ else*/
                         WHERE robot_id = cirec.robot_id
                             AND cell_id = NEW.cell_src_id;
                     UPDATE robot_cell_verify SET vstate = 5 WHERE id = ctid_;
-                    CALL service.cell_unlock_from_cmd(NEW.cell_src_id, NEW.command_id);
+                    PERFORM service.cell_unlock_from_cmd(NEW.cell_src_id, NEW.command_id);
                     NEW.substate := 3;
                 END IF;
                 NEW.command_inner_executed := 0;
@@ -103,6 +103,6 @@ CREATE TRIGGER command_rp_bu_cis_e
     BEFORE UPDATE OF command_inner_executed
     ON command_rp
     FOR EACH ROW
-    EXECUTE FUNCTION command_rp_bu_cis_e();
+    EXECUTE PROCEDURE command_rp_bu_cis_e();
 
 -- vim: ft=pgsql

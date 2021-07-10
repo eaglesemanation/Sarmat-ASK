@@ -234,7 +234,7 @@ BEGIN
                             OR (e1 <> 0 OR e2 <> 0)
                             AND service.cell_acc_only_1_robot(NEW.cell_src_id, NEW.cell_dest_id) = 1
                         THEN
-                            CALL service.log2file('пущаем транзит в триггере');
+                            PERFORM service.log2file('пущаем транзит в триггере');
                             cnt := obj_rpart.get_transit_1rp_cell(NEW.rp_src_id);
                             IF (cnt = 0) THEN
                                 RAISE EXCEPTION '%',
@@ -263,7 +263,7 @@ BEGIN
                                         NEW.npp_src, cd.track_npp,
                                         NEW.container_id
                                     );
-                                    CALL service.cell_lock_by_cmd(cd.id, NEW.id);
+                                    PERFORM service.cell_lock_by_cmd(cd.id, NEW.id);
                                 END LOOP;
                             END IF;
                         END IF;
@@ -277,7 +277,7 @@ BEGIN
                             THEN
                                 -- есть ли ячейки на подскладе для внутреннего транзита
                                 IF (obj_rpart.is_exists_cell_type(rpp.id, obj_ask."CELL_TYPE_TRANSIT_1RP"()) = 1) THEN
-                                    CALL service.log2file('пущаем внутренний транзит в триггере');
+                                    PERFORM service.log2file('пущаем внутренний транзит в триггере');
                                     cnt := obj_rpart.get_transit_1rp_cell(NEW.rp_src_id);
                                     IF (cnt = 0) THEN
                                         RAISE EXCEPTION '%',
@@ -306,7 +306,7 @@ BEGIN
                                                 NEW.npp_src, cd.track_npp,
                                                 NEW.container_id
                                             );
-                                            CALL service.cell_lock_by_cmd(cd.id, NEW.id);
+                                            PERFORM service.cell_lock_by_cmd(cd.id, NEW.id);
                                         END LOOP;
                                     END IF;
                                 END IF;
@@ -340,7 +340,7 @@ BEGIN
                         )
                         USING errcode = 50008;
                 END LOOP;
-                CALL service.cell_lock_by_cmd(NEW.cell_src_id, NEW.id);
+                PERFORM service.cell_lock_by_cmd(NEW.cell_src_id, NEW.id);
                 FOR ccl IN (
                     SELECT count(*) cc
                     FROM cell_cmd_lock
@@ -363,7 +363,7 @@ BEGIN
                         END LOOP;
                     END IF;
                 END LOOP;
-                CALL service.cell_lock_by_cmd(NEW.cell_dest_id, NEW.id);
+                PERFORM service.cell_lock_by_cmd(NEW.cell_dest_id, NEW.id);
             -- ************************************
             -- Case where source and destination are different
             -- склад-источник и склад-приемник разные
@@ -402,8 +402,8 @@ BEGIN
                     NEW.track_src_id, NEW.cell_src_id, NEW.cell_dest_id,
                     NEW.npp_src, NEW.npp_dest, NEW.container_id
                 );
-                CALL service.cell_lock_by_cmd(NEW.cell_dest_id, NEW.id);
-                CALL service.cell_lock_by_cmd(NEW.cell_src_id, NEW.id);
+                PERFORM service.cell_lock_by_cmd(NEW.cell_dest_id, NEW.id);
+                PERFORM service.cell_lock_by_cmd(NEW.cell_src_id, NEW.id);
             END IF;
 
         ----------------------------------
@@ -541,8 +541,8 @@ BEGIN
                         (SELECT track_id FROM shelving WHERE id = cd.shelving_id),
                         cl.id, cd.id, cl.track_npp,cd.track_npp, cl.container_id
                     );
-                    CALL service.cell_lock_by_cmd(cl.id, NEW.id);
-                    CALL service.cell_lock_by_cmd(cd.id, NEW.id);
+                    PERFORM service.cell_lock_by_cmd(cl.id, NEW.id);
+                    PERFORM service.cell_lock_by_cmd(cd.id, NEW.id);
                     EXIT;
                 END LOOP;
                 EXIT;
@@ -708,6 +708,6 @@ CREATE TRIGGER command_bi_e
     BEFORE INSERT
     ON command
     FOR EACH ROW
-    EXECUTE FUNCTION command_bi_e();
+    EXECUTE PROCEDURE command_bi_e();
 
 -- vim: ft=pgsql
