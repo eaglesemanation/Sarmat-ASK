@@ -161,6 +161,7 @@ BEGIN
     IF (cnt_ = 0) THEN
         INSERT INTO error (date_time, error_type_id, rp_id, robot_id, notes)
             VALUES (LOCALTIMESTAMP, error_type_, rp_id__, robot_id_, errm_);
+        -- COMMIT;
     END IF;
 EXCEPTION WHEN OTHERS THEN
     GET STACKED DIAGNOSTICS exception_msg_ = MESSAGE_TEXT;
