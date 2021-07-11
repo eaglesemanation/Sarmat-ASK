@@ -154,12 +154,12 @@
     - [ ] Is_Npp_Actual_Info
     - [ ] is_poss_to_lock
     - [x] is_poss_ass_new_unload_cell
-    - [ ] is_robot_lock_bad
+    - [x] is_robot_lock_bad
     - [ ] is_rp_simple_1_robot
     - [x] is_track_between
     - [x] is_track_locked
     - [ ] locked_
-    - [ ] Is_Track_Locked_Around
+    - [x] is_track_locked_around
     - [x] is_track_near_repair_robot
     - [x] is_track_npp_ban_move_to
     - [x] is_track_part_between
@@ -194,32 +194,32 @@
     - [ ] Get_Cmd_RP_Time_Work
     - [x] get_next_npp
     - [ ] get_real_min_abc_zone
-    - [ ] Get_RP_CIA_State
-    - [ ] Get_RP_Command_State
+    - [x] get_rp_cia_state
+    - [x] get_rp_command_state
     - [ ] Get_RP_Name
     - [x] get_rp_num_of_robots
-    - [ ] Get_RP_Robots_State
+    - [x] get_rp_robots_state
     - [x] get_rp_spacing_of_robots
     - [ ] get_track_id_by_cell_and_robot
     - [x] get_track_id_by_cell_and_rp
-    - [ ] Get_Track_ID_By_Npp
+    - [x] get_track_id_by_npp
     - [x] get_track_id_by_robot_and_npp
     - [x] get_track_npp_by_cell_and_rp
-    - [ ] get_track_npp_by_npp
+    - [x] get_track_npp_by_npp
     - [x] get_track_npp_by_id
     - [ ] Get_Track_Npp_Not_Baned
     - [x] get_transit_1rp_cell
-    - [ ] Check_Lock_Robot_Around
-    - [ ] Check_New_Robot_Npp_Correct
+    - [x] check_lock_robot_around
+    - [x] check_new_robot_npp_correct
     - [ ] Check_WPR_Lock
     - [x] try_track_lock
-    - [ ] Try_Track_Lock_Robot_Around
+    - [x] try_track_lock_robot_around
     - [x] unlock_track
     - [x] unlock_track_after_cmd_error
     - [ ] Robot_Stop_Drive_Away_Try
     - [ ] Group_Op_To_Simple_CRP
     - [ ] Change_Work_Status
-    - [ ] Robot_Cmd_RP_Change_Dir
+    - [x] robot_cmd_rp_change_dir
     - [ ] crash_test_linear_tact
     - [ ] Actione_From_Pause
     - [ ] cancel_active_cmd
@@ -258,7 +258,7 @@
     - [x] is_cell_over_locked
     - [x] is_free_way
     - [ ] is_hibernate
-    - [ ] is_way_free_for_robot
+    - [x] is_way_free_for_robot
     - [x] add_shelving_need_to_redraw
     - [x] bkp_to_file
     - [x] calc_ideal_crp_cost

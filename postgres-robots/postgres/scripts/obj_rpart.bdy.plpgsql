@@ -914,6 +914,29 @@ COMMENT ON FUNCTION obj_rpart.get_track_id_by_cell_and_rp(bigint, text)
     IS 'получить ID трека по огурцу и названию ячейки';
 
 
+CREATE OR REPLACE FUNCTION obj_rpart.get_track_id_by_npp(
+    npp_ bigint,
+    rp_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+BEGIN
+    SELECT id INTO res
+        FROM track
+        WHERE npp = npp_
+            AND repository_part_id = rp_id_;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_track_id_by_npp(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_track_id_by_npp(bigint, bigint)
+    IS 'взять ID трека по его номеру на конкретном огурце';
+
+
 CREATE OR REPLACE FUNCTION obj_rpart.get_track_npp_by_cell_and_rp(
     rp_id_ bigint,
     sname_ text)
@@ -938,6 +961,35 @@ $BODY$;
 ALTER FUNCTION obj_rpart.get_track_npp_by_cell_and_rp(bigint, text) OWNER TO postgres;
 COMMENT ON FUNCTION obj_rpart.get_track_npp_by_cell_and_rp(bigint, text)
     IS 'взять № трека по огурцу и названию ячейки';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_track_npp_by_npp(
+    npp_ bigint,
+    rp_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+BEGIN
+    SELECT npp INTO res
+        FROM track
+        WHERE npp = npp_
+            AND repository_part_id = rp_id_;
+    RETURN res;
+EXCEPTION WHEN others THEN
+    SELECT npp INTO res
+        FROM track
+        WHERE name = npp_::TEXT
+            AND repository_part_id = rp_id_;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_track_npp_by_npp(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_track_npp_by_npp(bigint, bigint)
+    IS 'проверить, есть ли возвращенный номер трека в базе. Если нет, попытаться найти № трека по имени';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.calc_repair_robots(
@@ -1047,6 +1099,93 @@ $BODY$;
 ALTER FUNCTION obj_rpart.get_rp_spacing_of_robots(bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_rpart.get_rp_spacing_of_robots(bigint)
     IS 'получить минимальное расстояние между роботами в огурце';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_rp_command_state(
+    rpid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rr robot;
+BEGIN
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE repository_part_id = rpid_
+    ) LOOP
+        IF obj_robot.is_robot_ready_for_cmd(rr.id, true) = 0 THEN
+            RETURN 1;
+        END IF;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_rp_command_state(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_rp_command_state(bigint)
+    IS 'есть ли на подскладе какие-то назначенные на роботов команды перемещения контейнеров
+= 0 -нет ни одной команды ни на одного робота
+= 1 -есть какие-то команды';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_rp_robots_state(
+    rp_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rr robot;
+BEGIN
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE repository_part_id = rp_id_
+    ) LOOP
+        IF rr.state NOT iN (0,6) THEN
+            RETURN 1;
+        END IF;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_rp_robots_state(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_rp_robots_state(bigint)
+    IS 'есть ли какие-то роботы в огурце активные (не готовы и не в починке)?
+= 0 -все роботы свободны или в ремонте
+= 1 -есть какие-то работающие роботы';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_rp_cia_state(
+    rp_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rr robot;
+BEGIN
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE repository_part_id = rp_id_
+    ) LOOP
+        IF coalesce(rr.command_inner_assigned_id, 0) <> 0 THEN
+            RETURN 1;
+        END IF;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_rp_cia_state(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_rp_cia_state(bigint)
+    IS 'есть ли какие-то роботы в огурце с командами?
+= 0 -все роботы свободные без команд
+= 1 -есть какие-то  роботы с командами';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.get_track_id_by_robot_and_npp(
@@ -1213,6 +1352,217 @@ $BODY$;
 ALTER FUNCTION obj_rpart.get_another_robot_id(bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_rpart.get_another_robot_id(bigint)
     IS 'получить id второго робота';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.robot_cmd_rp_change_dir(
+    rid_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rr robot;
+    crp command_rp;
+BEGIN
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE id = rid_
+    ) LOOP
+        IF coalesce(rr.command_rp_id, 0) <> 0 THEN
+            FOR crp IN (
+                SELECT *
+                    FROM command_rp
+                    WHERE id = rr.command_rp_id
+            ) LOOP
+                IF coalesce(crp.substate, 0) IN (0,1,2) THEN
+                    UPDATE command_rp
+                        SET direction_1 = obj_rpart.get_another_direction(direction_1)
+                        WHERE id = crp.id;
+                ELSIF coalesce(crp.substate, 0) IN (3,4) THEN
+                    UPDATE command_rp
+                        SET direction_2 = obj_rpart.get_another_direction(direction_2)
+                        WHERE id = crp.id;
+                ELSE
+                    PERFORM obj_robot.log(rid_, 'ERROR - пришла смена направления, а substate команды ' || crp.substate);
+                END IF;
+                RETURN;
+            END LOOP;
+            PERFORM obj_robot.log(rid_, 'ERROR - пришла смена направления, а команда не найдена');
+            RETURN;
+        END IF;
+        PERFORM obj_robot.log(rid_,'ERROR - пришла смена направления, а команда за роботом незакреплена ');
+        RETURN;
+    END LOOP;
+    PERFORM obj_robot.log(rid_, 'ERROR - пришла смена направления, а робот ' || rid_ || ' не найден!');
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.robot_cmd_rp_change_dir(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.robot_cmd_rp_change_dir(bigint)
+    IS 'сменить направление команды перемещения контейнера для конкретного робота';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.check_new_robot_npp_correct(
+    rid_ bigint,
+    npp_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rp_id__ BIGINT;
+    rpcs__ BIGINT;
+    errm__ TEXT;
+    cnt__ BIGINT;
+    sor__ BIGINT;
+    rp repository_part;
+    rr robot;
+    nchp command_inner;
+BEGIN
+    PERFORM obj_robot.log(rid_, 'Check_New_Robot_Npp_Correct - начало npp_=' || npp_);
+    rp_id__ := obj_robot.get_robot_rp_id(rid_);
+    --log(rp_id__,'Check_New_Robot_Npp_Correct - начало ');
+    rpcs__ := obj_rpart.get_rp_command_state(rp_id__);
+    IF (rpcs__ = 0) THEN  -- вариант, когда команд нет
+        PERFORM obj_robot.log(rid_, '    RPCS__=0 - команд нет');
+        --obj_robot.log(rid_,'  RPCS__=0 - команд нет');
+        SELECT count(*) INTO cnt__
+            FROM track
+            WHERE locked_by_robot_id = rid_;
+        --obj_robot.log(rid_,'  cnt__='||cnt__);
+        IF (cnt__ = 0) THEN -- новый робот встает на путь
+            PERFORM obj_rpart.log(rp_id__,'Ставим нового робота ' || rid_ || ' на путь!');
+            IF obj_rpart.try_track_lock_robot_around(rid_, npp_) = 1 then
+                PERFORM obj_rpart.log(rp_id__,'  успешно заблокировали вокруг нового робота ' || rid_);
+            ELSE
+                errm__ := '  ERROR - не могу заблокировать путь для нового робота ' || rid_;
+                PERFORM obj_rpart.log(rp_id__, errm__);
+                RAISE EXCEPTION '%', errm__
+                    USING errcode = 50012;
+            END IF;
+        ELSE -- уже есть что-то заблокированное этим роботом
+            FOR rp IN (
+                SELECT *
+                    FROM repository_part
+                    WHERE id = rp_id__
+            ) LOOP
+                IF (cnt__ > (rp.spacing_of_robots * 2 + 1)) THEN -- слишком много заблокировано
+                    PERFORM obj_rpart.log(rp_id__, '  ERROR - слишком много заблокировано роботом ' || rid_ || '. Поэтому сбрасываем блокировку от этого робота');
+                    PERFORM obj_rpart.relock_robot_around(rid_, npp_);
+                ELSE -- заблокировано не больше, чем надо. Но там ли?
+                    --log(rp_id__,'    спрашиваем Is_Track_Locked_Around ');
+                    IF obj_rpart.is_track_locked_around(rid_, npp_) = 0 THEN -- не заблокировано там где надо
+                        PERFORM obj_rpart.log(rp_id__,'  ERROR - не заблокировано роботом ' || rid_ || ' вокруг ' || npp_ || '. Поэтому сбрасываем старую блокировку и переблокируем по-новому!');
+                        PERFORM obj_rpart.relock_robot_around(rid_, npp_);
+                    END IF;
+                END IF;
+            END LOOP;
+        END IF;
+    ELSE  -- вариант, когда есть реальные команды
+        PERFORM obj_robot.log(rid_,'    Есть реальные команды');
+        IF obj_rpart.get_rp_robots_state(rp_id__) = 0 THEN -- все роботы по подскладу простаивают
+            PERFORM obj_robot.log(rid_,'    все роботы по подскладу простаивают');
+            IF obj_rpart.get_rp_cia_state(rp_id__) = 0 THEN -- нет назначенных команд
+                FOR rr IN (
+                    SELECT *
+                        FROM robot
+                        WHERE id = rid_
+                            AND state = 0
+                            AND obj_rpart.is_robot_lock_bad(id) = 1
+                ) LOOP
+                    IF obj_rpart.is_track_locked_around(rr.id, npp_, 1) = 1 THEN -- теоретически можно заблокировать
+                        errm__ := 'ERROR - для робота ' || rr.id || ' плохая блокировка, но можно попытаться восстановить';
+                        PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT_RP"(), rp_id__, rr.id, errm__);
+                        PERFORM obj_rpart.log(rp_id__, errm__);
+                        PERFORM obj_rpart.relock_robot_around(rr.id, npp_);
+                    ELSE
+                        errm__ := 'ERROR - для робота ' || rr.id || ' плохая блокировка, восстановить нельзя, т.к. заблокировано иным роботом ' || npp_;
+                        PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT_RP"(), rp_id__, rr.id, errm__);
+                        PERFORM obj_rpart.log(rp_id__, errm__);
+                    END IF;
+                END LOOP;
+            ELSE -- есть назначенные команды, действуем аккуратней!
+                -- роботы без cmd_inner стоящие
+                FOR rr IN (
+                    SELECT *
+                        FROM robot
+                        WHERE id = rid_
+                            AND state = 0
+                            AND obj_rpart.is_robot_lock_bad(id) = 1
+                            AND coalesce(command_inner_assigned_id, 0) = 0
+                ) LOOP
+                    IF obj_rpart.is_track_locked_around(rr.id, npp_) = 0  THEN
+                        IF obj_rpart.is_track_locked_around(rr.id, npp_, 1) = 1 THEN
+                            errm__ := 'ERROR - для робота ' || rr.id || ' плохая блокировка и есть команды RP, но можно попытаться восстановить';
+                            PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT_RP"(), rp_id__, rr.id, errm__);
+                            PERFORM obj_rpart.log(rp_id__, errm__);
+                            PERFORM obj_rpart.relock_robot_around(rr.id, npp_);
+                            DELETE FROM track_order
+                                WHERE robot_id = rr.id;
+                        ELSE
+                            errm__ := 'ERROR - для робота ' || rr.id || ' плохая блокировка, восстановить нельзя, т.к. заблокировано иным роботом ' || npp_;
+                            PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT_RP"(), rp_id__, rr.id, errm__);
+                            PERFORM obj_rpart.log(rp_id__, errm__);
+                        END IF;
+                    END IF;
+                END LOOP;
+                -- роботы в режиме решения проблемы стоящие, и без промежуточных точек
+                FOR rr IN (
+                    SELECT *
+                        FROM robot
+                        WHERE id = rid_
+                            AND state = 0
+                            /*and is_robot_lock_bad(id)=1*/
+                            AND coalesce(command_inner_id, 0) <> 0
+                            AND coalesce(wait_for_problem_resolve, 0) = 1
+                ) LOOP
+                    IF obj_rpart.is_track_locked_around(rr.id, npp_) = 0 THEN
+                        IF obj_rpart.is_track_locked_around(rr.id, npp_, 1) = 1 THEN
+                            errm__ := 'ERROR - для робота в режиме решения проблемы ' || rr.id || ' плохая блокировка, но можно попытаться восстановить';
+                            PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT_RP"(), rp_id__, rr.id, errm__);
+                            PERFORM obj_rpart.log(rp_id__, errm__);
+                            PERFORM obj_rpart.relock_robot_around(rr.id, npp_);
+                            -- если команда не использует промежуточные точки
+                            FOR nchp IN (
+                                SELECT *
+                                    FROM command_inner
+                                    WHERE id = rr.command_inner_id
+                                        AND check_point IS null
+                            ) LOOP
+                                DELETE FROM track_order
+                                    WHERE robot_id = rr.id;
+                            END LOOP;
+                        -- а теперь блокировки до цели
+                        ELSE
+                            errm__ := 'ERROR - для робота ' || rr.id || ' плохая блокировка, восстановить нельзя, т.к. заблокировано иным роботом ' || npp_;
+                            PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT_RP"(), rp_id__, rr.id, errm__);
+                            PERFORM obj_rpart.log(rp_id__, errm__);
+                        END IF;
+                    END IF;
+                END LOOP;
+            END IF;
+        ELSE  -- не все роботы проставимвают
+            FOR rr IN (
+                SELECT *
+                    FROM robot
+                    WHERE id = rid_
+                        AND coalesce(command_inner_id, 0) = 0
+                        AND coalesce(command_inner_assigned_id, 0) = 0
+                        AND state = 0
+                        AND obj_rpart.is_robot_lock_bad(id) = 1
+            ) LOOP
+                PERFORM obj_robot.log(rid_,'    Робот стоит без команд и с плохой блокировкой, переблокируем!');
+                PERFORM obj_rpart.relock_robot_around(rid_, npp_);
+            END LOOP;
+        END IF;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.check_new_robot_npp_correct(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.check_new_robot_npp_correct(bigint, bigint)
+    IS 'проверяем корректность нахождения робота в треке, если что не так, то raise';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.is_track_npp_ban_move_to(
@@ -2105,6 +2455,213 @@ COMMENT ON FUNCTION obj_rpart.try_track_lock(bigint, bigint, bigint, boolean, ou
 здесь задаем № трека без учета ореола (интеллектуальное)';
 
 
+CREATE OR REPLACE FUNCTION obj_rpart.is_track_locked_around(
+    rid_ bigint,
+    npp_ bigint,
+    maybe_locked_ bigint DEFAULT 0)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    ll BIGINT;
+    npp_from_sorb__ BIGINT;
+    npp_to_sorb__ BIGINT;
+    npp_cur__ BIGINT;
+    r robot;
+    rp RECORD;
+BEGIN
+    FOR r IN (SELECT * FROM robot WHERE id = rid_) LOOP
+        FOR rp IN (
+            SELECT repository_type, id, max_npp, spacing_of_robots sorb, num_of_robots
+                FROM repository_part
+                WHERE id = r.repository_part_id
+        ) LOOP
+            npp_from_sorb__ := obj_rpart.add_track_npp(r.repository_part_id, npp_, rp.sorb, 0);
+            npp_to_sorb__ := obj_rpart.add_track_npp(r.repository_part_id, npp_, rp.sorb, 1);
+            --dbms_output.put_line(npp_from_sorb__||' '||npp_to_sorb__);
+            npp_cur__ := npp_from_sorb__;
+            LOOP
+                --dbms_output.put_line(' npp_cur__='||npp_cur__);
+                SELECT locked_by_robot_id INTO ll
+                    FROM track
+                    WHERE repository_part_id = rp.id
+                        AND npp = npp_cur__;
+                IF (ll <> r.id) THEN -- ошибка
+                    IF (maybe_locked_ = 0) THEN
+                        RETURN 0; -- путь не готов - ОШИБКА!!!
+                    ELSE -- параметр ф-ии с возможностью блокировки
+                        IF (ll <> 0) THEN
+                            RETURN 0; -- блокирован иным роботом
+                        END IF;
+                    END IF;
+                END IF;
+                EXIT WHEN npp_cur__ = npp_to_sorb__;
+                IF (rp.repository_type = 1) THEN -- для кольцевого склада
+                    IF (npp_cur__ = rp.max_npp) THEN
+                        npp_cur__ := 0;
+                    ELSE
+                        npp_cur__ := npp_cur__ + 1;
+                    END IF;
+                ELSE  -- для линейного
+                    IF (npp_cur__ < rp.max_npp) THEN
+                        npp_cur__ := npp_cur__ + 1;
+                    ELSE
+                        EXIT; -- выход из цикла
+                    END IF;
+                END IF;
+            END LOOP;
+        END LOOP;
+    END LOOP;
+    RETURN 1; -- все проверено, мин нет
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.is_track_locked_around(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.is_track_locked_around(bigint, bigint, bigint)
+    IS 'заблокировано ли вокруг? (если maybe_locked_==1, то еще и нет ли помех для блокировки если нужно?)';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.try_track_lock_robot_around(
+    rid_ bigint,
+    npp_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    errm__ TEXT;
+    ttl__ BIGINT;
+    npp_from_sorb__ BIGINT;
+    npp_to_sorb__ BIGINT;
+    npp_cur__ BIGINT;
+    rr RECORD;
+    tr track;
+begin
+    FOR rr IN (
+        SELECT r.*, num_of_robots nor, rp.id rp_id, spacing_of_robots
+            FROM robot r
+            INNER JOIN repository_part rp
+                ON r.repository_part_id = rp.id
+            WHERE r.id = rid_
+    ) LOOP
+        PERFORM obj_rpart.log(rr.rp_id, 'Try_Track_Lock_Robot_Around - Блокируем вокруг трека ' || npp_ || ' робота ' || rid_);
+        npp_from_sorb__ := obj_rpart.add_track_npp(rr.rp_id, npp_, rr.spacing_of_robots, 0);
+        npp_to_sorb__ := obj_rpart.add_track_npp(rr.rp_id, npp_, rr.spacing_of_robots, 1);
+        npp_cur__ := npp_from_sorb__;
+        LOOP
+            FOR tr IN (
+                SELECT *
+                    FROM track
+                    WHERE repository_part_id = rr.rp_id
+                        AND npp = npp_cur__
+            ) LOOP
+                IF (tr.locked_by_robot_id = 0) THEN
+                    UPDATE track
+                        SET locked_by_robot_id = rid_
+                        WHERE id = tr.id;
+                ELSIF (tr.locked_by_robot_id <> rid_) THEN
+                    PERFORM obj_rpart.log(rr.rp_id, '  ERROR - заблокировано другим роботом');
+                    RETURN 0;
+                END IF;
+            END LOOP;
+            EXIT WHEN npp_cur__ = npp_to_sorb__;
+            npp_cur__ := obj_rpart.add_track_npp(rr.rp_id, npp_cur__, 1, 1);
+        END LOOP;
+    END LOOP;
+    RETURN 1;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.try_track_lock_robot_around(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.try_track_lock_robot_around(bigint, bigint)
+    IS 'пытаемся заблокировать трек в указанном месте + ореол вокруг робота';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.relock_robot_around(
+    rid_ bigint,
+    npp_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rp_id__ BIGINT;
+    errm__ TEXT;
+BEGIN
+    rp_id__ := obj_robot.get_robot_rp_id(rid_);
+    UPDATE track
+        SET locked_by_robot_id = 0
+        WHERE locked_by_robot_id = rid_;
+    IF obj_rpart.try_track_lock_robot_around(rid_, npp_) = 1 THEN
+        PERFORM obj_rpart.log(rp_id__, '  успешно заблокировали вокруг нового робота ' || rid_ || ' npp=' || npp_);
+        -- COMMIT;
+    ELSE
+        errm__ := '  ERROR - не могу заблокировать путь для нового робота ' || rid_ || ' npp=' || npp_;
+        PERFORM obj_rpart.log(rp_id__, errm__);
+        RAISE EXCEPTION '%', errm__
+            USING errcode = 50012;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.relock_robot_around(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.relock_robot_around(bigint, bigint)
+    IS 'переблкоируем вокруг робота';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.check_lock_robot_around(
+    rid_ bigint,
+    npp_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    ttl__ BIGINT;
+    errm__ TEXT;
+    rr RECORD;
+BEGIN
+    FOR rr IN (
+        SELECT r.*, num_of_robots nor
+            FROM robot r
+            INNER JOIN repository_part rp
+                ON r.repository_part_id = rp.id
+            WHERE r.id = rid_
+    ) LOOP
+        --Log(rr.repository_part_id,'Check_Lock_Robot_Around -  вокруг трека '||npp_||' робота '||rid_);
+        IF (rr.nor = 1) THEN  -- склад с одним роботом
+            IF obj_rpart.is_track_locked_around(rid_, npp_) = 0 THEN
+                PERFORM obj_rpart.log(rr.repository_part_id, '  вокруг трека не заблокировано, блокируем!');
+                ttl__ := obj_rpart.try_track_lock_robot_around(rid_, npp_);
+            ELSE
+                --Log(rr.repository_part_id,'  вокруг трека уже заблокировано');
+                null;
+            END IF;
+            RETURN 1;
+        ELSE  -- склад с несколькими роботами
+            IF obj_rpart.is_track_locked_around(rid_, npp_) = 0 THEN
+                errm__ := '  ERROR - не получилось заблокировать вокруг трека ' || npp_ || ' робота ' || rid_;
+                PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT_RP"(), rr.repository_part_id, rid_, errm__);
+                PERFORM obj_rpart.log(rr.repository_part_id,errm__);
+                RAISE EXCEPTION '%', errm__
+                    USING errcode = 50012;
+                RETURN 0;
+            ELSE
+                --Log(rr.repository_part_id,'  успешно заблокировали');
+                RETURN 1;
+            END IF;
+        END IF;
+    END LOOP;
+    RETURN 0; -- unreachable in normal conditions
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.check_lock_robot_around(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.check_lock_robot_around(bigint, bigint)
+    IS 'проверяем - заблокирован ли ореол вокруг робота?';
+
+
 CREATE OR REPLACE FUNCTION obj_rpart.is_poss_to_lock(
     robot_id_ bigint,
     track_npp_dest bigint,
@@ -2200,6 +2757,112 @@ $BODY$;
 ALTER FUNCTION obj_rpart.is_poss_to_lock(bigint, bigint, bigint, bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_rpart.is_poss_to_lock(bigint, bigint, bigint, bigint)
     IS 'определяет, возможно ли заблокировать путь';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.is_robot_lock_bad(
+    rid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnpp__ BIGINT;
+    cnt1 BIGINT;
+    cnt2 BIGINT;
+    rr RECORD;
+    tt track;
+BEGIN
+    SELECT count(*) INTO cnt1
+        FROM track
+        WHERE locked_by_robot_id = rid_;
+    IF cnt1 = 0 THEN -- ничего не заблокировано, неправильно!
+        RETURN 1;
+    END IF;
+    FOR rr IN (
+        SELECT r.*, max_npp, spacing_of_robots sor
+            FROM robot r
+            INNER JOIN repository_part rp
+                ON r.repository_part_id = rp.id
+            WHERE r.id = rid_
+    ) LOOP
+        FOR dir IN 0..1 LOOP -- в оба направления
+            IF (dir = 0) THEN -- против часовой
+                cnt1 := 0;
+                FOR tt IN (
+                    SELECT *
+                        FROM track
+                        WHERE repository_part_id = rr.repository_part_id
+                            AND npp < rr.current_track_npp
+                        ORDER BY npp DESC
+                ) LOOP
+                    cnpp__ := tt.npp;
+                    IF (tt.locked_by_robot_id = rid_) THEN
+                        cnt1 := cnt1 + 1;
+                    ELSE
+                        EXIT;
+                    END IF;
+                END LOOP;
+                IF (cnpp__ = 0) THEN -- дошли до нуля
+                    FOR tt IN (
+                        SELECT *
+                            FROM track
+                            WHERE repository_part_id = rr.repository_part_id
+                            ORDER BY npp DESC
+                    ) LOOP
+                        cnpp__ := tt.npp;
+                        IF (tt.locked_by_robot_id = rid_) THEN
+                            cnt1 := cnt1 + 1;
+                        ELSE
+                            EXIT;
+                        END IF;
+                        EXIT WHEN cnt1 >= rr.max_npp;
+                    END LOOP;
+                END IF;
+            ELSE -- по часовой
+                cnt2 := 0;
+                FOR tt IN (
+                    SELECT *
+                        FROM track
+                        WHERE repository_part_id = rr.repository_part_id
+                            AND npp > rr.current_track_npp
+                        ORDER BY npp
+                ) LOOP
+                    cnpp__ := tt.npp;
+                    IF (tt.locked_by_robot_id = rid_) THEN
+                        cnt2 := cnt2 + 1;
+                    ELSE
+                        EXIT;
+                    END IF;
+                END LOOP;
+                IF (cnpp__ = rr.max_npp) THEN -- дошли до MAX
+                    FOR tt IN (
+                        SELECT *
+                            FROM track
+                            WHERE repository_part_id = rr.repository_part_id
+                            ORDER BY npp
+                    ) LOOP
+                        cnpp__ := tt.npp;
+                        IF (tt.locked_by_robot_id = rid_) THEN
+                            cnt2 := cnt2 + 1;
+                        ELSE
+                            EXIT;
+                        END IF;
+                        EXIT WHEN cnt2 >= rr.max_npp;
+                    END LOOP;
+                END IF;
+            END IF;
+        END LOOP;
+        IF (cnt1 > rr.sor) AND (cnt2 > rr.sor) THEN
+            RETURN 1;
+        END IF;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.is_robot_lock_bad(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.is_robot_lock_bad(bigint)
+    IS 'плохая блокировка робота?';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.container_change_placement(

@@ -585,6 +585,51 @@ COMMENT ON FUNCTION service.is_free_way(bigint, bigint, bigint, bigint, bigint, 
     IS 'путь свободен?';
 
 
+CREATE OR REPLACE FUNCTION service.is_way_free_for_robot(
+    rid_ bigint,
+    npp_from bigint,
+    npp_to bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    npp_ BIGINT;
+    npp_exit BIGINT;
+    rob robot;
+    tr RECORD;
+BEGIN
+    FOR rob IN (
+        SELECT *
+            FROM robot
+            WHERE id = rid_
+    ) LOOP
+        npp_exit := obj_rpart.inc_spacing_of_robots(npp_to, 1, 1, rob.repository_part_id);
+        npp_ := npp_from;
+        LOOP
+            FOR tr IN (
+                SELECT locked_by_robot_id lbr
+                    FROM track
+                    WHERE npp = npp_
+                        AND repository_part_id = rob.repository_part_id
+            ) LOOP
+                IF tr.lbr NOT IN (rid_ ,0) THEN
+                    RETURN 0;
+                END IF;
+            END LOOP;
+            npp_ := obj_rpart.inc_spacing_of_robots(npp_, 1, 1, rob.repository_part_id);
+            EXIT WHEN npp_ = npp_exit;
+        END LOOP;
+    END LOOP;
+    RETURN 1;
+END;
+$BODY$;
+ALTER FUNCTION service.is_way_free_for_robot(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION service.is_way_free_for_robot(bigint, bigint, bigint)
+    IS 'путь свободен для робота?';
+
+
 CREATE OR REPLACE FUNCTION service.cell_unlock_from_cmd(
     cid bigint,
     cmd_id_ bigint)

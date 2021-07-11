@@ -1307,6 +1307,40 @@ COMMENT ON FUNCTION obj_robot.get_robot_problem_resolve_cs(bigint)
     IS 'возвращает в XML варианты решения проблемы';
 
 
+CREATE FUNCTION obj_robot.get_error_msg_by_code(
+    error_code bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    erm TEXT;
+    err cmd_error_code;
+BEGIN
+    erm := '';
+    FOR err IN (
+        SELECT *
+            FROM cmd_error_code
+            ORDER BY code
+    ) LOOP
+        IF error_code & err.code <> 0 THEN
+            IF erm IS null THEN
+                erm := err.descr;
+            ELSIF length(erm) + length(err.descr) < 250 THEN
+                -- FIXME: isn't first err.descr supposed to be erm?
+                erm := err.descr || ', ' || err.descr;
+            ELSE
+                erm := substring(err.descr || ', ' || err.descr FROM 0 FOR 250);
+            END IF;
+        END IF;
+    END LOOP;
+    RETURN erm;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.get_error_msg_by_code(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.get_error_msg_by_code(bigint)
+    IS 'формируем строку ошибки робота в заивиммости от кода ошибки';
+
+
 CREATE FUNCTION obj_robot.get_last_comp_ci(
     comp_name_ text)
     RETURNS bigint
@@ -1725,6 +1759,32 @@ $BODY$;
 ALTER FUNCTION obj_robot.change_only_move_status(bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_robot.change_only_move_status(bigint)
     IS 'сменить у робота режим "Only Move"';
+
+
+CREATE FUNCTION obj_robot.correct_ci_id_on_checkpoint(
+    cmdid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    ci command_inner;
+    chp command_inner_checkpoint;
+BEGIN
+    FOR ci IN (SELECT * FROM command_inner WHERE id = cmdid_) LOOP
+        RETURN cmdid_; -- есть такая команда, ее и возвращаем
+    END LOOP;
+    FOR chp IN (SELECT * FROM command_inner_checkpoint WHERE gv_ci_id = cmdid_) LOOP
+        IF chp.date_time_acc_robot IS null THEN -- еще не помечена как принятая роботом к исполнению
+            PERFORM obj_robot.mark_ci_cp_send_to_robot(cmdid_, 3);
+        END IF;
+        RETURN chp.command_inner_id;
+    END LOOP;
+    RETURN cmdid_;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.correct_ci_id_on_checkpoint(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.correct_ci_id_on_checkpoint(bigint)
+    IS 'корректируем ID команды, если вернутое есть ID промежуточной точки. Заодно помечаем кмд промежут как переданную';
 
 
 CREATE FUNCTION obj_robot.ifs_ilog(
@@ -2272,6 +2332,27 @@ COMMENT ON FUNCTION obj_robot.change_wpr_dir(bigint, bigint)
     IS 'изменить направление команды робота на противоположное';
 
 
+CREATE FUNCTION obj_robot.to_problem_resolve_mode(
+    rid_ bigint,
+    errm_ text DEFAULT '')
+    RETURNS void
+    LANGUAGE 'plpgsql'
+AS $BODY$
+BEGIN
+    PERFORM obj_robot.log(rid_, 'Переключаем робота в режим решение проблемы');
+    UPDATE robot
+        SET wait_for_problem_resolve = 1,
+            cmd_error_descr = errm_
+            --command_inner_id = null
+        WHERE id = rid_;
+    --COMMIT;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.to_problem_resolve_mode(bigint, text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.to_problem_resolve_mode(bigint, text)
+    IS 'Переключаем робота в режим решение проблемы';
+
+
 CREATE FUNCTION obj_robot.problem_resolve(
     comp_name_ text)
     RETURNS bigint
@@ -2475,6 +2556,233 @@ $BODY$;
 ALTER FUNCTION obj_robot.redirect_robot_to_new_cell(bigint, bigint, bigint, bigint, bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_robot.redirect_robot_to_new_cell(bigint, bigint, bigint, bigint, bigint)
     IS 'перенаправить робота в новую целевую ячейку (Unload)';
+
+
+CREATE OR REPLACE FUNCTION obj_robot.real_cmd_report(
+    robot_id_ bigint,
+    command_inner_id_ bigint,
+    command_answer_ text,
+    error_code_ bigint DEFAULT null,
+    plat_stat_ text DEFAULT '')
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rp BIGINT;
+    rpt BIGINT;
+    erm__ TEXT;
+    ctid BIGINT;
+    cirec command_inner;
+    ci command_inner;
+    r_ci_type BIGINT;
+    rps repository;
+    cellrec cell;
+    robrec robot;
+    rr robot;
+    command_inner_id__ BIGINT;
+    cnt BIGINT;
+    ci_found BIGINT;
+    htp BIGINT;
+    direction_ BIGINT;
+    is_unkn_cmd BOOLEAN;
+    lct BIGINT;
+    rowcount__ BIGINT;
+BEGIN
+    PERFORM obj_robot.log(robot_id_, 'Отчёт по выполнению реальной команды ' || command_inner_id_
+        || ' ответ ' || command_answer_
+        || ' ошибка=' || error_code_);
+    command_inner_id__ := command_inner_id_;
+    SELECT repository_part_id INTO rp
+        FROM robot
+        WHERE id = robot_id_;
+    SELECT * INTO rps
+        FROM repository;
+    SELECT * INTO robrec
+        FROM robot
+        WHERE id = robot_id_;
+    PERFORM obj_robot.log(robot_id_, erm__);
+    r_ci_type := -1;
+    IF coalesce(robrec.command_inner_id, 0) <> 0 THEN
+        SELECT command_type_id INTO r_ci_type
+            FROM command_inner
+            WHERE id = robrec.command_inner_id;
+        BEGIN
+            -- взяли тип команды, назначенной на робота
+            SELECT coalesce(command_type_id, 0) INTO lct
+                FROM command_inner
+                WHERE id = coalesce(robrec.command_inner_id, 0);
+        EXCEPTION WHEN others THEN
+            lct := 0;
+        END;
+        PERFORM obj_robot.log(robot_id_, '  lct=' || lct);
+    END IF;
+    SELECT count(*) INTO ci_found
+        FROM command_inner
+        WHERE id = coalesce(command_inner_id_,0);
+    IF (ci_found = 0) OR (lct = 32) THEN -- не найдено команды, что робот возвратил
+        is_unkn_cmd := true;
+        erm__ := 'ERROR - нет команды с id=' || command_inner_id_;
+        PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), null, robot_id_, erm__);
+        IF /*nvl(command_inner_id_,0)=0 and*/ (lct = 32) THEN -- INITY - возвращает 0 - это фича агента на команду эту
+            PERFORM obj_robot.log(robot_id_, '  все же INITY');
+            is_unkn_cmd := false;
+            SELECT * INTO cirec
+                FROM command_inner
+                WHERE id = robrec.command_inner_id;
+            command_inner_id__ := robrec.command_inner_id;
+            --elsif  then
+        ELSIF (robrec.wait_for_problem_resolve = 0) THEN -- по ходу команда реальная
+            PERFORM obj_robot.log(robot_id_,'  команда не найдена, и она не INITY');
+            PERFORM obj_robot.to_problem_resolve_mode(robot_id_);
+            RETURN;
+        END IF;
+    ELSE -- команда, которую прислал робот, есть в списке команд
+        is_unkn_cmd := false;
+        IF (r_ci_type = 32) THEN
+            IF (robrec.command_inner_id <> command_inner_id__) THEN
+                command_inner_id__ := robrec.command_inner_id;
+            END IF;
+        END IF;
+        SELECT * INTO cirec
+            FROM command_inner
+            WHERE id = command_inner_id__;
+    END IF;
+    -- Если возвращенное состояние "SUCCESS", то
+    IF (position('SUCCESS' IN command_answer_) <> 0 AND NOT is_unkn_cmd) OR lct = 32 THEN
+        PERFORM obj_robot.log(robot_id_,'  пришел SUCCESS или был Inity');
+        IF (cirec.date_time_begin IS null) THEN
+            erm__ := '  ERROR - дата-время начала команды NULL';
+            PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), null, robot_id_, erm__);
+            PERFORM obj_robot.log(robot_id_, erm__);
+            RETURN;
+        END IF;
+        IF LOCALTIMESTAMP - cirec.date_time_begin < INTERVAL '10 minutes' THEN
+            PERFORM obj_robot.log(robot_id_,'  слишком малое время с начала выполнения команды');
+            RETURN;
+        END IF;
+        FOR rr IN (
+            SELECT *
+                FROM robot
+                WHERE id = robot_id_
+        ) LOOP
+            IF (rr.command_inner_id <> coalesce(command_inner_id__, 0)) THEN -- возвращено ID назначенной команды
+                PERFORM obj_robot.log(robot_id_, '  ERROR - ID пришедшей команды ' || command_inner_id__
+                    || ', а ID команды на роботе ' || rr.command_inner_id);
+                -- проверяем, а не мало ли времени прошло с момента выдачи последней команды на робота
+                IF (
+                    LOCALTIMESTAMP - coalesce(
+                        obj_robot.get_cmd_inner_dtb(rr.command_inner_id),
+                        LOCALTIMESTAMP - INTERVAL '1 day'
+                    ) < INTERVAL '10 minutes'
+                ) THEN
+                    PERFORM obj_robot.log(robot_id_, '  мало времени прошло с момента выдачи последней команды на робота');
+                    RETURN;
+                END IF;
+                PERFORM obj_robot.to_problem_resolve_mode(robot_id_);
+                RETURN;
+            END IF;
+            -- проверка на целевой трек
+            -- проверяем, не INITY ли команда?
+            IF (r_ci_type <> 32)
+                AND (rr.current_track_npp <> obj_robot.get_cmd_inner_npp_dest(cirec.id))
+            THEN
+                PERFORM obj_robot.log(robot_id_, '  не равен целевой трек команды и текущий трек робота');
+                PERFORM obj_robot.to_problem_resolve_mode(robot_id_);
+                RETURN;
+            END IF;
+        END LOOP;
+        FOR ci IN (
+            SELECT *
+                FROM command_inner
+                WHERE id = command_inner_id__
+                    AND state <> 5
+        ) LOOP
+            IF (ci.command_type_id = obj_robot."CMD_LOAD_TYPE_ID"()) THEN
+                IF (robrec.platform_busy <> 1) THEN
+                    PERFORM obj_robot.log(robot_id_, '  ERROR - LOAD завершен, а платформа пустая');
+                    PERFORM obj_robot.to_problem_resolve_mode(robot_id_);
+                    RETURN;
+                END IF;
+            ELSIF (ci.command_type_id = obj_robot."CMD_UNLOAD_TYPE_ID"()) THEN
+                IF (robrec.platform_busy <> 0) THEN
+                    PERFORM obj_robot.log(robot_id_,'  ERROR - UNLOAD завершен, а платформа полная');
+                    PERFORM obj_robot.to_problem_resolve_mode(robot_id_);
+                    RETURN;
+                END IF;
+            END IF;
+        END LOOP;
+        UPDATE command_inner
+            SET state = 5,
+                date_time_end = LOCALTIMESTAMP
+            WHERE id = command_inner_id__
+                AND state <> 5;
+        GET DIAGNOSTICS rowcount__ := ROW_COUNT;
+        IF (rowcount__ > 0) THEN
+            PERFORM obj_robot.log(robot_id_, 'Сменили state команды ' || command_inner_id__ || ' на 5');
+        END IF;
+        -- сбрасываем ожидание решение проблемы, если ситуация вдруг поменялась
+        UPDATE robot
+            SET wait_for_problem_resolve = 0
+            WHERE command_inner_id_ = coalesce(command_inner_id, 0)
+                AND id = robot_id_
+                AND coalesce(wait_for_problem_resolve, 0) = 1;
+        UPDATE robot
+            SET command_inner_id = null,
+                cmd_error_descr = ''
+            WHERE id = robot_id_
+                AND command_inner_id IS NOT null;
+        GET DIAGNOSTICS rowcount__ := ROW_COUNT;
+        IF (rowcount__ > 0) THEN
+            PERFORM obj_robot.log(robot_id_, 'Сменили command_inner_id на Null');
+        END IF;
+        -- COMMIT;
+    ELSIF position('CMD_FAULT' IN command_answer_) <> 0
+        OR position('CMD_NONE' IN command_answer_) <> 0
+        OR is_unkn_cmd
+    THEN
+        PERFORM obj_robot.log(robot_id_, 'Пришла ошибка команды ' || command_inner_id_
+            || ' № ' || error_code_
+            || ':' || command_answer_
+            || ' на команде ' || cirec.command_to_run);
+        IF coalesce(error_code_, 0) <> 0 THEN
+            UPDATE command_inner
+                SET error_code_id = error_code_
+                WHERE id = command_inner_id_;
+        END IF;
+        IF coalesce(error_code_, 0) <> 0 THEN
+            erm__ := obj_robot.get_error_msg_by_code(error_code_);
+        ELSE
+            erm__ := '';
+        END IF;
+        PERFORM obj_robot.to_problem_resolve_mode(robot_id_, erm__);
+    -- Если возвращенное состояние "WORK" или "WAIT", то странная ошибка робота - INFO возвращает что робот готов, а команда на нем еще не выполнилась. что делаем
+    ELSIF position('WORK' IN command_answer_) <> 0
+        OR position('PAUSE' IN command_answer_) <> 0
+        OR position('WAIT' IN command_answer_) <> 0
+    THEN
+        UPDATE robot
+            SET state = 1
+            WHERE id = robot_id_
+                AND state < 1;
+        GET DIAGNOSTICS rowcount__ := ROW_COUNT;
+        IF (rowcount__ > 0) THEN
+            PERFORM obj_robot.log(robot_id_, 'Сменили state у робота на 1');
+        END IF;
+        -- COMMIT;
+    -- Если UNKNOWN при реально ранее посланной команде
+    ELSIF position('UNKNOWN' IN command_answer_) <> 0
+        AND NOT is_unkn_cmd
+    THEN
+        PERFORM obj_robot.to_problem_resolve_mode(robot_id_);
+        RETURN;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_robot.real_cmd_report(bigint, bigint, text, bigint, text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_robot.real_cmd_report(bigint, bigint, text, bigint, text)
+    IS 'отчет по завершению реальной команды робота (а не INFO)';
 
 
 CREATE OR REPLACE FUNCTION obj_robot.inity_if_ness(
