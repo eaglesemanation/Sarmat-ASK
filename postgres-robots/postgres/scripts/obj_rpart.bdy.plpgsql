@@ -81,6 +81,56 @@ COMMENT ON FUNCTION obj_rpart.get_cell_name_by_track_id(bigint)
     IS 'получить имя ячейки по ID трека (для команды робота move)';
 
 
+CREATE OR REPLACE FUNCTION obj_rpart.get_cell_name_by_track_npp(
+    track_npp_ bigint,
+    rp_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res__ TEXT;
+BEGIN
+    SELECT cell_sname INTO res__
+        FROM track
+        WHERE npp = track_npp_
+            AND repository_part_id = rp_;
+    RETURN res__;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_cell_name_by_track_npp(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_cell_name_by_track_npp(bigint, bigint)
+    IS 'получить имя ячейки по № секции на конкретном огурце (нужно для команды move)';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_container_cell_sname(
+    container_barcode_ text)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cc RECORD;
+BEGIN
+    FOR cc IN (
+        SELECT cl.sname
+            FROM cell cl
+            INNER JOIN container cn
+                ON cell_id = cl.id
+            WHERE cn.barcode = container_barcode_
+    ) LOOP
+        RETURN cc.sname;
+    END LOOP;
+    RETURN null;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_container_cell_sname(text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_container_cell_sname(text)
+    IS 'получить имя ячейки хранения контейнера по его ШК';
+
+
 CREATE OR REPLACE FUNCTION obj_rpart.get_cell_track_npp(
     cell_id_ bigint)
     RETURNS bigint
@@ -194,6 +244,183 @@ COMMENT ON FUNCTION obj_rpart.get_cmd_dir_text(bigint)
     IS 'получить по ID направления кусок команды в текстовом виде для отдачи роботу';
 
 
+CREATE OR REPLACE FUNCTION obj_rpart.get_cmd_rp_min_ns_id(
+    rp_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    tt command_rp;
+BEGIN
+    FOR tt IN (
+        SELECT id
+            FROM command_rp t
+            WHERE rp_id = rp_id_
+                AND state IN (0,1,3)
+                AND command_type_id = 3
+                AND robot_id IS null
+            ORDER BY id
+    ) LOOP
+        RETURN tt.id;
+    END LOOP;
+    RETURN -1;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_cmd_rp_min_ns_id(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_cmd_rp_min_ns_id(bigint)
+    IS 'получить минимальный ID активной команды в указанном огурце';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_cmd_rp_min_ns_id(
+    rp_id_ bigint,
+    pri_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    tt command_rp;
+BEGIN
+    FOR tt IN (
+        SELECT id
+            FROM command_rp t
+            WHERE rp_id = rp_id_
+                AND state IN (0,1,3)
+                AND command_type_id = 3
+                AND priority = pri_
+                AND robot_id IS null
+            ORDER BY id
+    ) LOOP
+        RETURN tt.id;
+    END LOOP;
+    RETURN -1;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_cmd_rp_min_ns_id(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_cmd_rp_min_ns_id(bigint, bigint)
+    IS 'получить минимальный ID активной команды в указанном огурце в указанном приоритете';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_cmd_rp_order_after_min(
+    rpid_ bigint,
+    cmdrpid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    min__ BIGINT;
+    oo__ BIGINT;
+    tt command_rp;
+BEGIN
+    min__ := obj_rpart.get_cmd_rp_min_ns_id(rpid_);
+    IF (min__ = cmdrpid_) THEN
+        RETURN 0;
+    END IF;
+    IF (min__ > 0) THEN
+        oo__ := 0;
+        FOR tt IN (
+            SELECT *
+                FROM command_rp t--sarmat.command_rp t
+                WHERE rp_id = rpid_
+                    AND command_type_id = 3
+                    AND id >= min__
+                ORDER BY id
+        ) LOOP
+            IF (tt.id = cmdrpid_) THEN
+                RETURN oo__;
+            END IF;
+            oo__ := oo__ + 1;
+        END LOOP;
+    END IF;
+    RETURN -1;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_cmd_rp_order_after_min(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_cmd_rp_order_after_min(bigint, bigint)
+    IS 'получить порядковый № команды перемещения контейнеров в огурце после минимально активной';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_cmd_rp_order_after_min(
+    rpid_ bigint,
+    pri_ bigint,
+    cmdrpid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    min__ BIGINT;
+    oo__ BIGINT;
+    tt command_rp;
+BEGIN
+    min__ := obj_rpart.get_cmd_rp_min_ns_id(rpid_, pri_);
+    IF (min__ = cmdrpid_) THEN
+        RETURN 0;
+    END IF;
+    IF (min__ > 0) THEN
+        oo__ := 0;
+        FOR tt IN (
+            SELECT *
+                FROM command_rp t--sarmat.command_rp t
+                WHERE rp_id = rpid_
+                    AND command_type_id = 3
+                    AND priority = pri_
+                    AND id >= min__
+                ORDER BY id
+        ) LOOP
+            IF (tt.id = cmdrpid_) THEN
+                RETURN oo__;
+            END IF;
+            oo__ := oo__ + 1;
+        END LOOP;
+    END IF;
+    RETURN -1;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_cmd_rp_order_after_min(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_cmd_rp_order_after_min(bigint, bigint, bigint)
+    IS 'получить порядковый № команды перемещения контейнеров в огурце после минимально активной в заданном приоритете';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_cmd_rp_time_work(
+    crpid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    delta__ INTERVAL;
+    max_d__ INTERVAL;
+    crp__ command_rp;
+BEGIN
+    max_d__ := INTERVAL '6 minutes';
+    FOR crp__ IN (
+        SELECT *
+            FROM command_rp
+            WHERE id = crpid_
+    ) LOOP
+        delta__ := LOCALTIMESTAMP - coalesce(crp__.date_time_begin, LOCALTIMESTAMP);
+        IF delta__ >= max_d__ THEN
+            RETURN extract(epoch FROM max_d__);
+        ELSE
+            RETURN extract(epoch FROM delta__);
+        END IF;
+    END LOOP;
+    RETURN -1;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_cmd_rp_time_work(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_cmd_rp_time_work(bigint)
+    IS 'сколько уже времени в секундах исполняется команда?';
+
+
 CREATE OR REPLACE FUNCTION obj_rpart.get_next_npp(
     rp_type bigint,
     max_npp bigint,
@@ -246,6 +473,51 @@ ALTER FUNCTION obj_rpart.get_next_npp(bigint, bigint, bigint, bigint, bigint, bi
 COMMENT ON FUNCTION obj_rpart.get_next_npp(bigint, bigint, bigint, bigint, bigint, bigint, bigint)
     IS 'Get next track number in set direction.
 взять следующий № трека по направлению (и высчитать, не пришди ли уже куда надо)';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_real_min_abc_zone(
+    rpid bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    res BIGINT;
+BEGIN
+    SELECT min(zone_id) INTO res
+        FROM cell
+        WHERE repository_part_id = rpid
+            AND is_error = 0
+            AND hi_level_type = 1
+            AND zone_id > 0;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_real_min_abc_zone(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_real_min_abc_zone(bigint)
+    IS 'получить минимальную зону хранения товара для подсклада';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_rp_name(
+    rpid_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+AS $BODY$
+DECLARE
+    rp RECORD;
+BEGIN
+    FOR rp IN (
+        SELECT name
+            FROM repository_part
+            WHERE id = rpid_
+    ) LOOP
+        RETURN rp.name;
+    END LOOP;
+    RETURN '';
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_rp_name(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_rp_name(bigint)
+    IS 'получить имя огурца';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.add_track_npp(
@@ -349,6 +621,81 @@ $BODY$;
 ALTER FUNCTION obj_rpart.calc_min_distance(bigint, bigint, bigint, bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_rpart.calc_min_distance(bigint, bigint, bigint, bigint)
     IS 'вычисляет расстояние между двумя треками npp по оптимальному направлению';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.calc_min_distance(
+    rp_id_ bigint,
+    cell1_ text,
+    cell2_ text)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    npp1 BIGINT;
+    npp2 BIGINT;
+    rr RECORD;
+BEGIN
+    FOR rr IN (
+        SELECT repository_type rt, max_npp
+            FROM repository_part
+            WHERE id = rp_id_
+    ) LOOP
+        SELECT track_npp INTO npp1
+            FROM cell
+            WHERE sname = cell1_
+                AND repository_part_id = rp_id_;
+        SELECT track_npp INTO npp2
+            FROM cell
+            WHERE sname = cell2_
+                AND repository_part_id = rp_id_;
+        RETURN obj_rpart.calc_min_distance(rr.rt, rr.max_npp, npp1, npp2);
+    END LOOP;
+    RETURN -1;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.calc_min_distance(bigint, text, text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.calc_min_distance(bigint, text, text)
+    IS 'вычисляет расстояние между двумя ячейками по оптимальному направлению';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.calc_robot_nearest(
+    rp_id bigint,
+    max_npp bigint,
+    c_npp bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+    t BIGINT;
+    rpt BIGINT;
+    rr robot;
+BEGIN
+    res := 10000;
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE repository_part_id = rp_id
+                AND state = 0
+    ) LOOP
+        SELECT repository_type INTO rpt
+            FROM repository_part
+            WHERE id = rr.repository_part_id;
+        t := obj_ask.calc_distance(rpt, max_npp, rr.current_track_npp, c_npp);
+        IF (t < res) THEN
+            res := t;
+        END IF;
+    END LOOP;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.calc_robot_nearest(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.calc_robot_nearest(bigint, bigint, bigint)
+    IS 'посчитать расстояние до ближайшего робота от указанного трека';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.correct_npp_to_track_order(
@@ -599,6 +946,292 @@ $BODY$;
 ALTER FUNCTION obj_rpart.unlock_track_after_cmd_error(bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_rpart.unlock_track_after_cmd_error(bigint)
     IS 'разблокировать трек после ошибки команды робота';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.is_active_command_rp(
+    rpid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    crp command_rp;
+BEGIN
+    FOR crp IN (
+        SELECT *
+            FROM command_rp
+            WHERE rp_id = rpid_
+                AND state NOT IN (2,5)
+    ) LOOP
+        RETURN 1;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.is_active_command_rp(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.is_active_command_rp(bigint)
+    IS 'есть ли активные команды перемещения контейнеров на огурце?';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.is_cell_cmd_track_lock(
+    cell_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    tr_id_ BIGINT;
+    t RECORD;
+    cc command_rp;
+BEGIN
+    SELECT track_id INTO tr_id_
+        FROM cell
+        INNER JOIN shelving sh
+            ON shelving_id = sh.id
+        WHERE cell.id = cell_id_;
+    FOR t IN (
+        SELECT track_id
+            FROM cell_cmd_lock ccl
+            INNER JOIN cell cl
+                ON ccl.cell_id = cl.id
+            INNER JOIN shelving sh
+                ON cl.shelving_id = sh.id
+            WHERE sh.track_id = tr_id_
+    ) LOOP
+        RETURN 1; -- трек ячейки заблокирован cell_cmd_lock
+    END LOOP;
+    -- проверяем на команды
+    FOR cc IN (
+        SELECT *
+            FROM command_rp crp
+            WHERE crp.state IN (1,3)
+                AND coalesce(track_dest_id, -1) = tr_id_
+    ) LOOP
+        RETURN 1; -- трек ячейки заблокирован command_rp неявно
+    END LOOP;
+    RETURN 0; -- трек ячейки незаблокирован cell_cmd_lock
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.is_cell_cmd_track_lock(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.is_cell_cmd_track_lock(bigint)
+    IS 'заблокирована ли трек ячейки?';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.is_idle(
+    rp_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rr robot;
+    tor track_order;
+BEGIN
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE repository_part_id = rp_id_
+                AND is_present = 1
+                AND (
+                    coalesce(command_inner_id, 0) <> 0
+                    OR coalesce(command_inner_assigned_id, 0) <> 0
+                    OR coalesce(command_rp_id, 0) <> 0
+                    OR coalesce(wait_for_problem_resolve, 0) <> 0
+                    OR state <> 0
+                    OR platform_busy <> 0
+                )
+    ) LOOP
+        RETURN 0;
+    END LOOP;
+    FOR tor IN (
+        SELECT *
+            FROM track_order
+            WHERE robot_id IN (
+                SELECT id
+                    FROM robot
+                    WHERE repository_part_id = rp_id_
+            )
+    ) LOOP
+        RETURN 0;
+    END LOOP;
+    RETURN 1;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.is_idle(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.is_idle(bigint)
+    IS 'простаивает ли АСК без команд?';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.is_npp_actual_info(
+    rp_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rr RECORD;
+BEGIN
+    FOR rr IN (
+        SELECT r.*, rp.npp_actual_time
+            FROM robot r
+            INNER JOIN repository_part rp
+                ON r.repository_part_id = rp.id
+            WHERE rp.id = rp_id_
+                AND r.state <> obj_robot."ROBOT_STATE_REPAIR"()
+    ) LOOP
+        IF LOCALTIMESTAMP - rr.last_npp_info_dt > make_interval(secs := rr.npp_actual_time) THEN
+            RETURN 0;
+        END IF;
+    END LOOP;
+    RETURN 1;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.is_npp_actual_info(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.is_npp_actual_info(bigint)
+    IS 'акутальна ли информация в АСК по расположению роботов?';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.is_poss_to_lock(
+    robot_id_ bigint,
+    track_npp_dest bigint,
+    direction_ bigint,
+    crp_id_ bigint DEFAULT 0)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    ttl_llevel INTEGER := 0;
+    track_id_dest BIGINT;
+    rp_id_ BIGINT;
+    tr_id BIGINT;
+    tr_npp BIGINT;
+    tr_locked_by_robot_id BIGINT;
+    track_id_dest_pl_sor BIGINT;
+    track_npp_dest_pl_sor BIGINT;
+    cur_track_id BIGINT;
+    track_free BIGINT;
+    npp1 BIGINT;
+    npp2 BIGINT;
+    npp1r BIGINT;
+    npp2r BIGINT;
+    npplto BIGINT;
+    goal_npp BIGINT;
+    ret_track_id BIGINT;
+    npp_ret BIGINT;
+    is_in_dest BIGINT;
+    cnt BIGINT;
+    is_loop_exit BIGINT;
+    is_poputka BIGINT;
+    is_always_locked BIGINT;
+    prefp TEXT;
+    r1 robot;
+    r2 robot;
+    sorb BIGINT;
+    max_npp_ BIGINT;
+    rpt BIGINT;
+    anroid BIGINT;
+    nr BIGINT;
+BEGIN
+    -- зачитываем нужные значения, инициализируем данные, пишем логи
+    SELECT * INTO r1
+        FROM robot
+        WHERE id = robot_id_;
+    SELECT t.id, rp.id, spacing_of_robots,
+        max_npp, repository_type, num_of_robots
+        INTO track_id_dest, rp_id_, sorb,
+            max_npp_, rpt, nr
+        FROM track t
+        INNER JOIN repository_part rp
+            ON repository_part_id = rp.id
+        WHERE t.npp = track_npp_dest
+            AND rp.id = r1.repository_part_id;
+    IF /*rpt=0 */ (nr = 1) THEN
+        -- для  склада с одним роботом
+        IF (r1.current_track_npp = track_npp_dest) THEN
+            RETURN -1; -- уже тама
+        ELSE
+            RETURN track_id_dest;
+        END IF;
+    END IF;
+    prefp := '';
+    anroid := obj_rpart.get_another_robot_id(robot_id_);
+    SELECT * INTO r2
+        FROM robot
+        WHERE id = anroid;
+    is_in_dest := 0;
+    cur_track_id := r1.current_track_id;
+    IF track_id_dest = cur_track_id THEN
+        RETURN 1;
+    END IF;
+    npp1 := r1.current_track_npp;
+    npp1r := obj_rpart.inc_spacing_of_robots(npp1, direction_, sorb, rp_id_); -- убрали +1
+    npp2 := track_npp_dest;
+    npp2r := obj_rpart.inc_spacing_of_robots(npp2, direction_, sorb, rp_id_);
+    track_id_dest_pl_sor := obj_rpart.get_track_id_by_robot_and_npp(robot_id_, npp2r);
+    track_npp_dest_pl_sor := npp2r;
+    tr_npp := npp1r;
+    LOOP
+        tr_id := obj_rpart.get_track_id_by_robot_and_npp(robot_id_, tr_npp);
+        SELECT locked_by_robot_id INTO tr_locked_by_robot_id
+            FROM track
+            WHERE id = tr_id;
+        IF coalesce(tr_locked_by_robot_id, 0) = 0 THEN
+            --update track set locked_by_robot_id=r1.id where id=tr_id;
+            ret_track_id := tr_id;
+            npp_ret := tr_npp;
+            -- заблокировано кем то иным
+        ELSIF coalesce(tr_locked_by_robot_id, 0) <> r1.id THEN
+            RETURN 0;
+        ELSE -- этим же роботом и заблокировано
+            ret_track_id := tr_id;
+            npp_ret := tr_npp;
+        END IF;
+        PERFORM obj_rpart.get_next_npp(rpt, max_npp_, tr_npp, npp2r, direction_, tr_npp, is_loop_exit);
+        EXIT WHEN is_loop_exit = 1;
+    END LOOP;
+    IF (ret_track_id = track_id_dest_pl_sor) THEN
+        -- добрались до конечного трэка с учетом расстояния между роботами
+        RETURN 1;
+    ELSE -- не дошли до конечного трэка
+        RETURN 0;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.is_poss_to_lock(bigint, bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.is_poss_to_lock(bigint, bigint, bigint, bigint)
+    IS 'определяет, возможно ли заблокировать путь';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.is_rp_simple_1_robot(
+    rp_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rp repository_part;
+BEGIN
+    FOR rp IN (
+        SELECT id
+            FROM repository_part
+            WHERE id = rp_id_
+                AND num_of_robots = 1
+    ) LOOP
+        RETURN 1;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.is_rp_simple_1_robot(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.is_rp_simple_1_robot(bigint)
+    IS 'является ли огурец простым с одним роботом?';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.is_way_free(
@@ -886,6 +1519,69 @@ $BODY$;
 ALTER FUNCTION obj_rpart.get_cell_shelving_id(bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_rpart.get_cell_shelving_id(bigint)
     IS 'получить ID стеллажа по ID ячейки';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_track_id_by_cell_and_robot(
+    sname_ text,
+    robot_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rp_id_ BIGINT;
+    res BIGINT;
+BEGIN
+    SELECT repository_part_id INTO rp_id_
+        FROM robot r
+        WHERE r.id = robot_id_;
+    SELECT t.id INTO res
+        FROM shelving s
+        INNER JOIN track t
+            ON t.id = s.track_id
+        INNER JOIN cell c
+            ON c.shelving_id = s.id
+        WHERE c.sname = sname_
+            AND t.repository_part_id = rp_id_;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_track_id_by_cell_and_robot(text, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_track_id_by_cell_and_robot(text, bigint)
+    IS 'получить ID трека по названию ячейка и ID робота';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_track_npp_not_baned(
+    rp_id_ bigint,
+    npp_ bigint,
+    dir_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    new_npp__ BIGINT;
+    tt track;
+BEGIN
+    FOR tt IN (
+        SELECT *
+            FROM track
+            WHERE npp = npp_
+                AND repository_part_id = rp_id_
+                AND ban_move_to = 1
+    ) LOOP
+        -- нельзя сюда ехать
+        new_npp__ := obj_rpart.add_track_npp(rp_id_, npp_, 1, obj_rpart.get_another_direction(dir_));
+        RETURN new_npp__;
+    END LOOP;
+    RETURN npp_; -- сюда можно ехать
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_track_npp_not_baned(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_track_npp_not_baned(bigint, bigint, bigint)
+    IS 'получить ближайший трек по заданному направлению, в который можно делать move';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.get_track_id_by_cell_and_rp(
@@ -1352,6 +2048,264 @@ $BODY$;
 ALTER FUNCTION obj_rpart.get_another_robot_id(bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_rpart.get_another_robot_id(bigint)
     IS 'получить id второго робота';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.crash_test_tact(
+    rpid_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+    ci cell;
+    cco cell;
+BEGIN
+    SELECT count(*) INTO cnt
+        FROM command
+        WHERE command_type_id = 1
+            AND rp_src_id = rpid_
+            AND rp_dest_id = rpid_
+            AND state NOT IN (5,2);
+    IF cnt <= 5 THEN -- есть куда напхать команд
+        -- сколько свободных ячеек универсальных
+        SELECT count(*) INTO cnt
+            FROM cell
+            WHERE hi_level_type = 1
+                AND is_full = 0
+                AND repository_part_id = rpid_
+                AND NOT exists(
+                    SELECT *
+                        FROM cell_cmd_lock
+                        WHERE cell_id = cell.id
+                );
+        IF (cnt >= 1) THEN
+            FOR ci IN (
+                SELECT *
+                    FROM cell
+                    WHERE hi_level_type = 1
+                        AND is_full = 0
+                        AND repository_part_id = rpid_
+                        AND NOT exists(
+                            SELECT *
+                                FROM cell_cmd_lock
+                                WHERE cell_id = cell.id
+                        )
+                    ORDER BY random()
+            ) LOOP
+                FOR cco IN (
+                    SELECT *
+                        FROM cell
+                        WHERE hi_level_type = 1
+                            AND is_full >= 1
+                            AND repository_part_id = rpid_
+                            AND NOT exists(
+                                SELECT *
+                                    FROM cell_cmd_lock
+                                    WHERE cell_id = cell.id
+                            )
+                        ORDER BY /*abs(track_npp-ci.track_npp) desc,*/ random()
+                ) LOOP
+                    INSERT INTO command (
+                        command_type_id, rp_src_id, cell_src_sname,
+                        rp_dest_id, cell_dest_sname, priority, container_id
+                    ) VALUES (
+                        1, rpid_, cco.sname,
+                        rpid_, ci.sname, 1, 0
+                    );
+                    EXIT;
+                END LOOP;
+                EXIT;
+            END LOOP;
+        END IF;
+    END IF;
+    -- COMMIT;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.crash_test_tact(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.crash_test_tact(bigint)
+    IS 'креш-тест робота по огурцу - такт';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.crash_test_rzn(
+    )
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+    rpid_ BIGINT;
+    ci cell;
+    cco cell;
+BEGIN
+    rpid_ := 1;
+    SELECT count(*) INTO cnt
+        FROM command
+        WHERE command_type_id = 1
+            AND state NOT IN (5,2);
+    IF (cnt <= 5) THEN -- есть куда напхать команд
+        cnt := random();
+        IF (cnt < 0.3) THEN -- приход
+            -- сколько свободных ячеек приема
+            SELECT count(*) INTO cnt
+                FROM cell
+                WHERE hi_level_type = 9
+                    AND repository_part_id = rpid_
+                    AND NOT exists(
+                        SELECT *
+                            FROM cell_cmd_lock
+                            WHERE cell_id = cell.id
+                    );
+            IF (cnt >= 1) THEN
+                FOR ci IN (
+                    SELECT *
+                        FROM cell
+                        WHERE hi_level_type = 9
+                            AND repository_part_id = rpid_
+                            AND NOT exists(
+                                SELECT *
+                                    FROM cell_cmd_lock
+                                    WHERE cell_id = cell.id
+                            )
+                        ORDER BY random()
+                ) LOOP
+                    FOR cco IN (
+                        SELECT *
+                            FROM cell
+                            WHERE hi_level_type = 1
+                                AND is_full <= 0
+                                AND repository_part_id = rpid_
+                                AND NOT exists(
+                                    SELECT *
+                                        FROM cell_cmd_lock
+                                        WHERE cell_id = cell.id
+                                )
+                            ORDER BY /*abs(track_npp-ci.track_npp) desc,*/ random()
+                    ) LOOP
+                        INSERT INTO command (
+                            command_type_id, rp_src_id, cell_src_sname,
+                            rp_dest_id, cell_dest_sname, priority, container_id
+                        ) VALUES (
+                            1, rpid_, ci.sname,
+                            rpid_, cco.sname, 1, 0
+                        );
+                        EXIT;
+                    END LOOP;
+                    EXIT;
+                END LOOP;
+            END IF;
+        ELSIF (cnt >= 0.6) THEN -- расход
+            SELECT count(*) INTO cnt
+                FROM cell
+                WHERE hi_level_type = 15
+                    AND is_full <= 0
+                    AND repository_part_id = rpid_
+                    AND NOT exists(
+                        SELECT *
+                            FROM cell_cmd_lock
+                            WHERE cell_id = cell.id
+                    );
+            IF (cnt >= 1) THEN
+                FOR ci IN (
+                    SELECT *
+                        FROM cell
+                        WHERE hi_level_type = 15
+                            AND is_full <= 0
+                            AND repository_part_id = rpid_
+                            AND NOT exists(
+                                SELECT *
+                                    FROM cell_cmd_lock
+                                    WHERE cell_id = cell.id
+                            )
+                        ORDER BY random()
+                ) LOOP
+                    FOR cco IN (
+                        SELECT *
+                            FROM cell
+                            WHERE hi_level_type = 1
+                                AND is_full > 0
+                                AND repository_part_id = rpid_
+                                AND NOT exists(
+                                    SELECT *
+                                        FROM cell_cmd_lock
+                                        WHERE cell_id = cell.id
+                                )
+                            ORDER BY /*abs(track_npp-ci.track_npp) desc,*/ random()
+                    ) LOOP
+                        INSERT INTO command (
+                            command_type_id, rp_src_id, cell_src_sname,
+                            rp_dest_id, cell_dest_sname, priority, container_id
+                        ) VALUES (
+                            1, rpid_, cco.sname,
+                            rpid_, ci.sname, 1, 0
+                        );
+                        EXIT;
+                    END LOOP;
+                    EXIT;
+                END LOOP;
+            END IF;
+        ELSE -- возврат
+            -- сколько свободных ячеек универсальных
+            SELECT count(*) INTO cnt
+                FROM cell
+                WHERE hi_level_type = 15
+                    AND is_full > 0
+                    AND repository_part_id = rpid_
+                    AND NOT exists(
+                        SELECT *
+                            FROM cell_cmd_lock
+                            WHERE cell_id = cell.id
+                    );
+            IF (cnt >= 1) THEN
+                FOR ci IN (
+                    SELECT *
+                        FROM cell
+                        WHERE hi_level_type = 15
+                            AND is_full > 0
+                            AND repository_part_id = rpid_
+                            AND NOT exists(
+                                SELECT *
+                                    FROM cell_cmd_lock
+                                    WHERE cell_id = cell.id
+                            )
+                        ORDER BY random()
+                ) LOOP
+                    FOR cco IN (
+                        SELECT *
+                            FROM cell
+                            WHERE hi_level_type = 1
+                                AND is_full <= 0
+                                AND repository_part_id = rpid_
+                                AND NOT exists(
+                                    SELECT *
+                                        FROM cell_cmd_lock
+                                        WHERE cell_id = cell.id
+                                )
+                            ORDER BY /*abs(track_npp-ci.track_npp) desc,*/ random()
+                    ) LOOP
+                        INSERT INTO command (
+                            command_type_id, rp_src_id, cell_src_sname,
+                            rp_dest_id, cell_dest_sname, priority, container_id
+                        ) VALUES (
+                            1, rpid_, ci.sname,
+                            rpid_, cco.sname, 1, 0
+                        );
+                        EXIT;
+                    END LOOP;
+                    EXIT;
+                END LOOP;
+            END IF;
+        END IF;
+        -- COMMIT;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.crash_test_rzn() OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.crash_test_rzn()
+    IS 'креш-тест Рязани';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.robot_cmd_rp_change_dir(
@@ -2223,6 +3177,78 @@ $BODY$;
 ALTER FUNCTION obj_rpart.track_lock_prim(bigint, bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_rpart.track_lock_prim(bigint, bigint)
     IS 'функция примитивной блокировки трека';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.form_cmds(
+    rpid_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rpl RECORD;
+    rep repository;
+    rr robot;
+BEGIN
+    PERFORM obj_rpart.log(rpid_, '');
+    PERFORM obj_rpart.log(rpid_, '*****************************************');
+    PERFORM obj_rpart.log(rpid_, 'Начало FormCmds для склада');
+    IF obj_rpart.is_npp_actual_info(rpid_) = 0 THEN
+        PERFORM obj_rpart.log(rpid_, 'ERROR - устаревание информации о местоположении роботов!');
+        RETURN;
+    END IF;
+    FOR rpl IN (
+        SELECT DISTINCT rp.id,
+            rp.repository_type rt,
+            is_cell_move_after_cmd,
+            is_robot_need_inity,
+            rp.spacing_of_robots sorb,
+            rp.cmd_transfer_enabled,
+            rp.max_npp,
+            rp.num_of_robots
+            FROM repository_part rp
+            INNER JOIN robot r
+                ON r.repository_part_id = rp.id
+            WHERE obj_robot.is_robot_ready_for_cmd_inner(r.id) = 1
+                AND (rpid_ = 0 OR rp.id = rpid_)
+    ) LOOP
+        PERFORM obj_rpart.log(rpid_, '   Вошли в цикл');
+        IF (rpl.is_cell_move_after_cmd = 1) THEN
+            PERFORM obj_rpart.move_robot_away_if_ness(rpl.id); -- двигаем роботов от рабочего стола после UNLOAD, если указано в настройках АСК
+            PERFORM obj_rpart.log(rpl.id, '  Move_Robot_Away_If_Ness прошло');
+        END IF;
+        IF (rpl.is_robot_need_inity = 1) THEN
+            PERFORM obj_rpart.inity_if_ness(rpl.id);
+            PERFORM obj_rpart.log(rpl.id, '  InitY_If_Ness прошло');
+        END IF;
+        FOR rep IN (
+            SELECT id
+                FROM repository
+                WHERE is_group_cmd = 1
+        ) LOOP
+            PERFORM obj_rpart.group_op_to_simple_crp(rpl.id);
+            PERFORM obj_rpart.log(rpl.id, '  Group_Op_To_Simple_CRP прошло');
+        END LOOP;
+        PERFORM obj_rpart.set_new_cmd_rps(rpl.id);
+        PERFORM obj_rpart.log(rpl.id, '  Set_New_Cmd_RPs прошло');
+        FOR rr IN (
+            SELECT id
+                FROM robot
+                WHERE repository_part_id = rpid_
+        ) LOOP
+            IF obj_robot.is_robot_ready_for_cmd_inner(rr.id) = 1 THEN
+                PERFORM obj_rpart.run_cmd_parts(rr.id); -- до
+            END IF;
+        END LOOP;
+        PERFORM obj_rpart.log(rpl.id, '  Run_Cmd_Parts прошло');
+        -- COMMIT;
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.form_cmds(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.form_cmds(bigint)
+    IS 'основная функция, которая вызывается из фоновой процедуры C# бесконечного цикла';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.has_free_cell(

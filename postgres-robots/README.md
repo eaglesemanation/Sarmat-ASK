@@ -143,22 +143,21 @@
 
 - obj_rpart
     - [x] log
-    - [ ] Form_Cmds
-    - [ ] crash_test_tact
-    - [ ] crash_test_rzn
-    - [ ] Is_Active_Command_RP
-    - [ ] is_cell_cmd_track_lock
+    - [x] form_cmds
+    - [x] crash_test_tact
+    - [x] crash_test_rzn
+    - [x] is_active_command_rp
+    - [x] is_cell_cmd_track_lock
     - [x] is_cell_locked_by_repaire
     - [x] is_exists_cell_type
-    - [ ] is_idle
-    - [ ] Is_Npp_Actual_Info
-    - [ ] is_poss_to_lock
+    - [x] is_idle
+    - [x] is_npp_actual_info
+    - [x] is_poss_to_lock
     - [x] is_poss_ass_new_unload_cell
     - [x] is_robot_lock_bad
-    - [ ] is_rp_simple_1_robot
+    - [x] is_rp_simple_1_robot
     - [x] is_track_between
     - [x] is_track_locked
-    - [ ] locked_
     - [x] is_track_locked_around
     - [x] is_track_near_repair_robot
     - [x] is_track_npp_ban_move_to
@@ -170,44 +169,43 @@
     - [x] add_track_npp
     - [x] calc_distance_by_dir
     - [x] calc_min_distance
-    - [ ] Calc_Min_Distance
+    - [x] calc_min_distance
     - [x] calc_repair_robots
-    - [ ] calc_robot_nearest
+    - [x] calc_robot_nearest
     - [x] calc_track_free_cell
     - [x] inc_spacing_of_robots
-    - [ ] in
     - [x] inc_npp
     - [x] get_another_direction
     - [x] get_another_robot_id
     - [x] get_cell_id_by_name
     - [x] get_cell_name_by_track_id
-    - [ ] Get_Cell_Name_By_Track_Npp
+    - [x] get_cell_name_by_track_npp
     - [x] get_cell_shelving_id
     - [x] get_cell_track_npp
-    - [ ] get_container_cell_sname
+    - [x] get_container_cell_sname
     - [x] get_cmd_dir_text
     - [x] get_cmd_max_priority
-    - [ ] Get_Cmd_RP_Min_NS_ID
-    - [ ] Get_Cmd_RP_Min_NS_ID
-    - [ ] Get_Cmd_RP_Order_After_Min
-    - [ ] Get_Cmd_RP_Order_After_Min
-    - [ ] Get_Cmd_RP_Time_Work
+    - [x] get_cmd_rp_min_ns_id
+    - [x] get_cmd_rp_min_ns_id
+    - [x] get_cmd_rp_order_after_min
+    - [x] get_cmd_rp_order_after_min
+    - [x] get_cmd_rp_time_work
     - [x] get_next_npp
-    - [ ] get_real_min_abc_zone
+    - [x] get_real_min_abc_zone
     - [x] get_rp_cia_state
     - [x] get_rp_command_state
-    - [ ] Get_RP_Name
+    - [x] get_rp_name
     - [x] get_rp_num_of_robots
     - [x] get_rp_robots_state
     - [x] get_rp_spacing_of_robots
-    - [ ] get_track_id_by_cell_and_robot
+    - [x] get_track_id_by_cell_and_robot
     - [x] get_track_id_by_cell_and_rp
     - [x] get_track_id_by_npp
     - [x] get_track_id_by_robot_and_npp
     - [x] get_track_npp_by_cell_and_rp
     - [x] get_track_npp_by_npp
     - [x] get_track_npp_by_id
-    - [ ] Get_Track_Npp_Not_Baned
+    - [x] get_track_npp_not_baned
     - [x] get_transit_1rp_cell
     - [x] check_lock_robot_around
     - [x] check_new_robot_npp_correct
