@@ -325,7 +325,7 @@ BEGIN
         oo__ := 0;
         FOR tt IN (
             SELECT *
-                FROM command_rp t--sarmat.command_rp t
+                FROM command_rp t
                 WHERE rp_id = rpid_
                     AND command_type_id = 3
                     AND id >= min__
@@ -367,7 +367,7 @@ BEGIN
         oo__ := 0;
         FOR tt IN (
             SELECT *
-                FROM command_rp t--sarmat.command_rp t
+                FROM command_rp t
                 WHERE rp_id = rpid_
                     AND command_type_id = 3
                     AND priority = pri_
@@ -419,6 +419,41 @@ $BODY$;
 ALTER FUNCTION obj_rpart.get_cmd_rp_time_work(bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_rpart.get_cmd_rp_time_work(bigint)
     IS 'сколько уже времени в секундах исполняется команда?';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_cmd_rp_npp_dir(
+    rid_ bigint,
+    OUT crp_npp__ bigint,
+    OUT crp_dir__ bigint)
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    crp_ command_rp;
+BEGIN
+    crp_npp__ := -1;
+    crp_dir__ := -1;
+    FOR crp_ IN (
+        SELECT crp.*
+            FROM robot r
+            INNER JOIN command_rp crp
+                ON crp.id = command_rp_id
+            WHERE r.id = rid_
+    ) LOOP
+        IF coalesce(crp_.substate, 0) IN (0,1,2) THEN -- только начала выполняться или уже доехали
+            crp_npp__ := crp_.npp_src;
+            crp_dir__ := crp_.direction_1;
+        ELSE
+            crp_npp__ := crp_.npp_dest;
+            crp_dir__ := crp_.direction_2;
+        END IF;
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_cmd_rp_npp_dir(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_cmd_rp_npp_dir(bigint)
+    IS 'по ID робота получить целевой № секции и направление';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.get_next_npp(
@@ -2050,6 +2085,198 @@ COMMENT ON FUNCTION obj_rpart.get_another_robot_id(bigint)
     IS 'получить id второго робота';
 
 
+CREATE OR REPLACE FUNCTION obj_rpart.crach_test_linear_tact(
+    )
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    c1_ BIGINT;
+    c2_ BIGINT;
+    cs cell;
+    cd cell;
+BEGIN
+    SELECT count(*) INTO c1_
+        FROM command
+        WHERE npp_src BETWEEN 20 AND 25
+            AND npp_dest BETWEEN 90 AND 95
+            AND state NOT IN (5,2);
+    SELECT count(*) INTO c2_
+        FROM command
+        WHERE npp_dest BETWEEN 20 AND 25
+            AND npp_src BETWEEN 90 AND 95
+            AND state NOT IN (5,2);
+    IF (c1_ < 2) THEN
+        FOR cs IN (
+            SELECT *
+                FROM cell
+                WHERE is_full = 1
+                    AND track_npp BETWEEN 20 AND 25
+                    AND NOT exists(
+                        SELECT *
+                            FROM cell_cmd_lock
+                            WHERE cell_id = cell.id
+                    )
+                ORDER BY random()
+        ) LOOP
+            FOR cd IN (
+                SELECT *
+                    FROM cell
+                    WHERE is_full = 0
+                        AND hi_level_type = 1
+                        AND track_npp BETWEEN 90 AND 95
+                        AND cell_size = cs.cell_size
+                        AND NOT exists(
+                            SELECT *
+                                FROM cell_cmd_lock
+                                WHERE cell_id = cell.id
+                        )
+                    ORDER BY random()
+            ) LOOP
+                INSERT INTO command (
+                    cell_src_sname, cell_dest_sname
+                ) VALUES (
+                    cs.sname, cd.sname
+                );
+                -- COMMIT;
+                RETURN;
+            END LOOP;
+            EXIT;
+        END LOOP;
+    END IF;
+    IF (c2_ < 2) THEN
+        FOR cs IN (
+            SELECT *
+                FROM cell
+                WHERE is_full = 1
+                    AND track_npp BETWEEN 90 AND 95
+                    AND NOT exists(
+                        SELECT *
+                            FROM cell_cmd_lock
+                            WHERE cell_id = cell.id
+                    )
+                ORDER BY random()
+        ) LOOP
+            FOR cd IN (
+                SELECT *
+                    FROM cell
+                    WHERE is_full = 0
+                        AND hi_level_type = 1
+                        AND track_npp BETWEEN 20 AND 25
+                        AND NOT exists(
+                            SELECT *
+                                FROM cell_cmd_lock
+                                WHERE cell_id = cell.id
+                        )
+                        AND cell_size = cs.cell_size
+                    ORDER BY random()
+            ) LOOP
+                INSERT INTO command (
+                    cell_src_sname, cell_dest_sname
+                ) VALUES (
+                    cs.sname, cd.sname
+                );
+                -- COMMIT;
+                RETURN;
+            END LOOP;
+            EXIT;
+        END LOOP;
+    END IF;
+    SELECT count(*) INTO c1_
+        FROM command
+        WHERE npp_src BETWEEN 130 AND 135
+            AND npp_dest BETWEEN 200 AND 210
+            AND state NOT IN (5,2);
+    SELECT count(*) INTO c2_
+        FROM command
+        WHERE npp_dest BETWEEN 130 AND 135
+            AND npp_src BETWEEN 200 AND 210
+            AND state NOT IN (5,2);
+    IF (c1_ < 2) THEN
+        FOR cs IN (
+            SELECT *
+                FROM cell
+                WHERE is_full = 1
+                    AND track_npp BETWEEN 130 AND 135
+                    AND NOT exists(
+                        SELECT *
+                            FROM cell_cmd_lock
+                            WHERE cell_id = cell.id
+                    )
+                ORDER BY random()
+        ) LOOP
+            FOR cd IN (
+                SELECT *
+                    FROM cell
+                    WHERE is_full = 0
+                        AND hi_level_type = 1
+                        AND track_npp BETWEEN 200 AND 210
+                        AND NOT exists(
+                            SELECT *
+                                FROM cell_cmd_lock
+                                WHERE cell_id = cell.id
+                        )
+                        AND cell_size = cs.cell_size
+                    ORDER BY random()
+            ) LOOP
+                INSERT INTO command (
+                    cell_src_sname, cell_dest_sname
+                ) VALUES (
+                    cs.sname, cd.sname
+                );
+                -- COMMIT;
+                RETURN;
+            END LOOP;
+            EXIT;
+        END LOOP;
+    END IF;
+    IF (c2_ < 2) THEN
+        FOR cs IN (
+            SELECT *
+                FROM cell
+                WHERE is_full = 1
+                    AND track_npp BETWEEN 200 AND 210
+                    AND NOT exists(
+                        SELECT *
+                            FROM cell_cmd_lock
+                            WHERE cell_id = cell.id
+                    )
+                ORDER BY random()
+        ) LOOP
+            FOR cd IN (
+                SELECT *
+                    FROM cell
+                    WHERE is_full = 0
+                        AND hi_level_type = 1
+                        AND track_npp BETWEEN 130 AND 135
+                        AND NOT exists(
+                            SELECT *
+                                FROM cell_cmd_lock
+                                WHERE cell_id = cell.id
+                        )
+                        AND cell_size = cs.cell_size
+                    ORDER BY random()
+            ) LOOP
+                INSERT INTO command (
+                    cell_src_sname, cell_dest_sname
+                ) VALUES (
+                    cs.sname, cd.sname
+                );
+                -- COMMIT;
+                RETURN;
+            END LOOP;
+            EXIT;
+        END LOOP;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.crach_test_linear_tact() OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.crach_test_linear_tact()
+    IS 'линейный такт креш-теста';
+
+
 CREATE OR REPLACE FUNCTION obj_rpart.crash_test_tact(
     rpid_ bigint)
     RETURNS void
@@ -2517,6 +2744,87 @@ $BODY$;
 ALTER FUNCTION obj_rpart.check_new_robot_npp_correct(bigint, bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_rpart.check_new_robot_npp_correct(bigint, bigint)
     IS 'проверяем корректность нахождения робота в треке, если что не так, то raise';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.check_wpr_lock(
+    rpid_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    ci_npp_dest_ BIGINT;
+    lt_ BIGINT;
+    brr_ BIGINT;
+    errm_ TEXT;
+    new_dir_ BIGINT;
+    rr robot;
+    ci command_inner;
+BEGIN
+    --return;
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE coalesce(wait_for_problem_resolve, 0) = 1
+                AND repository_part_id = rpid_
+    ) LOOP
+        FOR ci IN (
+            SELECT *
+                FROM command_inner
+                WHERE id = rr.command_inner_id
+        ) LOOP
+            ci_npp_dest_ := obj_robot.get_cmd_inner_npp_dest(ci.id, 1);
+            IF obj_rpart.is_track_locked(rr.id, ci_npp_dest_, ci.direction) = 0 THEN
+                PERFORM obj_robot.log(rr.id, 'Ошибка проверки блокировки робота, находящегося в режиме ожидания решения проблемы is_track_locked(' || rr.id
+                        || ', ' || ci_npp_dest_
+                        || ', ' || ci.direction
+                        || ')=0');
+                IF obj_rpart.is_track_locked(rr.id, ci_npp_dest_, ci.direction, 1) = 1 THEN
+                    PERFORM obj_robot.log(rr.id, '  но можно заблокировать до куда надо');
+                    SELECT obj_rpart.try_track_lock(rr.id, ci_npp_dest_, ci.direction, true)
+                        INTO brr_, lt_;
+                    IF lt_ <> ci_npp_dest_ THEN
+                        errm_ := '  ERROR - говорит, что можно заблокировать, а не блокирует, пытается только до ' || lt_;
+                        PERFORM obj_robot.log(rr.id, errm_);
+                        RAISE EXCEPTION '%', errm_
+                            USING errcode = 50012;
+                    END IF;
+                ELSE
+                    PERFORM obj_robot.log(rr.id, '  и нельзя заблокировать куда надо, меняем');
+                    new_dir_ := obj_rpart.get_another_direction(ci.direction);
+                    IF obj_rpart.is_track_locked(rr.id, ci_npp_dest_, new_dir_) = 1 THEN
+                        PERFORM obj_robot.log(rr.id, '  в другом направлении и так заблокировано, просто меняем направление команды, которая в ожидании решении проблемы');
+                        PERFORM obj_robot.change_wpr_dir(ci.id, new_dir_);
+                    ELSE
+                        IF obj_rpart.is_track_locked(rr.id, ci_npp_dest_, new_dir_, 1) = 1 THEN
+                            PERFORM obj_robot.log(rr.id,'  но можно заблокировать до куда надо c другой стороны');
+                            SELECT obj_rpart.try_track_lock(rr.id, ci_npp_dest_, new_dir_, true)
+                                INTO brr_, lt_;
+                            IF lt_ <> ci_npp_dest_ THEN
+                                errm_ := '  ERROR - говорит, что можно заблокировать с другой стороны, а не блокирует, пытается только до ' || lt_;
+                                PERFORM obj_robot.log(rr.id, errm_);
+                                RAISE EXCEPTION '%', errm_
+                                    USING errcode = 50012;
+                            END IF;
+                            PERFORM obj_robot.change_wpr_dir(ci.id, new_dir_);
+                        ELSE
+                            errm_ := '  ERROR - нельзя заблокировать ни с какой из сторон для робота, находящегося в режиме решения проблемы';
+                            PERFORM obj_robot.log(rr.id, errm_);
+                            RAISE EXCEPTION '%', errm_
+                                USING errcode = 50012;
+                        END IF;
+                    END IF;
+                END IF; -- maybe_locked_ number default 0, check_ask_1_robot number default 0) return number is
+            END IF;
+        END LOOP;
+    END LOOP;
+    -- COMMIT;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.check_wpr_lock(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.check_wpr_lock(bigint)
+    IS 'проверяем на корректность блокировки для команд роботов, которые находятся в ожидании решения проблемы';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.is_track_npp_ban_move_to(
@@ -3048,6 +3356,25 @@ COMMENT ON FUNCTION obj_rpart.is_cell_locked_by_repaire(bigint)
     IS 'заблокирована ли ячейка роботом в состоянии починки?';
 
 
+CREATE OR REPLACE FUNCTION obj_rpart.change_work_status(
+    rpid_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    UPDATE repository_part
+        SET is_work = (CASE is_work WHEN 0 THEN 1 ELSE 0 END)
+        WHERE id = rpid_;
+    -- COMMIT;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.change_work_status(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.change_work_status(bigint)
+    IS 'меняет статус работа/пауза указанного огурца';
+
+
 CREATE OR REPLACE FUNCTION obj_rpart.change_cmd_rp_goal(
     cmd_rp_id_ bigint,
     new_cell_dest_id bigint)
@@ -3177,6 +3504,998 @@ $BODY$;
 ALTER FUNCTION obj_rpart.track_lock_prim(bigint, bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_rpart.track_lock_prim(bigint, bigint)
     IS 'функция примитивной блокировки трека';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.move_robot_away_if_ness(
+    rpid_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    npp_new__ BIGINT;
+    --npp_lock_to__ BIGINT;
+    cmd_cell__ TEXT;
+    dir__ BIGINT;
+    ttl__ BIGINT;
+    br_id_ BIGINT;
+    rr RECORD;
+    ci command_inner;
+    cc cell;
+BEGIN
+    FOR rr IN (
+        SELECT r.*, rp.spacing_of_robots sorb
+            FROM robot r
+            INNER JOIN repository_part rp
+                ON r.repository_part_id = rp.id
+            WHERE rp.id = rpid_
+                AND obj_robot.is_robot_ready_for_cmd(r.id) = 1
+                AND obj_rpart.is_active_command_rp(rp.id) = 0
+    ) LOOP -- робот свободен и на него не закреплена команда общая
+        FOR ci IN (
+            SELECT *
+                FROM command_inner
+                WHERE robot_id = rr.id
+                    AND LOCALTIMESTAMP - date_time_create > INTERVAL '3 days'
+                ORDER BY id DESC
+        ) LOOP -- ищем последнюю команду на этого робота
+            IF (ci.command_type_id = 5) THEN -- UNLOAD
+                FOR cc IN (
+                    SELECT *
+                        FROM cell
+                        WHERE ci.cell_dest_id = cell.id
+                            AND coalesce(move_after_cmd_on_npp, 0) > 0
+                ) LOOP
+                    PERFORM obj_rpart.log(rpid_, 'Move_Robot_Away_If_Ness - нужно двигать робота ' || rr.id || ' чтоб не мешал отборщику после UNLOAD');
+                    npp_new__ := cc.track_npp + cc.move_after_cmd_on_npp;
+                    cmd_cell__ := obj_rpart.get_cell_name_by_track_npp(npp_new__, rpid_);
+                    IF (cc.move_after_cmd_on_npp > 0) THEN
+                        dir__ := 1;
+                    ELSE
+                        dir__ := 0;
+                    END IF;
+                    --npp_lock_to__:=add_track_npp(rpid_, npp_new__,rr.sorb, dir__);
+                    PERFORM obj_rpart.log(rpid_, '  пытаемся заблокировать до секции ' || npp_new__ || ' роботом ' || rr.id);
+                    SELECT obj_rpart.try_track_lock(rr.id, npp_new__, dir__, false)
+                        INTO br_id_, ttl__;
+                    PERFORM obj_robot.set_command_inner(
+                        rr.id, 0, 1, 6,
+                        dir__, null, cmd_cell__,
+                        obj_robot."CMD_MOVE"() || ' ' || cmd_cell__ || ';' || obj_rpart.get_cmd_dir_text(dir__),
+                        0
+                    );
+                END LOOP;
+            END IF;
+            EXIT;
+        END LOOP;
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.move_robot_away_if_ness(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.move_robot_away_if_ness(bigint)
+    IS 'перемещаем робота прочь, если в настройках АСК указано премещать робота после unload';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.inity_if_ness(
+    rpid_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rr robot;
+BEGIN
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE repository_part_id = rpid_
+                AND is_present = 1
+    ) LOOP
+        PERFORM obj_robot.inity_if_ness(rr.id);
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.inity_if_ness(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.inity_if_ness(bigint)
+    IS 'дать команду InitY, если нужно';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.assign_tmp_cell_any_size(
+    rpl_id bigint,
+    cmrp_npp_src bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+    cnn RECORD;
+BEGIN
+    SELECT min(abs((t.npp-cmrp_npp_src))) INTO cnt
+        FROM cell c
+        INNER JOIN shelving s
+            ON c.shelving_id = s.id
+        INNER JOIN track t
+            ON s.track_id = t.id
+        WHERE c.is_full = 0
+            AND coalesce(c.blocked_by_ci_id, 0) = 0
+            AND hi_level_type = 10
+            AND is_error = 0
+            AND NOT exists(
+                SELECT *
+                    FROM cell_cmd_lock
+                    WHERE cell_id=c.id
+            )
+            AND cell_size = 0
+            AND t.repository_part_id = rpl_id;
+    FOR cnn IN (
+        SELECT sname
+            FROM cell c
+            INNER JOIN shelving s
+                ON c.shelving_id = s.id
+            INNER JOIN track t
+                ON s.track_id = t.id
+            WHERE c.is_full = 0
+                AND NOT exists(
+                    SELECT *
+                        FROM cell_cmd_lock
+                        WHERE cell_id = c.id
+                )
+                AND coalesce(c.blocked_by_ci_id, 0) = 0
+                AND is_error = 0
+                AND cell_size = 0
+                AND hi_level_type = 10
+                AND t.repository_part_id = rpl_id
+                AND abs(t.npp - cmrp_npp_src) = cnt
+            ORDER BY orientaition DESC
+    ) LOOP
+        RETURN cnn.sname;
+    END LOOP;
+    RETURN '';
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.assign_tmp_cell_any_size(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.assign_tmp_cell_any_size(bigint, bigint)
+    IS 'для транзитного склада взять ячейку большого размера если нет малой.';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.group_op_to_simple_crp(
+    rp_id_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt__ BIGINT;
+    cell_to__ TEXT;
+    track_id_to__ BIGINT;
+    npp_dest_new__ BIGINT;
+    cell_id_new_ BIGINT;
+    cnt_type__ BIGINT;
+    msg_ TEXT;
+    otf_ BIGINT;
+    cmrp command_rp;
+    rowcount__ BIGINT;
+    ncell RECORD;
+    sqlerrm__ TEXT;
+BEGIN
+    FOR cmrp IN (
+        SELECT /*+RULE*/ cr.*
+            FROM command_rp cr
+            INNER JOIN cell c
+                ON cr.cell_src_id = c.id
+            INNER JOIN cell_type ct
+                ON c.hi_level_type = ct.id
+            WHERE rp_id = rp_id_
+                AND state = 1
+                AND cr.command_type_id = 7
+            ORDER BY priority DESC,
+                ct.obligotary_to_free DESC,
+                cr.id
+    ) LOOP
+        PERFORM obj_rpart.log(rp_id_, 'Group_Op_To_Simple_CRP - есть команда для преобразования ' || cmrp.id);
+        -- вначале смотрим, есть ли свободная ячейка из группы-приемника
+        SELECT obligotary_to_free INTO otf_
+            FROM cell_type
+            WHERE id = (
+                SELECT hi_level_type
+                    FROM cell
+                    WHERE id = cmrp.cell_src_id
+            );
+        EXECUTE 'select count(*) ' || cmrp.sql_text_for_group
+            INTO cnt__;
+        IF (cnt__ <> 0) THEN -- есть подходящие ячейки
+            IF (otf_ = 0) THEN -- не обязательно резко освобождать, смотрим, а не заблокировано ли
+                EXECUTE 'SELECT count(*)  ' || cmrp.sql_text_for_group || ' AND obj_rpart.is_cell_cmd_track_lock(id) = 0'
+                    INTO cnt__;
+                IF (cnt__ = 0) THEN
+                    PERFORM obj_rpart.log(rp_id_, 'Group_Op_To_Simple_CRP - все заблокировано командами для транзитной передачи для cmd_rp.id=' || cmrp.id);
+                    CONTINUE; -- переходим к следующей команде
+                END IF;
+            END IF;
+            EXECUTE 'SELECT sname  ' || cmrp.sql_text_for_group || ' LIMIT 1'
+                INTO cell_to__;
+            PERFORM obj_rpart.log(rp_id_, '   есть подходящая ячейка ' || cell_to__);
+            track_id_to__ := obj_rpart.get_track_id_by_cell_and_rp(cmrp.rp_id, cell_to__);
+            npp_dest_new__ := obj_rpart.get_track_npp_by_cell_and_rp(cmrp.rp_id, cell_to__);
+            PERFORM obj_rpart.log(rp_id_, '   track_id_to__=' || track_id_to__ || ' npp_dest_new__=' || npp_dest_new__);
+            cell_id_new_ := obj_rpart.get_cell_id_by_name(cmrp.rp_id, cell_to__);
+            PERFORM obj_rpart.log(rp_id_, '   cell_id_new_=' || cell_id_new_);
+            UPDATE command_rp
+                SET cell_dest_sname = cell_to__,
+                    track_dest_id = track_id_to__,
+                    cell_dest_id = cell_id_new_,
+                    npp_dest = npp_dest_new__,
+                    ideal_cost = coalesce(
+                        service.calc_ideal_crp_cost(rp_id, cell_src_id, cell_id_new_),
+                        0
+                    ),
+                    command_type_id = 3
+            WHERE id = cmrp.id;
+            GET DIAGNOSTICS rowcount__ := ROW_COUNT;
+            PERFORM obj_rpart.log(rp_id_,'   успешно закоммитили ' || rowcount__ || ' записей');
+            -- COMMIT;
+        ELSE
+            PERFORM obj_rpart.log(rp_id_, '  fc: все транзитные ячейки заняты ');
+            IF (otf_ = 1) THEN
+                -- обязательно надо освободить, освобождаем
+                -- но вначале определяем тип контейнера на платформе
+                PERFORM obj_rpart.log(rp_id_, '  fc: а освобождать надо ');
+                BEGIN
+                    SELECT coalesce(type, 0) INTO cnt_type__
+                        FROM container
+                        WHERE id = (
+                            SELECT container_id
+                                FROM command
+                                WHERE id = cmrp.command_id
+                        );
+                EXCEPTION WHEN others THEN
+                    cnt_type__ := 0; -- не знаем какой, считаем, что большой
+                END;
+                BEGIN
+                    cell_to__ := '';
+                    SELECT min(abs((t.npp - cmrp.npp_src))) INTO cnt__
+                        FROM cell c
+                        INNER JOIN shelving s
+                            ON c.shelving_id = s.id
+                        INNER JOIN track t
+                            ON s.track_id = t.id
+                        WHERE c.is_full=0
+                            AND coalesce(c.blocked_by_ci_id, 0) = 0
+                            AND NOT exists(
+                                SELECT *
+                                    FROM cell_cmd_lock
+                                    WHERE cell_id = c.id
+                            )
+                            AND hi_level_type = 10
+                            AND cell_size = cnt_type__
+                            AND is_error = 0
+                            AND t.repository_part_id = rp_id_;
+                    FOR ncell IN (
+                        SELECT sname
+                            FROM cell c
+                            INNER JOIN shelving s
+                                ON c.shelving_id = s.id
+                            INNER JOIN track t
+                                ON s.track_id = t.id
+                            WHERE c.is_full = 0
+                                AND coalesce(c.blocked_by_ci_id, 0) = 0
+                                AND cell_size = cnt_type__
+                                AND NOT exists(
+                                    SELECT *
+                                        FROM cell_cmd_lock
+                                        WHERE cell_id = c.id
+                                )
+                                AND hi_level_type = 10
+                                AND NOT exists(
+                                    SELECT *
+                                        FROM command_rp
+                                        WHERE rp_id = rp_id_
+                                            AND cell_src_sname = c.sname
+                                            AND state IN (0,1,3)
+                                )
+                                AND t.repository_part_id = rp_id_
+                                AND abs(t.npp - cmrp.npp_src) = cnt__
+                                AND is_error = 0
+                            ORDER BY orientaition DESC
+                    ) LOOP
+                        cell_to__ := ncell.sname;
+                        EXIT;
+                    END LOOP;
+                EXCEPTION WHEN others THEN
+                    cell_to__ := obj_rpart.assign_tmp_cell_any_size(rp_id_, cmrp.npp_src);
+                END;
+                IF cell_to__ IS null THEN
+                    cell_to__ := obj_rpart.assign_tmp_cell_any_size(rp_id_, cmrp.npp_src);
+                END IF;
+                IF cell_to__ IS null THEN
+                    msg_ := '  Error - Нет места в транзитном складе!';
+                    PERFORM obj_rpart.log(rp_id_, msg_);
+                    PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_RP"(), rp_id_, null, msg_);
+                ELSE
+                    PERFORM obj_rpart.log(rp_id_, '  fc: временно перемещаем в ' || cell_to__);
+                    track_id_to__ := obj_rpart.get_track_id_by_cell_and_rp(cmrp.rp_id, cell_to__);
+                    npp_dest_new__ := obj_rpart.get_track_npp_by_cell_and_rp(cmrp.rp_id, cell_to__);
+                    BEGIN
+                        -- добавляем новую команду
+                        --log(rp_id_,'  fc: '||cmrp.command_type_id||','|| cmrp.rp_id||','|| cell_to__||','||
+                            --  cmrp.cell_dest_sname||','|| cmrp.priority||','|| cmrp.state||','|| cmrp.command_id||','|| track_id_to__||','||
+                            --  cmrp.track_dest_id||','|| cmrp.sql_text_for_group||','|| get_cell_id_by_name(cmrp.rp_id, cell_to__)||','|| cmrp.cell_dest_id||','||
+                            --  npp_dest_new__||','|| cmrp.npp_dest||','|| cmrp.container_id);
+                        INSERT INTO command_rp (
+                            command_type_id, rp_id, cell_src_sname,
+                            cell_dest_sname, priority, state,
+                            command_id, track_src_id, track_dest_id,
+                            sql_text_for_group, cell_src_id, cell_dest_id,
+                            npp_src, npp_dest, container_id
+                        ) VALUES (
+                            cmrp.command_type_id, cmrp.rp_id, cell_to__,
+                            cmrp.cell_dest_sname, cmrp.priority, cmrp.state,
+                            cmrp.command_id, track_id_to__, cmrp.track_dest_id,
+                            cmrp.sql_text_for_group, obj_rpart.get_cell_id_by_name(cmrp.rp_id, cell_to__), cmrp.cell_dest_id,
+                            npp_dest_new__, cmrp.npp_dest, cmrp.container_id
+                        );
+                        --log(rp_id_,'  fc: успешно добавили command_rp');
+                        -- изменяем старую
+                        UPDATE command_rp
+                            SET cell_dest_sname = cell_to__,
+                                is_to_free = 1,
+                                track_dest_id = track_id_to__,
+                                cell_dest_id = obj_rpart.get_cell_id_by_name(cmrp.rp_id, cell_to__),
+                                npp_dest = npp_dest_new__,
+                                command_type_id = 3
+                            WHERE id = cmrp.id;
+                        -- COMMIT;
+                    EXCEPTION WHEN others THEN
+                        GET STACKED DIAGNOSTICS sqlerrm__ = MESSAGE_TEXT;
+                        msg_ := '  ERROR временного перемещения fc: ' || sqlerrm__;
+                        -- ROLLBACK;
+                        PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_RP"(), rp_id_, null, msg_);
+                        PERFORM obj_rpart.log(rp_id_,msg_);
+                    END;
+                END IF;
+            ELSE
+                --msg_:='  ERROR временного перемещения fc: странно, освобождать не надо ';
+                --obj_ask.global_error_log(obj_ask.error_type_rp,rp_id_,null,msg_);
+                --log(rp_id_,msg_);
+                cell_to__ := '';
+                --exit;
+            END IF;
+        END IF;
+    END LOOP;  -- для cmrp
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.group_op_to_simple_crp(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.group_op_to_simple_crp(bigint)
+    IS 'преобразование групповых операций перемещения в обычные';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.get_robot_by_rp(
+    rpid_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    errmm__ TEXT;
+    rp RECORD;
+    rr robot;
+BEGIN
+    FOR rp IN (
+        SELECT num_of_robots nor
+            FROM repository_part
+            WHERE id = rpid_
+    ) LOOP
+        IF (rp.nor > 1) THEN
+            errmm__ := 'get_robot_by_rp - ERROR - запрос робота по складу, на котором более 1-го робота';
+            PERFORM obj_rpart.log(rpid_, errmm__);
+            RAISE EXCEPTION '%', errmm__
+                USING errcode = 50012;
+        ELSE
+            FOR rr IN (
+                SELECT *
+                    FROM robot
+                    WHERE repository_part_id = rpid_
+            ) LOOP
+                RETURN rr.id;
+            END LOOP;
+        END IF;
+    END LOOP;
+    RETURN -1; -- Should be unreachable
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.get_robot_by_rp(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.get_robot_by_rp(bigint)
+    IS 'получить ID робота по ID подсклада (только для огурцов с одним роботом)';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.optimizer_emu_1_robot(
+    crp_id_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    dirl1__ BIGINT;
+    dirl2__ BIGINT;
+    dist0__ BIGINT;
+    dist1__ BIGINT;
+    fd__ BIGINT;
+    ri RECORD;
+BEGIN
+    FOR ri IN (
+        SELECT rp.repository_type, r.current_track_npp,
+            crp.npp_dest, crp.npp_src,
+            r.id robot_id, rp.id rp_id_
+            FROM command_rp crp
+            INNER JOIN repository_part rp
+                ON crp.rp_id = rp.id
+            INNER JOIN robot r
+                ON r.repository_part_id = rp.id
+            WHERE crp.id = crp_id_
+    ) LOOP
+        fd__ := service.get_rp_param_number('force_dir', -1);
+        IF (fd__ >= 0) THEN
+            dirl1__ := fd__;
+            dirl2__ := fd__;
+        ELSE
+            IF (ri.repository_type = 0) THEN -- линейный
+                IF (ri.current_track_npp > ri.npp_src) THEN
+                    dirl1__ := 0;
+                ELSE
+                    dirl1__ := 1;
+                END IF;
+                IF (ri.npp_dest > ri.npp_src) THEN
+                    dirl2__ := 1;
+                ELSE
+                    dirl2__ := 0;
+                END IF;
+            ELSE -- кольцевой
+                dist0__ := obj_rpart.calc_distance_by_dir(ri.rp_id_, ri.current_track_npp, ri.npp_src, 0);
+                dist1__ := obj_rpart.calc_distance_by_dir(ri.rp_id_, ri.current_track_npp, ri.npp_src, 1);
+                IF (dist0__ < dist1__) THEN
+                    dirl1__ := 0;
+                ELSE
+                    dirl1__ := 1;
+                END IF;
+                dist0__ := obj_rpart.calc_distance_by_dir(ri.rp_id_, ri.npp_src, ri.npp_dest, 0);
+                dist1__ := obj_rpart.calc_distance_by_dir(ri.rp_id_, ri.npp_src, ri.npp_dest, 1);
+                IF (dist0__ < dist1__) THEN
+                    dirl2__ := 0;
+                ELSE
+                    dirl2__ := 1;
+                END IF;
+            END IF;
+        END IF;
+        UPDATE command_rp
+            SET direction_1 = dirl1__,
+                direction_2 = dirl2__,
+                robot_id = ri.robot_id
+            WHERE id = crp_id_;
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.optimizer_emu_1_robot(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.optimizer_emu_1_robot(bigint)
+    IS 'эмулирует проставление параметров для command_rp в случае, когда на подскладе 1 робот';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.set_new_cmd_rps(
+    rpid_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt__ BIGINT;
+    cirecord__ command_inner;
+    crprecord__ command_rp;
+    robot_to_crp__ BIGINT;
+    cmrp command_rp;
+    rr command_rp;
+BEGIN
+    -- еще нет команды, назначаем
+    FOR cmrp IN (
+        SELECT /*+RULE*/ cr.*
+            FROM command_rp cr
+            INNER JOIN cell c
+                ON cr.cell_src_id = c.id
+            INNER JOIN cell_type ct
+                ON c.hi_level_type = ct.id
+            INNER JOIN robot r
+                ON (
+                    r.id = cr.robot_id
+                    OR
+                    obj_rpart.is_rp_simple_1_robot(rpid_) = 1
+                )
+            WHERE cr.rp_id = rpid_
+                AND cr.state = 1
+                AND command_type_id IN (3)
+                AND obj_robot.is_robot_ready_for_cmd(r.id) = 1
+                AND r.repository_part_id = rpid_
+            ORDER BY priority desc,
+                priority_inner,
+                ct.obligotary_to_free desc,
+                abs(r.current_track_npp - cr.npp_src),
+                cr.id
+    ) LOOP
+        PERFORM obj_rpart.log(rpid_, 'Set_New_Cmd_RPs - есть command_rp - кандидат на назначение ' || cmrp.id);
+        IF coalesce(cmrp.robot_id, 0) > 0 THEN
+            robot_to_crp__ := cmrp.robot_id;
+        ELSE -- для подсклада с одним роботом
+            robot_to_crp__ := obj_rpart.get_robot_by_rp(rpid_);
+        END IF;
+        IF obj_robot.is_robot_ready_for_cmd(robot_to_crp__) = 1 THEN -- могло и поменяться
+            SELECT count(*) INTO cnt__
+                FROM command_inner
+                WHERE robot_id = cmrp.robot_id
+                    AND state = 3;
+            PERFORM obj_rpart.log(rpid_, '  активных по роботу команд CI=!' || cnt__);
+            IF (cnt__ <> 0) THEN -- ошибка, робот свободен, а задачи невыполнены
+                SELECT * INTO cirecord__
+                    FROM command_inner
+                    WHERE robot_id = cmrp.robot_id
+                        AND state = 3
+                    LIMIT 1;
+                PERFORM obj_rpart.log(rpid_, 'ERROR - На подскладе есть работающие команды ci.id=' || cirecord__.id || '. Выходим из такта!');
+                CONTINUE;
+            END IF;
+            SELECT count(*) INTO cnt__
+                FROM command_rp
+                WHERE robot_id = cmrp.robot_id
+                    AND state = 3;
+            PERFORM obj_rpart.log(rpid_, '  активных по роботу команд RP=!' || cnt__);
+            IF (cnt__ <> 0) THEN -- ошибка, хотим назначить command_rp, а есть еще невыполненные
+                SELECT * INTO crprecord__
+                    FROM command_rp
+                    WHERE robot_id = cmrp.robot_id
+                        AND state = 3
+                    LIMIT 1;
+                PERFORM obj_rpart.log(rpid_, 'ERROR - На подскладе есть работающие команды cmrp.id=' || crprecord__.id || '. Выходим из такта!');
+                CONTINUE;
+            END IF;
+            PERFORM obj_rpart.log(rpid_, 'Найдена команда для назначения ' || cmrp.id || ' для робота ' || cmrp.robot_id);
+            IF cmrp.command_type_id IN (3) THEN -- перемещение простое контейнера
+                PERFORM obj_rpart.log(rpid_, 'Это команда простого перемещения контейнера ');
+                IF obj_rpart.is_rp_simple_1_robot(rpid_) = 1 THEN -- простой АСК с одним роботом
+                    PERFORM obj_rpart.optimizer_emu_1_robot(cmrp.id);
+                END IF;
+                UPDATE command_rp
+                    SET state = 3,
+                        date_time_begin = LOCALTIMESTAMP,
+                        substate = 1
+                    WHERE id = cmrp.id;
+                PERFORM obj_rpart.log(rpid_, 'Проставили направления, робота, состояние, дату, подсостояние');
+                FOR rr IN (
+                    SELECT *
+                        FROM command_rp
+                        WHERE id = cmrp.id
+                ) LOOP
+                    UPDATE robot
+                        SET command_rp_id = cmrp.id
+                        WHERE id = rr.robot_id;
+                    --Run_Cmd_RP_Parts_Prim(rr.robot_id, cmrp.id);
+                END LOOP;
+            END IF; -- если команда та что надо
+        END IF;
+    END LOOP;  -- для cmrp
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.set_new_cmd_rps(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.set_new_cmd_rps(bigint)
+    IS 'назначаем новые comand_rp';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.actione_from_pause(
+    rp_id_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rr robot;
+BEGIN
+    PERFORM obj_rpart.log(rp_id_, 'Actione_From_Pause');
+    IF obj_rpart.is_idle(rp_id_) = 1 THEN
+        PERFORM obj_rpart.log(rp_id_, 'АСК простаивает, его сняли с паузы, обнуляем занятость треков');
+        UPDATE track
+            SET locked_by_robot_id = 0
+            WHERE repository_part_id = rp_id_
+                AND locked_by_robot_id <> 0
+                AND locked_by_robot_id NOT IN (
+                    SELECT id
+                        FROM robot
+                        WHERE state = obj_robot."ROBOT_STATE_REPAIR"()
+                );
+        -- COMMIT;
+    ELSE -- не все роботы подсклада стоят
+        -- обнуляем блокировки робота, на которого нет команд и который READY
+        FOR rr IN (
+            SELECT *
+                FROM robot
+                WHERE repository_part_id = rp_id_
+                    AND coalesce(command_inner_id, 0) = 0
+                    AND coalesce(command_inner_assigned_id, 0) = 0
+                    AND coalesce(wait_for_problem_resolve, 0) = 0
+                    AND state = obj_robot."ROBOT_STATE_READY"()
+        ) LOOP
+            PERFORM obj_rpart.log(rp_id_, 'Робот ' || rr.id || ' АСК простаивает, АСК сняли с паузы, обнуляем занятость треков по роботу');
+            UPDATE track
+                SET locked_by_robot_id = 0
+                WHERE repository_part_id = rp_id_
+                    AND locked_by_robot_id = rr.id;
+            IF coalesce(rr.command_rp_id, 0) = 0 THEN -- и команд сверху на него нету
+                PERFORM obj_rpart.log(rp_id_, '  и команд сверху на него нету, удаляем заявки');
+                DELETE FROM track_order
+                    WHERE robot_id = rr.id;
+            END IF;
+            -- COMMIT;
+        END LOOP;
+        -- обнуляем блокировки робота, который находится в режиме решения проблемы
+        FOR rr IN (
+            SELECT *
+                FROM robot
+                WHERE repository_part_id = rp_id_
+                    AND coalesce(command_inner_id, 0) <> 0
+                    AND coalesce(wait_for_problem_resolve, 0) = 1
+                    AND state = obj_robot."ROBOT_STATE_READY"()
+        ) LOOP
+            PERFORM obj_rpart.log(rp_id_, 'Робот ' || rr.id || ' АСК стоит в решении проблемы, АСК сняли с паузы, обнуляем занятость треков по роботу');
+            UPDATE track
+                SET locked_by_robot_id = 0
+                WHERE repository_part_id = rp_id_
+                    AND locked_by_robot_id = rr.id;
+            -- COMMIT;
+        END LOOP;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.actione_from_pause(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.actione_from_pause(bigint)
+    IS 'действия, необходимые при снятии подсклада с паузы';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.cancel_active_cmd(
+    rp_id_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rp repository_part;
+    rr robot;
+BEGIN
+    FOR rp IN (
+        SELECT *
+            FROM repository_part
+            WHERE rp_id_ = id
+                AND is_work = 0
+    ) LOOP
+        -- удаляем требования прогонов
+        DELETE FROM track_order
+            WHERE repository_part_id = rp_id_;
+        -- удаляем неначившиеся cmd_gas
+        DELETE FROM command_gas
+            WHERE state = 0
+                AND rp_id = rp_id_;
+        -- контейнеры с роботов за АСК
+        FOR rr IN (
+            SELECT *
+                FROM robot
+                WHERE repository_part_id = rp_id_
+                    AND coalesce(container_id, 0) <> 0
+        ) LOOP
+            UPDATE container
+                SET location = 0
+                WHERE id = rr.container_id;
+        END LOOP;
+        DELETE FROM command_gas
+            WHERE state IN (1,3)
+                AND rp_id = rp_id_;
+        UPDATE robot
+            SET command_rp_id = 0,
+                command_inner_id = 0,
+                container_id = 0,
+                command_inner_assigned_id = 0,
+                wait_for_problem_resolve = 0,
+                platform_busy = 0
+            WHERE repository_part_id = rp_id_;
+        -- COMMIT;
+        RETURN;
+    END LOOP;
+    RAISE EXCEPTION 'Подсклад % не найден, или он не находится в режиме паузы!', rp_id_
+        USING errcode = 50012;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.cancel_active_cmd(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.cancel_active_cmd(bigint)
+    IS 'отменяем все команды по огурцу (аккуратно!)';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.change_cmd_rp_dir(
+    crp_id_ bigint,
+    robot_id_ bigint,
+    part_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    DELETE FROM track_order
+        WHERE robot_id = robot_id_;
+    IF (part_ = 1) THEN
+        UPDATE command_rp
+            SET direction_1 = obj_rpart.get_another_direction(direction_1)
+            WHERE id = crp_id_;
+    ELSIF (part_ = 2) THEN
+        UPDATE command_rp
+            SET direction_2 = obj_rpart.get_another_direction(direction_2)
+            WHERE id = crp_id_;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.change_cmd_rp_dir(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.change_cmd_rp_dir(bigint, bigint, bigint)
+    IS 'изменить направление движения команды перемещения контейнера на огурце';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.run_cmd_rp_parts_prim(
+    robot_id_ bigint,
+    crp_id_ bigint,
+    is_ignore_buf_track_order_ boolean)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    new_ss BIGINT;
+    ttl__ BIGINT;
+    ttl_nb__ BIGINT;
+    cell_sname__ TEXT;
+    errm__ TEXT;
+    br_id_ BIGINT;
+    robot RECORD;
+    crp command_rp;
+    rowcount__ BIGINT;
+BEGIN
+    FOR robot IN (
+        SELECT r.*, small_delta
+            FROM robot r
+            INNER JOIN repository_part rp
+                ON r.repository_part_id = rp.id
+            WHERE r.id = robot_id_
+    ) LOOP
+        PERFORM obj_rpart.log(robot.repository_part_id, 'Начало run_transfer_part ' || crp_id_ || ' робота ' || robot_id_);
+        FOR crp IN (
+            SELECT *
+                FROM command_rp
+                WHERE id = crp_id_
+        ) LOOP
+            UPDATE robot
+                SET command_rp_id = crp_id_
+                WHERE id = robot_id_
+                    AND coalesce(command_rp_id, 0) <> crp_id_;
+            GET DIAGNOSTICS rowcount__ := ROW_COUNT;
+            IF (rowcount__ > 0) THEN
+                PERFORM obj_robot.log(robot_id_,'У робота назначили command_rp ' || crp_id_);
+            END IF;
+            IF coalesce(crp.substate, 0) IN (0,1,2) THEN -- только начала выполняться или уже доехали
+                SELECT obj_rpart.try_track_lock(robot_id_, crp.npp_src, crp.direction_1, is_ignore_buf_track_order_)
+                    INTO br_id_, ttl__;
+                IF (ttl__ = crp.npp_src) THEN
+                    PERFORM obj_rpart.log(robot.repository_part_id, '  удалось заблокировать до цели, шлем CMD_LOAD ');
+                    PERFORM obj_robot.set_command_inner(
+                        robot_id_, crp_id_, 1, 4,
+                        crp.direction_1,  crp.cell_src_sname, '',
+                        obj_robot."CMD_LOAD"() || ' ' || crp.cell_src_sname || ';' || obj_rpart.get_cmd_dir_text(crp.direction_1),
+                        crp.container_id
+                    );
+                ELSIF (ttl__ < 0) THEN
+                    PERFORM obj_rpart.log(robot.repository_part_id, '  не можем сдвинуться с места, ждем');
+                    IF obj_robot.get_robot_state(br_id_) = obj_robot."ROBOT_STATE_REPAIR"() THEN -- не ремонт ли мешает?
+                        errm__ := '  мешает ремонтный робот ' || br_id_ || ', меняем направление LOAD';
+                        PERFORM obj_rpart.log(robot.repository_part_id, errm__);
+                        PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT_RP"(), robot.repository_part_id, robot.id, errm__);
+                        PERFORM obj_rpart.change_cmd_rp_dir(robot.command_rp_id, robot.id, 1);
+                    END IF;
+                ELSIF (
+                    ttl__ <> robot.current_track_npp
+                    AND
+                    obj_rpart.calc_distance_by_dir(
+                        robot.repository_part_id,
+                        robot.current_track_npp,
+                        ttl__,
+                        crp.direction_1
+                    ) >robot.small_delta
+                ) THEN -- можем сдвинуться
+                    PERFORM obj_rpart.log(robot.repository_part_id, '  не удалось заблокировать до цели, шлем MOVE до ' || ttl__);
+                    ttl_nb__ := obj_rpart.get_track_npp_not_baned(robot.repository_part_id, ttl__, crp.direction_1);
+                    IF (ttl_nb__ <> robot.current_track_npp) THEN
+                        PERFORM obj_rpart.log(robot.repository_part_id, '  ttl_nb__=' || ttl_nb__);
+                        IF (robot.is_use_checkpoint = 1) THEN -- использовать промежуточные точки
+                            PERFORM obj_robot.set_command_inner(
+                                robot_id_, crp_id_, 1, 4,
+                                crp.direction_1, crp.cell_src_sname, null,
+                                obj_robot."CMD_LOAD"() || ' ' || crp.cell_src_sname
+                                    || ' cp=' || ttl_nb__ || ';'
+                                    || obj_rpart.get_cmd_dir_text(crp.direction_1),
+                                crp.container_id,ttl_nb__
+                            );
+                        ELSE -- не использовать промежуточные точки
+                            cell_sname__ := obj_rpart.get_cell_name_by_track_npp(ttl_nb__, robot.repository_part_id);
+                            PERFORM obj_robot.set_command_inner(
+                                robot_id_, crp_id_, 1, 6,
+                                crp.direction_1, null, cell_sname__,
+                                obj_robot."CMD_MOVE"() || ' ' || cell_sname__
+                                    || ';' || obj_rpart.get_cmd_dir_text(crp.direction_1),
+                                crp.container_id
+                            );
+                        END IF;
+                    ELSE
+                        PERFORM obj_rpart.log(robot.repository_part_id, '  не можем послать, т.к. трек запрещен к MOVE и он один');
+                    END IF;
+                END IF;
+                UPDATE command_rp
+                    SET substate = 1
+                    WHERE id = crp_id_
+                        AND coalesce(substate, 0) < 1;
+                GET DIAGNOSTICS rowcount__ := ROW_COUNT;
+                IF (rowcount__ > 0) THEN
+                    PERFORM obj_rpart.log(robot.repository_part_id, 'У команды ' || crp_id_ || ' назначили новое подостояние 1');
+                END IF;
+            ELSIF crp.substate IN (3,4) THEN -- все еще едем куда надо
+                SELECT obj_rpart.try_track_lock(robot_id_, crp.npp_dest, crp.direction_2, is_ignore_buf_track_order_)
+                    INTO br_id_, ttl__;
+                IF (ttl__ = crp.npp_dest) THEN
+                    PERFORM obj_rpart.log(robot.repository_part_id, '  удалось заблокировать до цели, шлем CMD_UNLOAD ');
+                    PERFORM obj_robot.set_command_inner(
+                        robot_id_, crp_id_, 1, 5,
+                        crp.direction_2, '', crp.cell_dest_sname,
+                        obj_robot."CMD_UNLOAD"() || ' ' || crp.cell_dest_sname
+                            || ';' || obj_rpart.get_cmd_dir_text(crp.direction_2),
+                        crp.container_id
+                    );
+                ELSIF (ttl__ < 0) THEN
+                    PERFORM obj_rpart.log(robot.repository_part_id,'  не можем сдвинуться с места, ждем');
+                    IF obj_robot.get_robot_state(br_id_) = obj_robot."ROBOT_STATE_REPAIR"() THEN -- не ремонт ли мешает?
+                        errm__ := '  мешает ремонтный робот ' || br_id_ || ', меняем направление UNLOAD ';
+                        PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT_RP"(), robot.repository_part_id, robot.id, errm__);
+                        PERFORM obj_rpart.log(robot.repository_part_id, errm__);
+                        PERFORM obj_rpart.change_cmd_rp_dir(robot.command_rp_id, robot.id, 2);
+                    END IF;
+                ELSIF (
+                    ttl__ <> robot.current_track_npp
+                    AND
+                    obj_rpart.calc_distance_by_dir(
+                        robot.repository_part_id,
+                        robot.current_track_npp,
+                        ttl__,
+                        crp.direction_2
+                    ) > robot.small_delta
+                ) THEN -- можем сдвинуться
+                    PERFORM obj_rpart.log(robot.repository_part_id, '  не удалось заблокировать до цели, шлем MOVE до ' || ttl__);
+                    ttl_nb__ := obj_rpart.get_track_npp_not_baned(robot.repository_part_id, ttl__, crp.direction_2);
+                    IF (ttl_nb__ <> robot.current_track_npp) THEN
+                        PERFORM obj_rpart.log(robot.repository_part_id, '  ttl_nb__=' || ttl_nb__);
+                        IF (robot.is_use_checkpoint = 1) THEN -- использовать промежуточные точки
+                            PERFORM obj_robot.set_command_inner(
+                                robot_id_, crp_id_, 1, 5,
+                                crp.direction_2, null, crp.cell_dest_sname,
+                                obj_robot."CMD_UNLOAD"() || ' ' || crp.cell_dest_sname
+                                    || ' cp=' || ttl_nb__
+                                    || ';' || obj_rpart.get_cmd_dir_text(crp.direction_2),
+                                crp.container_id, ttl_nb__
+                            );
+                        ELSE -- не использовать промежуточные точки
+                            cell_sname__ := obj_rpart.get_cell_name_by_track_npp(ttl_nb__, robot.repository_part_id);
+                            PERFORM obj_robot.set_command_inner(
+                                robot_id_, crp_id_, 1, 6,
+                                crp.direction_2, null, cell_sname__,
+                                obj_robot."CMD_MOVE"() || ' ' || cell_sname__
+                                    || ';' || obj_rpart.get_cmd_dir_text(crp.direction_2),
+                                crp.container_id
+                            );
+                        END IF;
+                    ELSE
+                        PERFORM obj_rpart.log(robot.repository_part_id, '  не можем послать, т.к. трек запрещен к MOVE и он один');
+                    END IF;
+                END IF;
+            ELSE
+                PERFORM obj_rpart.log(robot.repository_part_id, 'ERROR - crp.substate=' || crp.substate || ', а в Run_Transfer_Part все равно пришли!');
+            END IF;
+        END LOOP;
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.run_cmd_rp_parts_prim(bigint, bigint, boolean) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.run_cmd_rp_parts_prim(bigint, bigint, boolean)
+    IS 'выполняет часть команды перемещения контейнера между ячейками';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.run_cmd_parts(
+    rid_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    awaypar__ BIGINT;
+    s_must_real_cmd BOOLEAN;
+    rrp robot;
+    toi track_order;
+    rr robot;
+    crp command_rp;
+BEGIN
+    s_must_real_cmd := false;
+    FOR rrp IN (
+        SELECT *
+            FROM robot
+            WHERE id = rid_
+    ) LOOP
+        -- если  остались свободные роботы, то пытаемся дозавершить команды
+        FOR toi IN (
+            SELECT *
+                FROM track_order tor
+                WHERE rid_ = robot_stop_id
+                    --and obj_robot.Is_Robot_Ready_For_Cmd_Inner(r.id)=1
+        ) LOOP
+            PERFORM obj_rpart.log(rrp.repository_part_id, 'На робота ' || rid_
+                || ' уже есть заявка ' || toi.id || ', прогоняем ');
+            awaypar__ := obj_rpart.robot_stop_drive_away_try(rid_, toi.id);
+            IF (awaypar__ = 3) THEN -- есть команда которую можно присунуть не мешая отгону
+                s_must_real_cmd := true;
+            ELSE
+                RETURN; -- во всех остальных случаях вываливаемся
+            END IF;
+        END LOOP;
+        -- отмены всякие если нужно
+        FOR rr IN (
+            SELECT *
+                FROM robot
+                WHERE id = rid_
+        ) LOOP
+            IF (
+                coalesce(rr.command_rp_id, 0) = 0
+                OR
+                coalesce(rr.command_inner_assigned_id, 0) <> 0
+            ) THEN
+                PERFORM obj_rpart.log(rr.repository_part_id, 'нет назначенной команды CRP, или делаются какие-то CMD_INNER');
+                RETURN;
+            END IF;
+        END LOOP;
+        FOR crp IN (
+            SELECT *
+                FROM command_rp
+                WHERE id = rrp.command_rp_id
+        ) LOOP
+            IF crp.command_type_id IN (3,7) THEN
+                -- перемещение простое контейнера
+                IF crp.substate IN (0,1,2,3,4) THEN
+                    PERFORM obj_rpart.run_cmd_rp_parts_prim(crp.robot_id, crp.id, s_must_real_cmd);
+                ELSE
+                    -- че сюда дошли, странно
+                    PERFORM obj_rpart.log(rrp.repository_part_id,'ERROR - такого подстатуса команды быть не должно - не то поставил ручками?');
+                END IF;
+            END IF;
+        END LOOP;
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.run_cmd_parts(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.run_cmd_parts(bigint)
+    IS 'формируем доделки comand_rp или прогоняем робота мешающего по заявке';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.form_cmds(
@@ -3889,6 +5208,281 @@ $BODY$;
 ALTER FUNCTION obj_rpart.is_robot_lock_bad(bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_rpart.is_robot_lock_bad(bigint)
     IS 'плохая блокировка робота?';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.track_order_lock(
+    rid_ bigint,
+    to_id_ bigint,
+    OUT npp_to_sorb__ bigint,
+    OUT crp_npp__ bigint,
+    OUT crp_dir__ bigint,
+    OUT res bigint)
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    ttl__ BIGINT;
+    br_id_ BIGINT;
+    rr RECORD;
+    tor track_order;
+    to_ track_order;
+BEGIN
+    FOR rr IN (
+        SELECT r.*, spacing_of_robots
+            FROM robot r
+            INNER JOIN repository_part rp
+                ON r.repository_part_id = rp.id
+            WHERE r.id = rid_
+    ) LOOP
+        -- проверяем, что заявка не самая свежая
+        FOR tor IN (
+            SELECT *
+                FROM track_order
+                WHERE repository_part_id = rr.repository_part_id
+                ORDER BY id
+        ) LOOP
+            IF (tor.robot_id = rid_) THEN
+                PERFORM obj_robot.log(rid_,'  отбой прогона, самая свежая заявка от этого робота');
+                res := -1;
+                RETURN;
+            END IF;
+            EXIT;
+        END LOOP;
+        FOR to_ IN (
+            SELECT *
+                FROM track_order
+                WHERE id = to_id_
+        ) LOOP
+            crp_npp__ := -1;
+            SELECT obj_rpart.get_cmd_rp_npp_dir(rid_)
+                INTO crp_npp__, crp_dir__;
+            IF coalesce(rr.command_rp_id, 0) > 0 AND crp_npp__ >= 0 THEN
+                IF crp_dir__ = to_.direction
+                    AND obj_rpart.is_track_locked(rid_, crp_npp__, crp_dir__, 1) = 1
+                THEN
+                    PERFORM obj_robot.log(rid_, '  отбой прогона, можно тиснуть команду ' || rr.command_rp_id
+                        || ' до трека ' || crp_npp__
+                        || ' dir=' || crp_dir__);
+                    res := -2;
+                    RETURN;
+                END IF;
+                IF obj_rpart.is_track_locked(rid_, crp_npp__, crp_dir__, 0) = 1 THEN
+                    PERFORM obj_robot.log(rid_, '  отбой прогона, целевой трек и так заблокирован');
+                    res := -2;
+                    RETURN;
+                END IF;
+            END IF;
+            npp_to_sorb__ := obj_rpart.add_track_npp(
+                rr.repository_part_id, to_.npp_to,
+                rr.spacing_of_robots + 1, to_.direction
+            );
+            SELECT obj_rpart.try_track_lock(rid_, npp_to_sorb__, to_.direction, true)
+                INTO br_id_, ttl__;
+            res := ttl__;
+            RETURN;
+        END LOOP;
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.track_order_lock(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.track_order_lock(bigint, bigint)
+    IS 'заявка на блокировку трека';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.robot_track_lock_only_around(
+    rid_ bigint)
+    RETURNS boolean
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    sr__ BIGINT;
+    l__ BIGINT;
+    r__ BIGINT;
+    lrb__ BIGINT;
+    rrb__ BIGINT;
+    rr RECORD;
+BEGIN
+    FOR rr IN (
+        SELECT r.repository_part_id , rp.spacing_of_robots, current_track_npp
+            FROM robot r
+            INNER JOIN repository_part rp
+                ON r.repository_part_id = rp.id
+            WHERE r.id = rid_
+    ) LOOP
+        sr__ := rr.spacing_of_robots + 1;
+        l__ := obj_rpart.add_track_npp(rr.repository_part_id, rr.current_track_npp, sr__, 0);
+        r__ := obj_rpart.add_track_npp(rr.repository_part_id, rr.current_track_npp, sr__, 1);
+        SELECT locked_by_robot_id INTO lrb__
+            FROM track
+            WHERE repository_part_id = rr.repository_part_id
+                AND npp = l__;
+        SELECT locked_by_robot_id INTO rrb__
+            FROM track
+            WHERE repository_part_id = rr.repository_part_id
+                AND npp = r__;
+        RETURN (lrb__ <> rid_ AND rrb__ <> rid_);
+    END LOOP;
+    RETURN false; -- Should be unreachable
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.robot_track_lock_only_around(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.robot_track_lock_only_around(bigint)
+    IS 'заблокировано ли крайние треки в шлейфе робота?';
+
+
+CREATE OR REPLACE FUNCTION obj_rpart.robot_stop_drive_away_try(
+    rid_ bigint,
+    tor_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    npp_to_sorb__ BIGINT;
+    ttl__ BIGINT;
+    ttl_nb__ BIGINT;
+    m_cell_sname__ TEXT;
+    crp_npp__ BIGINT;
+    crp_dir__ BIGINT;
+    rr RECORD;
+    to__ track_order;
+    toa__ track_order;
+BEGIN
+    IF obj_robot.is_robot_ready_for_cmd_inner(rid_) = 1 THEN
+        FOR rr IN (
+            SELECT r.repository_part_id, spacing_of_robots, r.current_track_npp, current_track_id
+                FROM robot r
+                INNER JOIN repository_part rp
+                    ON r.repository_part_id = rp.id
+                WHERE r.id = rid_
+        ) LOOP
+            PERFORM obj_robot.log(rid_, 'Робот готов для команд новых, прогоняем его нафиг');
+            FOR to__ IN (
+                SELECT *
+                    FROM track_order
+                    WHERE id = tor_id_
+            ) LOOP
+                SELECT obj_rpart.track_order_lock(rid_, to__.id)
+                    INTO npp_to_sorb__, crp_npp__, crp_dir__, ttl__ ;
+                IF (ttl__ >= 0) THEN -- можно двинуться хоть чутка
+                    -- анализируем, может нужно менять направление команды?
+                    IF obj_rpart.is_track_locked(rid_, crp_npp__, obj_rpart.get_another_direction(crp_dir__), 0) = 1 THEN
+                        PERFORM obj_robot.log(rid_, '  отбой прогона, меняем направление команды');
+                        PERFORM obj_rpart.robot_cmd_rp_change_dir(rid_);
+                        RETURN 3;
+                    END IF;
+                    ttl_nb__ := obj_rpart.get_track_npp_not_baned(
+                        rr.repository_part_id,
+                        ttl__,
+                        obj_rpart.get_another_direction(to__.direction)
+                    ); -- crp_dir__
+                    IF (ttl_nb__ <> rr.current_track_npp) THEN
+                        PERFORM obj_robot.log(rid_, '  ttl__=' || ttl__ || ' ttl_nb__=' || ttl_nb__);
+                        m_cell_sname__ := obj_rpart.get_cell_name_by_track_npp(ttl_nb__, rr.repository_part_id);
+                        IF obj_rpart.is_track_locked(rid_, ttl_nb__, to__.direction) = 1 THEN
+                            PERFORM obj_robot.set_command_inner(
+                                rid_, 0, 1, 6, to__.direction,
+                                obj_rpart.get_cell_name_by_track_id(rr.current_track_id),
+                                m_cell_sname__,
+                                'MOVE ' || m_cell_sname__ || ';' || obj_rpart.get_cmd_dir_text(to__.direction)
+                            );
+                            RETURN 1;
+                        ELSE
+                            PERFORM obj_robot.log(rid_, '  движение к забаненной точке невозможно! Ждем освобождения! ');
+                            RETURN 0;
+                        END IF;
+                    ELSE
+                        PERFORM obj_robot.log(rid_, '  не можем двинуться - трек среди запрещенных к MOVE и он один');
+                        RETURN 0;
+                    END IF;
+                ELSE -- проблема при блокировке по треку
+                    IF (ttl__ = -1) THEN -- тупо не можем сдвинуться
+                        FOR toa__ IN (
+                            SELECT *
+                                FROM track_order
+                                WHERE repository_part_id = rr.repository_part_id
+                                    AND robot_id <> rid_
+                                    AND robot_stop_id <> rid_
+                        ) LOOP
+                            IF (
+                                obj_rpart.is_track_part_between(
+                                    toa__.id,
+                                    obj_rpart.add_track_npp(
+                                        rr.repository_part_id, rr.current_track_npp,
+                                        rr.spacing_of_robots, 0
+                                    ),
+                                    obj_rpart.add_track_npp(
+                                        rr.repository_part_id, rr.current_track_npp,
+                                        rr.spacing_of_robots, 1
+                                    ),
+                                    1
+                                ) AND (
+                                    obj_rpart.robot_track_lock_only_around(rid_)
+                                ) -- что типа тупо стоим ждем
+                            ) THEN
+                                RETURN 4; -- нужно ждать
+                            END IF;
+                        END LOOP;
+                        RETURN 0; -- нужно двигаться, но не можем
+                    ELSE -- и не надо двигаться
+                        RETURN 3; -- и не нужно двигаться, есть тут еще дела
+                    END IF;
+                END IF;
+            END LOOP;
+            /*
+            -- проверяем, а нет ли более свежей заявки
+            for tor in (select * from track_order where repository_part_id=rr.repository_part_id order by id) loop
+                if tor.robot_id=rid_ then
+                    obj_robot.Log(rid_,'  отбой прогона, самая свежая заявка от этого робота');
+                    return;
+            end if;
+            exit;
+            end loop;
+            -- проверяем, а нет ли команды "по пути"
+            for crp in (select crp.* from robot r, command_rp crp where r.id=rid_ and crp.id=command_rp_id) loop
+                if nvl(crp.substate,0) in (0,1,2) then -- только начала выполняться или уже доехали
+                    crp_npp__:=crp.npp_src;
+                    crp_dir__:=crp.direction_1;
+                else
+                    crp_npp__:=crp.npp_dest;
+                    crp_dir__:=crp.direction_2;
+            end if;
+            if crp_dir__=dir_ and is_track_locked(rid_,crp_npp__,crp_dir__,1)=1 then
+                obj_robot.Log(rid_,'  отбой прогона, можно тиснуть команду '||crp.id||' до трека '||crp_npp__||' dir='||crp_dir__);
+                return;
+            end if;
+            if is_track_locked(rid_,crp_npp__,crp_dir__,0)=1 then
+                obj_robot.Log(rid_,'  отбой прогона, целевой трек и так заблокирован');
+                return;
+            end if;
+            end loop;
+            npp_to_sorb__:=add_track_npp(rr.repository_part_id, npp_to_,rr.spacing_of_robots+1, dir_);
+            ttl__:=Try_Track_Lock(rid_ , npp_to_sorb__, dir_ );
+            if ttl__=npp_to_sorb__ then
+                m_cell_sname__:=Get_Cell_Name_By_Track_Npp(npp_to_sorb__, rr.repository_part_id);
+            elsif ttl__<>rr.current_track_npp and ttl__>=0 then
+            else
+                obj_robot.Log(rid_,'ERROR - Не могу прогнаться, все заблокировано');
+                return;
+            end if;
+             */
+        END LOOP;
+    END IF;
+    -- FIXME: There should be some logic to handle ELSE
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_rpart.robot_stop_drive_away_try(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.robot_stop_drive_away_try(bigint, bigint)
+    IS 'пытаемся прогнать робота, который мешает двинуться
+=0, не можем двинуться
+=1, прогнали явно
+=3, есть по направлению команда (или по смененнному), отбой прогона, и так уйдем
+=4, надо ждать цепочки событий с заявок ';
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.container_change_placement(

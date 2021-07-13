@@ -13,7 +13,20 @@ ALTER FUNCTION obj_ask."ERROR_TYPE_ROBOT_RP"() OWNER TO postgres;
 COMMENT ON FUNCTION obj_ask."ERROR_TYPE_ROBOT_RP"()
     IS 'Emulating package variable. Code for all robot-rp related errors.
 Тип ошибки: ошибка робот-подсклад';
-
+CREATE OR REPLACE FUNCTION obj_ask."ERROR_TYPE_RP"(
+	)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 2;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask."ERROR_TYPE_RP"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask."ERROR_TYPE_RP"()
+    IS 'Тип ошибки: ошибка подсклад';
 CREATE OR REPLACE FUNCTION obj_ask."ERROR_TYPE_ROBOT"(
 	)
     RETURNS bigint

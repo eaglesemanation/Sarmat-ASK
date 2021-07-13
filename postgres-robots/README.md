@@ -209,18 +209,18 @@
     - [x] get_transit_1rp_cell
     - [x] check_lock_robot_around
     - [x] check_new_robot_npp_correct
-    - [ ] Check_WPR_Lock
+    - [x] check_wpr_lock
     - [x] try_track_lock
     - [x] try_track_lock_robot_around
     - [x] unlock_track
     - [x] unlock_track_after_cmd_error
-    - [ ] Robot_Stop_Drive_Away_Try
-    - [ ] Group_Op_To_Simple_CRP
-    - [ ] Change_Work_Status
+    - [x] robot_stop_drive_away_try
+    - [x] group_op_to_simple_crp
+    - [x] change_work_status
     - [x] robot_cmd_rp_change_dir
-    - [ ] crash_test_linear_tact
-    - [ ] Actione_From_Pause
-    - [ ] cancel_active_cmd
+    - [x] crash_test_linear_tact
+    - [x] actione_from_pause
+    - [x] cancel_active_cmd
     - [x] change_cmd_rp_goal
     - [x] container_change_placement
     - [x] try_assign_new_unload_cell
