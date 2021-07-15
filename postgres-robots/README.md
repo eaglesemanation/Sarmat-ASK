@@ -38,32 +38,32 @@
     - [ ] set_robot_wms_state
 
 - obj_ask
-    - [ ] Form_Commands
-    - [ ] Log
+    - [x] form_commands
+    - [x] log
     - [x] is_can_accept_cmd
-    - [ ] Is_Cell_Locked_By_Cmd
+    - [x] is_cell_locked_by_cmd
     - [x] is_enable_container_accept
-    - [ ] Get_ASK_name
-    - [ ] get_cell_name
-    - [ ] get_cmd_max_priority
-    - [ ] Get_Cnt_BC_By_ID
-    - [ ] Get_Cur_Max_Cmd_Priority
+    - [x] get_ask_name
+    - [x] get_cell_name
+    - [x] get_cmd_max_priority
+    - [x] get_cnt_bc_by_id
+    - [x] get_cur_max_cmd_priority
     - [x] get_good_desc_id_by_id
-    - [ ] Get_Desktop_Container_History
-    - [ ] get_shelving_fullness
-    - [ ] Get_Work_Status
+    - [x] get_desktop_container_history
+    - [x] get_shelving_fullness
+    - [x] get_work_status
     - [x] calc_distance
-    - [ ] calc_distance_on_way
-    - [ ] Change_Work_Status
-    - [ ] To_Pause
-    - [ ] To_Work
-    - [ ] Shelving_Need_Redraw_Clear
-    - [ ] Shelving_Need_Redraw_Clear
+    - [x] calc_distance_on_way
+    - [x] change_work_status
+    - [x] to_pause
+    - [x] to_work
+    - [x] shelving_need_redraw_clear
+    - [x] shelving_need_redraw_clear (max_id)
     - [x] check_gdrest_consistance
     - [x] global_error_log
     - [x] set_command
-    - [ ] Gen_Cmd_Err_Rep
-    - [ ] workload_info
+    - [x] gen_cmd_err_rep
+    - [x] workload_info
 
 - obj_cmd_gas
     - [ ] Form_Commands

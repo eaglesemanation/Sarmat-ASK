@@ -42,6 +42,20 @@ ALTER FUNCTION obj_ask."ERROR_TYPE_ROBOT"() OWNER TO postgres;
 COMMENT ON FUNCTION obj_ask."ERROR_TYPE_ROBOT"()
     IS 'Emulating package variable. Code for all robot related errors.
 Тип ошибки: ошибка робота';
+CREATE OR REPLACE FUNCTION obj_ask."ERROR_TYPE_ASK"(
+	)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 4;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask."ERROR_TYPE_ASK"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask."ERROR_TYPE_ASK"()
+    IS 'Тип ошибки: ошибка уровня АСК';
 
 CREATE OR REPLACE FUNCTION obj_ask."CELL_TYPE_STORAGE_CELL"(
 	)
@@ -57,7 +71,6 @@ $BODY$;
 ALTER FUNCTION obj_ask."CELL_TYPE_STORAGE_CELL"() OWNER TO postgres;
 COMMENT ON FUNCTION obj_ask."CELL_TYPE_STORAGE_CELL"()
     IS 'Тип ячейки: ячейки для хранения товара';
-
 CREATE OR REPLACE FUNCTION obj_ask."CELL_TYPE_TRANSIT_1RP"(
 	)
     RETURNS bigint
@@ -73,7 +86,6 @@ ALTER FUNCTION obj_ask."CELL_TYPE_TRANSIT_1RP"() OWNER TO postgres;
 COMMENT ON FUNCTION obj_ask."CELL_TYPE_TRANSIT_1RP"()
     IS 'Emulating package variable. Virtual cell for inner warehouse transfers.
 Тип ячейки: транзитные виртуальные для перемещений внутри одного подсклада';
-
 CREATE OR REPLACE FUNCTION obj_ask."CELL_TYPE_TR_CELL"(
 	)
     RETURNS bigint
@@ -88,7 +100,20 @@ $BODY$;
 ALTER FUNCTION obj_ask."CELL_TYPE_TR_CELL"() OWNER TO postgres;
 COMMENT ON FUNCTION obj_ask."CELL_TYPE_TR_CELL"()
     IS 'Тип ячейки: транзитные ячейки двунаправленные';
-
+CREATE OR REPLACE FUNCTION obj_ask."CELL_TYPE_TR_CELL_INCOMING"(
+	)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 7;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask."CELL_TYPE_TR_CELL_INCOMING"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask."CELL_TYPE_TR_CELL_INCOMING"()
+    IS 'Тип ячейки: транзитные ячейки входящие';
 CREATE OR REPLACE FUNCTION obj_ask."CELL_TYPE_TR_CELL_OUTCOMING"(
 	)
     RETURNS bigint
@@ -186,6 +211,71 @@ COMMENT ON FUNCTION obj_ask.global_error_log(bigint, bigint, bigint, text)
     IS 'добавить лог о глобальной ошибке';
 
 
+CREATE OR REPLACE FUNCTION obj_ask.form_commands(
+    )
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rep repository;
+BEGIN
+    PERFORM obj_ask.log('');
+    PERFORM obj_ask.log('*********************************');
+    PERFORM obj_ask.log('Новый такт');
+    -- для сервера заказов
+    FOR rep IN (
+        SELECT *
+            FROM repository
+            WHERE abstract_level >= 4
+    ) LOOP
+        PERFORM obj_cmd_order.form_commands();
+        PERFORM obj_ask.log('  obj_cmd_order.Form_Commands is ok');
+    END LOOP;
+    -- для товарного и сервера контейнеров
+    PERFORM obj_cmd_gas.form_commands();
+    PERFORM obj_ask.log('  obj_cmd_gas.Form_Commands is ok');
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.form_commands() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.form_commands()
+    IS 'функция, которая вызывается из таймера для всего склада';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.is_cell_locked_by_cmd(
+    cid bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+    crec cell;
+BEGIN
+    SELECT count(*) INTO cnt
+        FROM cell_cmd_lock
+        WHERE cell_id = cid;
+    IF (cnt = 0) THEN
+        RETURN 0;
+    ELSE
+        SELECT * INTO crec
+            FROM cell
+            WHERE id = cid;
+        IF (cnt >= crec.max_full_size) THEN
+            RETURN 1;
+        ELSE
+            RETURN 0;
+        END IF;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.is_cell_locked_by_cmd(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.is_cell_locked_by_cmd(bigint)
+    IS 'не заблокирована ли ячейка командами?';
+
+
 CREATE OR REPLACE FUNCTION obj_ask.is_enable_container_accept(
     rp_id_ bigint,
     cnt_id_ bigint)
@@ -258,6 +348,356 @@ COMMENT ON FUNCTION obj_ask.is_can_accept_cmd()
     IS 'можно ли принимать команды от внешней системы?';
 
 
+CREATE OR REPLACE FUNCTION obj_ask.get_ask_name(
+    )
+    RETURNS text
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rr repository;
+BEGIN
+    FOR rr IN (
+        SELECT * FROM repository
+    ) LOOP
+        RETURN rr.name;
+    END LOOP;
+    RETURN null; -- Should be unreachable
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.get_ask_name() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.get_ask_name()
+    IS 'получить имя всего АСК';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.get_cell_name(
+    pcell_id bigint,
+    with_notes bigint DEFAULT 0)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    result TEXT;
+    cc cell;
+BEGIN
+    IF (with_notes = 0) THEN
+        SELECT c.sname INTO result
+            FROM cell c
+            WHERE c.id = pcell_id;
+        RETURN result;
+    ELSE
+        FOR cc IN (
+            SELECT *
+                FROM cell
+                WHERE id = pcell_id
+        ) LOOP
+            IF cc.notes IS NOT null THEN
+                RETURN (cc.sname || '-' || cc.notes);
+            ELSE
+                RETURN cc.sname;
+            END IF;
+        END LOOP;
+    END IF;
+    RETURN null;
+EXCEPTION WHEN others THEN
+    RETURN null;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.get_cell_name(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.get_cell_name(bigint, bigint)
+    IS 'получить имя ячейки';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.get_cmd_max_priority(
+    rp_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+    res BIGINT;
+BEGIN
+    SELECT count(*) INTO cnt
+        FROM command
+        WHERE state IN (0,1)
+            AND command_type_id = 1
+            AND rp_src_id = rp_id_
+            AND date_time_begin IS null;
+    IF (cnt = 0) THEN -- нет запущенных команд
+        RETURN 0;
+    ELSE
+        SELECT coalesce(max(priority), 0) INTO res
+            FROM command
+            WHERE command_type_id = 1
+                AND state IN (0,1)
+                AND rp_src_id = rp_id_
+                AND date_time_begin IS null;
+        RETURN res;
+    END IF;
+    RETURN 0;
+EXCEPTION WHEN others THEN
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.get_cmd_max_priority(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.get_cmd_max_priority(bigint)
+    IS 'берем максимальный приоритет команд на указанном подскладе';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.get_cnt_bc_by_id(
+    cnt_id_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cc container;
+BEGIN
+    FOR cc IN (
+        SELECT *
+            FROM container
+            WHERE id = coalesce(cnt_id_, 0)
+    ) LOOP
+        RETURN cc.barcode;
+    END LOOP;
+    RETURN ' ';
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.get_cnt_bc_by_id(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.get_cnt_bc_by_id(bigint)
+    IS 'взять ШК контейера по его ID';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.get_cur_max_cmd_priority(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+    res BIGINT;
+BEGIN
+    SELECT count(*) INTO cnt
+        FROM command
+        WHERE state IN (0,1,3)
+            AND command_type_id = 1
+            AND priority < 0
+            AND priority > -1000;
+    IF (cnt = 0) THEN -- нет запущенных команд
+        SELECT coalesce(max(priority), 0) INTO res
+            FROM command
+            WHERE command_type_id = 1
+                AND date_time_create >= date_trunc('day', LOCALTIMESTAMP)
+                AND priority < 0
+                AND priority > -1000;
+        RETURN res;
+    ELSE
+        SELECT coalesce(max(priority), 0) INTO res
+            FROM command
+            WHERE command_type_id = 1
+                AND state IN (0,1,3)
+                AND priority < 0
+                AND priority > -1000;
+        RETURN res;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.get_cur_max_cmd_priority() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.get_cur_max_cmd_priority()
+    IS 'берем максимальный текущий приоритет команд';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.get_desktop_container_history(
+    bc_ text)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res_ TEXT;
+    nn_ TEXT;
+    enter_char TEXT;
+    cg_id_ BIGINT;
+    cnt container;
+    cl cell;
+    cc RECORD;
+    gd good_desc;
+    cmdg RECORD;
+    any_cnt container;
+    co command_order;
+BEGIN
+    enter_char := chr(13) || chr(10);
+    FOR cnt IN (
+        SELECT *
+            FROM container
+            WHERE barcode = trim(bc_)
+    ) LOOP
+        res_ := 'Контейнер с ШК=' || cnt.barcode || ' id=' || cnt.id || enter_char;
+        IF (cnt.location = 1) THEN  -- в ячейках
+            FOR cl IN (
+                SELECT *
+                    FROM cell
+                    WHERE id = cnt.cell_id
+            ) LOOP
+                IF cl.hi_level_type NOT IN (12,15) THEN
+                    RETURN extend.str_concat(res_, 'Находится не на рабочем столе, а в ячейке ' || cl.sname || ' типа ' || cl.hi_level_type);
+                END IF;
+                res_ := extend.str_concat(res_, 'Контейнер в ячейке сброса ' || cl.sname || enter_char);
+            END LOOP;
+        ELSE
+            res_ := extend.str_concat(res_,'Контейнер за пределами АСК' || enter_char);
+        END IF;
+        FOR cc IN (
+            SELECT *
+                FROM container_content
+                WHERE container_id = cnt.id
+                    AND quantity > 0
+        ) LOOP
+            res_ := extend.str_concat(res_, '  в контейнере gd_id=' || cc.good_desc_id || ' qty=' || cc.quantity || enter_char);
+            FOR gd IN (
+                SELECT *
+                    FROM good_desc
+                    WHERE id = cc.good_desc_id
+            ) LOOP
+                res_ := extend.str_concat(res_, '    в карточке товара qty=' || gd.quantity || ' qty_reserved=' || gd.quantity_reserved || enter_char);
+            END LOOP;
+        END LOOP;
+        res_ := res_ || enter_char;
+        FOR cmdg IN (
+            SELECT c.id cmd_id,
+                crp.id crp_id,
+                ci.id ci_id,
+                command_to_run,
+                ci.date_time_create ci_date_time_create,
+                cg.*
+            FROM command c
+            INNER JOIN command_gas cg
+                ON c.command_gas_id = cg.id
+            INNER JOIN command_rp crp
+                ON crp.command_id = c.id
+            INNER JOIN command_inner ci
+                ON ci.command_rp_id = crp.id
+            WHERE c.container_id = cnt.id
+            ORDER BY ci.id DESC
+        ) LOOP
+            cg_id_ := cmdg.id;
+            res_ := extend.str_concat(res_,'Приехал по команде command_gas id='||cmdg.id||' good_desc_id='||cmdg.good_desc_id||' qty='||cmdg.quantity||' reserved='||cmdg.reserved||' cmd_state='||cmdg.state||' dtcr='||to_char(cmdg.date_time_create,'dd.mm.yy hh24:mi:ss')||enter_char);
+            res_ := extend.str_concat(res_,'  по команде command id='||cmdg.cmd_id||enter_char);
+            res_ := extend.str_concat(res_,'    по команде command_rp id='||cmdg.crp_id||enter_char);
+            res_ := extend.str_concat(res_,'     по команде command_inner id='||cmdg.ci_id||' cmd_text='||cmdg.command_to_run||' dtcr='||to_char(cmdg.ci_date_time_create,'dd.mm.yy hh24:mi:ss')||enter_char||enter_char);
+            FOR any_cnt IN (
+                SELECT c.barcode
+                    FROM command cmd
+                    INNER JOIN container c
+                        ON cmd.container_id = c.id
+                    WHERE cmd.command_gas_id = cmdg.id
+                        AND c.id <> cnt.id
+            ) LOOP
+                res_ := extend.str_concat(res_,'  подвозился еще иной контейнер ='||any_cnt.barcode||enter_char||enter_char);
+            END LOOP;
+            FOR co IN (
+                SELECT *
+                    FROM command_order
+                    WHERE command_gas_id = cmdg.id
+                    ORDER BY id
+            ) LOOP
+                IF coalesce(co.cmd_order_id, 0) = 0 THEN
+                    nn_ := co.order_number;
+                ELSE -- дозаказ по дефициту
+                    nn_ := 'дозаказ дефицита по ' || obj_ask.get_root_cmd_order_number(co.cmd_order_id);
+                END IF;
+                res_ := extend.str_concat(res_,'На основании cmd_order id='||co.id||' number_='||nn_||' qty='||co.quantity||' qty_promis='||co.quantity_promis||' state='||co.state||' dtcr='||to_char(co.date_time_create,'dd.mm.yy hh24:mi:ss')||enter_char);
+                FOR cc IN (
+                    SELECT ccc.*,
+                        cc.state,
+                        cc.date_time_begin,
+                        cc.container_barcode
+                        FROM container_collection cc
+                        INNER JOIN container_collection_content ccc
+                            ON ccc.cc_id = cc.id
+                        WHERE cmd_order_id = co.id
+                ) LOOP
+                    res_ := extend.str_concat(res_,'  container_collection id='||cc.cc_id||'  cont_barcode='||cc.container_barcode ||' state='||cc.state||' dtb='||to_char(cc.date_time_begin,'dd.mm.yy hh24:mi:ss')||enter_char);
+                    res_ := extend.str_concat(res_,'    container_collection_content qty_need='||cc.quantity_need||' qty_real='||cc.quantity_real||' qty_deficite='||cc.quantity_deficit||enter_char);
+                END LOOP;
+            END LOOP;
+            EXIT; -- берем только последнюю команду
+        END LOOP;
+        RETURN res_;
+    END LOOP;
+    RETURN 'Контейнер не найден';
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.get_desktop_container_history(text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.get_desktop_container_history(text)
+    IS 'сформировать историю перемещений заданного контейнера';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.get_shelving_fullness(
+    shelv_id bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res NUMERIC;
+    ff BIGINT;
+    ee BIGINT;
+BEGIN
+    res := 0;
+    SELECT coalesce(sum(is_full), 0) INTO ff
+        FROM cell
+        WHERE shelving_id = shelv_id
+            AND hi_level_type NOT IN (11,13);
+    SELECT coalesce(sum(max_full_size), 0) INTO ee
+        FROM cell
+        WHERE shelving_id = shelv_id
+            AND hi_level_type NOT IN (11,13);
+    res := ff / ee;
+    IF (res > 1) THEN
+        RETURN 1;
+    ELSE
+        RETURN 0;
+    END IF;
+EXCEPTION WHEN others THEN
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.get_shelving_fullness(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.get_shelving_fullness(bigint)
+    IS 'высчитать заполненность стеллажа';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.get_work_status(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+BEGIN
+    SELECT is_work INTO res
+        FROM repository;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.get_work_status() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.get_work_status()
+    IS 'получить состояние всего АСК';
+
+
 CREATE OR REPLACE FUNCTION obj_ask.calc_distance(
     rp_type bigint,
     max_npp bigint,
@@ -292,6 +732,160 @@ $BODY$;
 ALTER FUNCTION obj_ask.calc_distance(bigint, bigint, bigint, bigint) OWNER TO postgres;
 COMMENT ON FUNCTION obj_ask.calc_distance(bigint, bigint, bigint, bigint)
     IS 'вычисляет расстояние между двумя треками npp';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.calc_distance_on_way(
+    rp_type bigint,
+    max_npp bigint,
+    n1 bigint,
+    n2 bigint,
+    dir_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+    nn1 BIGINT;
+    nn2 BIGINT;
+BEGIN
+    IF (dir_ = 1) THEN -- по часовой
+        IF (n2 > n1) THEN
+            res := n2 - n1;
+        ELSE
+            IF (rp_type = 1) THEN -- кольцевой
+                res := max_npp - n1 + n2;
+            ELSE
+                res := extend.infinity;
+            END IF;
+        END IF;
+    ELSE -- против
+        IF (n2 < n1) THEN
+            res := n1 - n2;
+        ELSE
+            IF (rp_type = 1) THEN -- кольцевой
+                res := max_npp - n2 + n1;
+            ELSE
+                res := extend.infinity;
+            END IF;
+        END IF;
+    END IF;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.calc_distance_on_way(bigint, bigint, bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.calc_distance_on_way(bigint, bigint, bigint, bigint, bigint)
+    IS 'вычисляем расстояние по направлению';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.change_work_status(
+    new_state_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rowcount__ BIGINT;
+BEGIN
+    PERFORM obj_ask.log('Пришло смена состояния АСК на ' || new_state_);
+    IF (new_state_ = 0) THEN
+        UPDATE repository
+            SET is_work = 0
+            WHERE is_work <> 0;
+    ELSIF (new_state_ = 1) then
+        UPDATE repository
+            SET is_work = 1,
+                last_sarmat_timer = LOCALTIMESTAMP
+            WHERE is_work <> 1;
+    ELSIF (new_state_ = 3) THEN
+        UPDATE repository
+            SET is_work = 3,
+                last_sarmat_timer = LOCALTIMESTAMP
+            WHERE is_work <> 3;
+    ELSE
+        PERFORM obj_ask.log('ERROR - пришло недопустимое новое состояние АСК');
+    END IF;
+    GET DIAGNOSTICS rowcount__ := ROW_COUNT;
+    IF (rowcount__ > 0) THEN
+        PERFORM obj_ask.log('  состояние АСК сменилось успешно');
+    ELSE
+        PERFORM obj_ask.log('  нет нужды менять состояние');
+    END IF;
+    -- COMMIT;
+end;
+$BODY$;
+ALTER FUNCTION obj_ask.change_work_status(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.change_work_status(bigint)
+    IS 'Переключить АСК в указанный режим';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.to_pause(
+    )
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    PERFORM obj_ask.change_work_status(0);
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.to_pause() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.to_pause()
+    IS 'Переключить АСК в режим <Пауза>';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.to_work(
+    )
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    PERFORM obj_ask.change_work_status(1);
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.to_work() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.to_work()
+    IS 'Переключить АСК в режим <Работает>';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.shalving_need_redraw_clear(
+    )
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    DELETE FROM shelving_need_to_redraw;
+    -- COMMIT;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.shalving_need_redraw_clear() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.shalving_need_redraw_clear()
+    IS 'очистить список стеллажей для перерисовки';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.shalving_need_redraw_clear(
+    max_id_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    DELETE FROM shelving_need_to_redraw
+        WHERE id <= max_id_;
+    -- COMMIT;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.shalving_need_redraw_clear(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.shalving_need_redraw_clear(bigint)
+    IS 'очистить список стеллажей для перерисовки (но не более чем заданное ID)';
 
 
 CREATE OR REPLACE FUNCTION obj_ask.set_command(
@@ -607,5 +1201,102 @@ $BODY$;
 ALTER FUNCTION obj_ask.get_good_desc_id_by_id(text) OWNER TO postgres;
 COMMENT ON FUNCTION obj_ask.get_good_desc_id_by_id(text)
     IS 'получить числовой ID товара по символьному ID';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.gen_cmd_err_rep(
+    )
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    fn__ TEXT;
+    cer RECORD;
+BEGIN
+    fn__ := 'cmd_err.csv';
+    PERFORM pg_catalog.pg_file_write(
+        fn__,
+        'Sklad;CMD ID;DTime;cmd;container;cell;p-type;',
+        false
+    );
+    FOR cer IN (
+        SELECT rp.name sklad,
+            t.id,
+            to_char(date_time_begin,'dd.mm.yy hh24:mi') date_time_begin,
+            command_to_run,
+            obj_ask.get_cnt_bc_by_id(container_id) container,
+            coalesce(cell_src_sname, cell_dest_sname) cell,
+            (
+                SELECT short_name
+                    FROM problem_resolving
+                    WHERE id = problem_resolving_id
+            ) ptype
+            FROM command_inner t
+            INNER JOIN repository_part rp
+                ON rp.id = t.rp_id
+            WHERE state = 2
+            ORDER BY date_time_create
+    ) LOOP
+        PERFORM pg_catalog.pg_file_write(
+            fn__,
+            cer.sklad || ';' || cer.id || ';'
+                || cer.date_time_begin || ';"'
+                || cer.command_to_run || '";"'
+                || cer.container || '";'
+                || cer.cell || ';'
+                || cer.ptype ||';',
+            true
+        );
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.gen_cmd_err_rep() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.gen_cmd_err_rep()
+    IS 'сформировать в файле cmd_err.csv отчет по ошибкам команд роботов';
+
+
+CREATE OR REPLACE FUNCTION obj_ask.workload_info(
+    )
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    last_dt DATE;
+    res BIGINT;
+    rr repository_part;
+BEGIN
+    last_dt := date_trunc('day', LOCALTIMESTAMP) - INTERVAL '14 days';
+    RAISE NOTICE '%', to_char(LOCALTIMESTAMP,'dd.mm.yy');
+    RAISE NOTICE 'Нагрузка за последние две недели';
+    SELECT count(*) INTO res
+        FROM command_rp
+        WHERE date_time_create >= last_dt;
+    RAISE NOTICE 'Всего команд перемещения контейнеров: %', res;
+    FOR rr IN (
+        SELECT *
+            FROM repository_part
+            ORDER BY id
+    ) LOOP
+        SELECT count(*) INTO res
+            FROM command_rp
+            WHERE date_time_create >= last_dt
+                AND rp_id = rr.id;
+        RAISE NOTICE '  из них по складу %: %', rr.id, res;
+    END LOOP;
+    RAISE NOTICE '';
+    SELECT count(*) INTO res
+        FROM command_inner
+        WHERE date_time_create >= last_dt
+            AND date_time_end IS null;
+    RAISE NOTICE 'Всего ошибок команд перемещения контейнеров: %', res;
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.workload_info() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.workload_info()
+    IS 'сформировать отчет о нагрузке на АСК за последнюю неделю (отчет служебный, выводится в dbms_output)';
+
 
 -- vim: ft=pgsql
