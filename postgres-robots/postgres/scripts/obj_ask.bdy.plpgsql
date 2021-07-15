@@ -515,6 +515,35 @@ COMMENT ON FUNCTION obj_ask.get_cur_max_cmd_priority()
     IS 'берем максимальный текущий приоритет команд';
 
 
+CREATE OR REPLACE FUNCTION obj_ask.get_root_cmd_order_number(
+    cid_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    co command_order;
+BEGIN
+    FOR co IN (
+        SELECT *
+            FROM command_order
+            WHERE id = cid_
+    ) LOOP
+        IF coalesce(co.cmd_order_id, 0) = 0 THEN -- root
+            RETURN co.order_number;
+        ELSE
+            RETURN obj_ask.get_root_cmd_order_number(co.cmd_order_id);
+        END IF;
+    END LOOP;
+    RETURN null; -- Should be unreachable
+END;
+$BODY$;
+ALTER FUNCTION obj_ask.get_root_cmd_order_number(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.get_root_cmd_order_number(bigint)
+    IS 'служебная - получить № исходной команды сбора товаров';
+
+
 CREATE OR REPLACE FUNCTION obj_ask.get_desktop_container_history(
     bc_ text)
     RETURNS text
@@ -549,12 +578,13 @@ BEGIN
                     WHERE id = cnt.cell_id
             ) LOOP
                 IF cl.hi_level_type NOT IN (12,15) THEN
-                    RETURN extend.str_concat(res_, 'Находится не на рабочем столе, а в ячейке ' || cl.sname || ' типа ' || cl.hi_level_type);
+                    RETURN extend.str_concat(res_, 'Находится не на рабочем столе, а в ячейке ' || cl.sname
+                        || ' типа ' || cl.hi_level_type);
                 END IF;
                 res_ := extend.str_concat(res_, 'Контейнер в ячейке сброса ' || cl.sname || enter_char);
             END LOOP;
         ELSE
-            res_ := extend.str_concat(res_,'Контейнер за пределами АСК' || enter_char);
+            res_ := extend.str_concat(res_, 'Контейнер за пределами АСК' || enter_char);
         END IF;
         FOR cc IN (
             SELECT *
@@ -562,13 +592,15 @@ BEGIN
                 WHERE container_id = cnt.id
                     AND quantity > 0
         ) LOOP
-            res_ := extend.str_concat(res_, '  в контейнере gd_id=' || cc.good_desc_id || ' qty=' || cc.quantity || enter_char);
+            res_ := extend.str_concat(res_, '  в контейнере gd_id=' || cc.good_desc_id
+                || ' qty=' || cc.quantity || enter_char);
             FOR gd IN (
                 SELECT *
                     FROM good_desc
                     WHERE id = cc.good_desc_id
             ) LOOP
-                res_ := extend.str_concat(res_, '    в карточке товара qty=' || gd.quantity || ' qty_reserved=' || gd.quantity_reserved || enter_char);
+                res_ := extend.str_concat(res_, '    в карточке товара qty=' || gd.quantity
+                    || ' qty_reserved=' || gd.quantity_reserved || enter_char);
             END LOOP;
         END LOOP;
         res_ := res_ || enter_char;
@@ -590,10 +622,17 @@ BEGIN
             ORDER BY ci.id DESC
         ) LOOP
             cg_id_ := cmdg.id;
-            res_ := extend.str_concat(res_,'Приехал по команде command_gas id='||cmdg.id||' good_desc_id='||cmdg.good_desc_id||' qty='||cmdg.quantity||' reserved='||cmdg.reserved||' cmd_state='||cmdg.state||' dtcr='||to_char(cmdg.date_time_create,'dd.mm.yy hh24:mi:ss')||enter_char);
-            res_ := extend.str_concat(res_,'  по команде command id='||cmdg.cmd_id||enter_char);
-            res_ := extend.str_concat(res_,'    по команде command_rp id='||cmdg.crp_id||enter_char);
-            res_ := extend.str_concat(res_,'     по команде command_inner id='||cmdg.ci_id||' cmd_text='||cmdg.command_to_run||' dtcr='||to_char(cmdg.ci_date_time_create,'dd.mm.yy hh24:mi:ss')||enter_char||enter_char);
+            res_ := extend.str_concat(res_, 'Приехал по команде command_gas id=' || cmdg.id
+                || ' good_desc_id=' || cmdg.good_desc_id
+                || ' qty=' || cmdg.quantity
+                || ' reserved=' || cmdg.reserved
+                || ' cmd_state=' || cmdg.state
+                || ' dtcr=' || to_char(cmdg.date_time_create, 'dd.mm.yy hh24:mi:ss') || enter_char);
+            res_ := extend.str_concat(res_, '  по команде command id=' || cmdg.cmd_id || enter_char);
+            res_ := extend.str_concat(res_, '    по команде command_rp id=' || cmdg.crp_id || enter_char);
+            res_ := extend.str_concat(res_, '     по команде command_inner id=' || cmdg.ci_id
+                || ' cmd_text=' || cmdg.command_to_run
+                || ' dtcr=' || to_char(cmdg.ci_date_time_create, 'dd.mm.yy hh24:mi:ss') || enter_char || enter_char);
             FOR any_cnt IN (
                 SELECT c.barcode
                     FROM command cmd
@@ -602,7 +641,7 @@ BEGIN
                     WHERE cmd.command_gas_id = cmdg.id
                         AND c.id <> cnt.id
             ) LOOP
-                res_ := extend.str_concat(res_,'  подвозился еще иной контейнер ='||any_cnt.barcode||enter_char||enter_char);
+                res_ := extend.str_concat(res_, '  подвозился еще иной контейнер =' || any_cnt.barcode || enter_char || enter_char);
             END LOOP;
             FOR co IN (
                 SELECT *
@@ -615,19 +654,29 @@ BEGIN
                 ELSE -- дозаказ по дефициту
                     nn_ := 'дозаказ дефицита по ' || obj_ask.get_root_cmd_order_number(co.cmd_order_id);
                 END IF;
-                res_ := extend.str_concat(res_,'На основании cmd_order id='||co.id||' number_='||nn_||' qty='||co.quantity||' qty_promis='||co.quantity_promis||' state='||co.state||' dtcr='||to_char(co.date_time_create,'dd.mm.yy hh24:mi:ss')||enter_char);
+                res_ := extend.str_concat(res_,'На основании cmd_order id=' || co.id
+                    || ' number_=' || nn_
+                    || ' qty=' || co.quantity
+                    || ' qty_promis=' || co.quantity_promis
+                    || ' state=' || co.state
+                    || ' dtcr=' || to_char(co.date_time_create,'dd.mm.yy hh24:mi:ss') || enter_char);
                 FOR cc IN (
                     SELECT ccc.*,
-                        cc.state,
-                        cc.date_time_begin,
-                        cc.container_barcode
-                        FROM container_collection cc
+                        cc_.state,
+                        cc_.date_time_begin,
+                        cc_.container_barcode
+                        FROM container_collection cc_
                         INNER JOIN container_collection_content ccc
-                            ON ccc.cc_id = cc.id
+                            ON ccc.cc_id = cc_.id
                         WHERE cmd_order_id = co.id
                 ) LOOP
-                    res_ := extend.str_concat(res_,'  container_collection id='||cc.cc_id||'  cont_barcode='||cc.container_barcode ||' state='||cc.state||' dtb='||to_char(cc.date_time_begin,'dd.mm.yy hh24:mi:ss')||enter_char);
-                    res_ := extend.str_concat(res_,'    container_collection_content qty_need='||cc.quantity_need||' qty_real='||cc.quantity_real||' qty_deficite='||cc.quantity_deficit||enter_char);
+                    res_ := extend.str_concat(res_, '  container_collection id=' || cc.cc_id
+                        || '  cont_barcode=' || cc.container_barcode
+                        || ' state=' || cc.state
+                        || ' dtb=' || to_char(cc.date_time_begin,'dd.mm.yy hh24:mi:ss') || enter_char);
+                    res_ := extend.str_concat(res_, '    container_collection_content qty_need=' || cc.quantity_need
+                        || ' qty_real=' || cc.quantity_real
+                        || ' qty_deficite=' || cc.quantity_deficit || enter_char);
                 END LOOP;
             END LOOP;
             EXIT; -- берем только последнюю команду
@@ -757,7 +806,7 @@ BEGIN
             IF (rp_type = 1) THEN -- кольцевой
                 res := max_npp - n1 + n2;
             ELSE
-                res := extend.infinity;
+                res := extend.infinity();
             END IF;
         END IF;
     ELSE -- против
@@ -767,7 +816,7 @@ BEGIN
             IF (rp_type = 1) THEN -- кольцевой
                 res := max_npp - n2 + n1;
             ELSE
-                res := extend.infinity;
+                res := extend.infinity();
             END IF;
         END IF;
     END IF;

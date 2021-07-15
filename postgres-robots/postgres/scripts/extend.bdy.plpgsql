@@ -1,0 +1,42 @@
+CREATE OR REPLACE FUNCTION extend.str_concat(
+    s1 text,
+    s2 text,
+    dlm text DEFAULT ' ')
+    RETURNS text
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    IF s1 IS null THEN
+        RETURN s2;
+    END IF;
+    IF s2 IS null THEN
+        RETURN s1;
+    END IF;
+    RETURN s1 || dlm || s2;
+END;
+$BODY$;
+ALTER FUNCTION extend.str_concat(text, text, text) OWNER TO postgres;
+COMMENT ON FUNCTION extend.str_concat(text, text, text)
+    IS 'служебная функция интеллектуальной конкатенации строк';
+
+
+CREATE OR REPLACE FUNCTION extend.infinity(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    -- 8 byte max value
+    RETURN 9223372036854775807;
+END;
+$BODY$;
+ALTER FUNCTION extend.infinity() OWNER TO postgres;
+COMMENT ON FUNCTION extend.infinity()
+    IS '';
+
+
+-- vim: ft=pgsql

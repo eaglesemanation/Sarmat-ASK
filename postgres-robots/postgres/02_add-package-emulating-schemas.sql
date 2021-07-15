@@ -33,3 +33,7 @@ COMMENT ON SCHEMA obj_cmd_gas IS 'Migrated obj_cmd_gas package';
 DROP SCHEMA IF EXISTS obj_doc_expense;
 CREATE SCHEMA obj_doc_expense AUTHORIZATION postgres;
 COMMENT ON SCHEMA obj_doc_expense IS 'Migrated obj_doc_expense package';
+
+DROP SCHEMA IF EXISTS extend;
+CREATE SCHEMA extend AUTHORIZATION postgres;
+COMMENT ON SCHEMA extend IS 'Migrated extend package';
