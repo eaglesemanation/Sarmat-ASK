@@ -431,6 +431,33 @@ COMMENT ON FUNCTION service.is_cell_near_edge(bigint)
 ячейка возде края №№ треков?';
 
 
+CREATE OR REPLACE FUNCTION service.is_cell_on_comp(
+    cid_ bigint,
+    cname text)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cc cell;
+BEGIN
+    FOR cc IN (
+        SELECT *
+            FROM cell
+            WHERE id = cid_
+                AND upper(notes) = upper(cname)
+    ) LOOP
+        RETURN 1;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION service.is_cell_on_comp(bigint, text) OWNER TO postgres;
+COMMENT ON FUNCTION service.is_cell_on_comp(bigint, text)
+    IS 'ячейка закреплена за компьютером?';
+
+
 CREATE OR REPLACE FUNCTION service.cell_acc_only_1_robot(
     src_ bigint,
     dst_ bigint)
@@ -508,6 +535,39 @@ ALTER FUNCTION service.is_cell_over_locked(bigint) OWNER TO postgres;
 COMMENT ON FUNCTION service.is_cell_over_locked(bigint)
     IS 'Check if amount of locks on cell is over max.
 не перезаблокирование ли ячейки командами?';
+
+
+CREATE OR REPLACE FUNCTION service.is_cell_accept_enable(
+    cfull bigint,
+    cfullmax bigint,
+    cid bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+BEGIN
+    IF (cfull >= cfullmax) THEN
+        -- и так полон
+        RETURN 0;
+    ELSE
+        -- считаем сколько блокировок
+        SELECT count(*) INTO cnt
+            FROM cell_cmd_lock
+            WHERE cell_id = cid;
+        IF (cnt + cfull) >= cfullmax THEN
+            RETURN 0;
+        ELSE
+            RETURN 1;
+        END IF;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION service.is_cell_accept_enable(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION service.is_cell_accept_enable(bigint, bigint, bigint)
+    IS 'возвращает 1, если можно еще дать команду в эту ячейку (проверяет is_full и блокировки)';
 
 
 CREATE OR REPLACE FUNCTION service.is_cell_cmd_locked(
@@ -724,6 +784,38 @@ $BODY$;
 ALTER FUNCTION service.unlock_all_not_ness(bigint) OWNER TO postgres;
 COMMENT ON FUNCTION service.unlock_all_not_ness(bigint)
     IS 'разблокируем все, заблокированное текущим роботом кроме расстояния вокруг робота';
+
+
+CREATE OR REPLACE FUNCTION service.empty_cell_capability(
+    cfull bigint,
+    cfullmax bigint,
+    cid bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+BEGIN
+    IF (cfull = cfullmax) THEN
+        RETURN 0;
+    ELSE
+        -- считаем сколько блокировок
+        SELECT count(*) INTO cnt
+            FROM cell_cmd_lock
+            WHERE cell_id = cid;
+        IF (cnt + cfull >= cfullmax) THEN
+            RETURN 0;
+        ELSE
+            RETURN cfullmax - (cnt + cfull);
+        END IF;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION service.empty_cell_capability(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION service.empty_cell_capability(bigint, bigint, bigint)
+    IS 'сколько еще может влезть коман в ячейку';
 
 
 CREATE OR REPLACE FUNCTION service.cell_lock_by_cmd(

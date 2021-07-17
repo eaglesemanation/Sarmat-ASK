@@ -1,3 +1,19 @@
+CREATE OR REPLACE FUNCTION obj_cmd_gas."CMD_PRIORITY_CONTAINER_ACCEPT"(
+    )
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN -9999999;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas."CMD_PRIORITY_CONTAINER_ACCEPT"() OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas."CMD_PRIORITY_CONTAINER_ACCEPT"()
+    IS 'приоритет команды при приеме контейнера на хранение - самый низкий';
+
+
 CREATE OR REPLACE FUNCTION obj_cmd_gas.log(
     s_ text)
     RETURNS void
@@ -13,6 +29,1963 @@ $BODY$;
 ALTER FUNCTION obj_cmd_gas.log(text) OWNER TO postgres;
 COMMENT ON FUNCTION obj_cmd_gas.log(text)
     IS 'добавить строку в журнал (лог)';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.gd_resrve_on_cg_otbor(
+    rp_ repository_part)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    gdid_ BIGINT;
+    gd_party_id_ TEXT;
+    qnt BIGINT;
+    rps_rec repository;
+    nr command_gas;
+BEGIN
+    SELECT * INTO rps_rec
+        FROM repository;
+    -- вначале резервируем товар - пытаемся
+    FOR nr IN (
+        SELECT *
+            FROM command_gas
+            WHERE state = 0
+                AND rp_id = rp_.id
+                AND command_type_id = 12
+                AND reserved = 0
+    ) LOOP
+        SELECT good_desc_id INTO gdid_
+            FROM good_desc
+            WHERE id = nr.good_desc_id;
+        PERFORM obj_ask.log('Резервируем товар ' || gdid_);
+        IF (rps_rec.storage_by_firm = 1) THEN
+            SELECT sum(quantity) INTO qnt
+                FROM firm_gd
+                WHERE gd_id = nr.good_desc_id
+                    AND firm_id = nr.firm_id;
+            IF (qnt > 0) THEN
+                -- есть что резервировать
+                IF (qnt >= nr.quantity) THEN
+                    qnt := nr.quantity;
+                END IF;
+                UPDATE firm_gd
+                    SET quantity_reserved = quantity_reserved + qnt,
+                        quantity = quantity - qnt
+                    WHERE gd_id = nr.good_desc_id
+                        AND firm_id = nr.firm_id;
+            END IF;
+        ELSIF coalesce(rps_rec.is_party_calc, 0) = 1 THEN -- учет по партиям
+            IF coalesce(nr.gd_party_id, 0) = 0 THEN -- пустая партия
+                SELECT id INTO gd_party_id_
+                    FROM gd_party
+                    WHERE gd_id = gdid_
+                        AND pname IS null;
+            ELSE
+                gd_party_id_ := nr.gd_party_id;
+            END IF;
+            UPDATE gd_party
+                SET qty = qty + nr.quantity
+                WHERE gd_id = gdid_
+                    AND (
+                        pname IS null AND coalesce(nr.gd_party_id, 0) = 0
+                        OR
+                        nr.gd_party_id::TEXT = id
+                    );
+        ELSE -- учет не по партиям, ни по фирмам
+            SELECT sum(quantity) INTO qnt
+                FROM good_desc
+                WHERE id = nr.good_desc_id;
+            IF (qnt > 0) THEN
+                -- есть что резервировать
+                IF (qnt >= nr.quantity) THEN
+                    qnt := nr.quantity;
+                END IF;
+                UPDATE good_desc
+                    SET quantity_reserved = quantity_reserved + qnt,
+                        quantity = quantity - qnt
+                    WHERE id = nr.good_desc_id;
+            END IF;
+        END IF;
+        UPDATE command_gas
+            SET reserved = 1,
+                quantity_promis = qnt
+            WHERE id = nr.id;
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.gd_resrve_on_cg_otbor(repository_part) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.gd_resrve_on_cg_otbor(repository_part)
+    IS 'зарезервировать товар по команде';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.get_always_out_bcg(
+    cg_id bigint,
+    gd_id_ text,
+    gd_party_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    sq_out BIGINT;
+    sq_now_out BIGINT;
+BEGIN
+    -- уже выдано по команде кол-ва
+    SELECT coalesce(sum(cooc.quantity), 0) INTO sq_out
+        FROM command_order_out_container cooc
+        INNER JOIN command_order co
+            ON co.id = cooc.cmd_order_id
+        WHERE co.command_gas_id = cg_id
+            AND cooc.command_gas_id = cg_id;
+    -- везется в контейнерах
+    --select nvl(sum(cc.quantity),0)  into sq_now_out
+    SELECT /*+RULE*/ coalesce(sum(cop.quantity_to_pick), 0) INTO sq_now_out
+        FROM container_content cc
+        INNER JOIN command c
+            ON cc.container_id = c.container_id
+        INNER JOIN command_gas_out_container_plan cop
+            ON cop.container_id = cc.container_id
+        WHERE c.command_gas_id = cg_id
+            AND cc.good_desc_id = gd_id_
+            AND coalesce(cc.gdp_id, 0) = coalesce(gd_party_id_, 0)
+            AND cop.cmd_gas_id = c.command_gas_id
+            -- команда незавершена или ячейки целевые не есть ячейки сброса
+            AND (
+                -- либо явно команды в яч. сброса
+                (c.state <> 5 AND is_intermediate = 0)
+                OR
+                -- либо в буфер, но до сброса
+                (c.state IN (0,1,3,5)
+                    AND is_intermediate=1
+                    AND NOT exists(
+                        SELECT *
+                            FROM command
+                            WHERE command_gas_id = cg_id
+                                AND container_id = c.container_id
+                                AND id <> c.id
+                                AND is_intermediate=0
+                    )
+                )
+            );
+    -- возвращаем сколько уже привезено
+    -- service.log2file('          GAS: get_always_out_bcg='||nvl(sq_out+sq_now_out,0)||' sq_out='||sq_out||' sq_now_out='||sq_now_out);
+    RETURN coalesce(sq_out + sq_now_out, 0);
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.get_always_out_bcg(bigint, text, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.get_always_out_bcg(bigint, text, bigint)
+    IS 'считает, сколько уже подвезено товара по command_gas';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.prav_cg_status(
+    rp_id_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cg_ RECORD;
+BEGIN
+    -- проверяем, есть ли команды, по которым вроде все подвезено/подвозится, а они не в 3-м статусе
+    FOR cg_ IN (
+        SELECT /*+RULE*/ *
+            FROM command_gas
+            WHERE state_ind IN (0,1)
+                AND command_type_id = 12
+                AND rp_id = rp_id_
+                AND (quantity - obj_cmd_gas.get_always_out_bcg(id, good_desc_id, gd_party_id)) <= 0
+    ) LOOP
+        -- исправляем бардак
+        UPDATE command_gas
+            SET state = 3
+            WHERE id = cg_.id;
+        PERFORM obj_ask.log('    prav_cg_status: исправили бардак - перевели в 3-й статус command_gas с id=' || cg_.id);
+    END LOOP;
+    -- проверяем, есть ли уже выполненные команды, но все еще находящиес в статусе 3
+    FOR cg_ IN (
+        SELECT cg.id, cg.quantity, sum(cgop.quantity_to_pick)
+            FROM command_gas_out_container cgo
+            INNER JOIN command_gas cg
+                ON cgo.cmd_gas_id = cg.id
+            INNER JOIN command_gas_out_container_plan cgop
+                ON cgop.cmd_gas_id = cgo.cmd_gas_id
+                    AND cgop.container_id = cgo.container_id
+            WHERE state_ind = 3
+                AND cg.rp_id = rp_id_
+            GROUP BY cg.id, cg.quantity
+            HAVING sum(cgop.quantity_to_pick) >= cg.quantity
+    ) LOOP
+        UPDATE command_gas
+            SET state = 5
+            WHERE id = cg_.id;
+        PERFORM obj_ask.log('    prav_cg_status: исправили бардак - перевели в 5-й статус command_gas с id=' || cg_.id);
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.prav_cg_status(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.prav_cg_status(bigint)
+    IS 'исправить статус команд, если нужно';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.gen_cmd_from_buffer(
+    rp_ repository_part)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+    cmd_last_id BIGINT;
+    new_cmd_id BIGINT;
+    md RECORD;
+    cmdlast command;
+BEGIN
+    IF rp_.use_buffer_concept = 0 THEN
+        RETURN 0;
+    END IF;
+    -------------------------------------------
+    -- есть ли товар в буферной зоне склада отбора
+    ------------------------------------------
+    SELECT count(*) INTO cnt
+        FROM cell c
+        WHERE zone_id = 0
+            AND repository_part_id = rp_.id
+            AND hi_level_type = 1
+            AND is_full = 1
+            AND service.is_cell_cmd_locked(c.id) = 0;
+    IF (cnt > 0) THEN
+        PERFORM obj_ask.log('    GAS: есть полных буферных ячеек =' || cnt);
+        -- а есть ли ячейки сброса свободные?
+        SELECT count(*) INTO cnt
+            FROM cell c
+            WHERE c.is_full < c.max_full_size
+                AND repository_part_id = rp_.id
+                AND hi_level_type = 12
+                AND is_error = 0
+                AND service.is_cell_accept_enable(c.is_full, c.max_full_size, c.id) = 1;
+        PERFORM obj_ask.log('    GAS: и ячейки сброса освободились=' || cnt);
+        IF (cnt > 0) THEN
+            -- берем минимальную дистанцию между яч сброса и буф зоной
+            FOR md IN (
+                SELECT sbr.id sbr_id, sbr.sname sbr_sname,
+                    buf.id buf_id, buf.sname buf_sname
+                    FROM cell sbr
+                    CROSS JOIN cell buf
+                    WHERE sbr.is_full < sbr.max_full_size
+                        AND sbr.repository_part_id = rp_.id
+                        AND sbr.hi_level_type = 12
+                        AND sbr.is_error = 0
+                        AND service.is_cell_accept_enable(sbr.is_full,sbr.max_full_size,sbr.id) = 1
+                        AND buf.zone_id = 0
+                        AND buf.repository_part_id = rp_.id
+                        AND buf.hi_level_type = 1
+                        AND buf.is_error = 0
+                        AND buf.is_full = 1
+                        AND service.is_cell_cmd_locked(buf.id) = 0
+                ORDER BY obj_ask.calc_distance(rp_.repository_type, rp_.max_npp,sbr.track_npp, buf.track_npp),
+                    service.empty_cell_capability(sbr.is_full, sbr.max_full_size, sbr.id)
+            ) LOOP
+                -- есть и ячейка откуда, и ячейка куда
+                PERFORM obj_ask.log('    GAS: есть и ячейка откуда, и ячейка куда');
+                SELECT max(id) INTO cmd_last_id
+                    FROM command
+                    WHERE command_type_id = 1
+                        AND cell_dest_id = md.buf_id
+                        AND state = 5
+                        AND is_intermediate = 1;
+                FOR cmdlast IN (
+                    SELECT *
+                        FROM command
+                        WHERE id = cmd_last_id
+                ) LOOP
+                    -- добавляем команду
+                    INSERT INTO command (
+                        command_gas_id, command_type_id, rp_src_id,
+                        cell_src_sname, rp_dest_id, cell_dest_sname,
+                        priority, container_id
+                    ) VALUES (
+                        cmdlast.command_gas_id, 1, rp_.id,
+                        md.buf_sname, rp_.id, md.sbr_sname,
+                        1, cmdlast.container_id
+                    ) RETURNING id INTO new_cmd_id;
+                    UPDATE container
+                        SET cell_goal_id = obj_rpart.get_cell_id_by_name(rp_.id, md.sbr_sname)
+                        WHERE id = cmdlast.container_id;
+                END LOOP;
+                EXIT;
+            END LOOP;
+            RETURN 1;
+        END IF;
+    END IF;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.gen_cmd_from_buffer(repository_part) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.gen_cmd_from_buffer(repository_part)
+    IS 'сформировать команды для буферной зоны';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.get_cg_was_cnt_planned(
+    cg_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+BEGIN
+    SELECT coalesce(sum(quantity_to_pick),0) INTO res
+        FROM command_gas_out_container_plan
+        WHERE cmd_gas_id = cg_id_;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.get_cg_was_cnt_planned(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.get_cg_was_cnt_planned(bigint)
+    IS 'сколько штук запланировано к подвозу?';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.get_last_side_zone(
+    rp_id_ bigint,
+    side_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+BEGIN
+    SELECT zone_id INTO res
+        FROM last_side_zone
+        WHERE side = side_
+            AND rp_id = rp_id_;
+    RETURN res;
+EXCEPTION WHEN others THEN
+    RETURN 1;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.get_last_side_zone(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.get_last_side_zone(bigint, bigint)
+    IS 'получить последнюю сторону команды для конкретной зоны';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.get_quantity_accordance(
+    delta bigint,
+    rpmode bigint,
+    q_cont bigint)
+    RETURNS numeric
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    IF (delta < 0) THEN
+        RAISE EXCEPTION 'Ошибка сортировки ячейки для взятия товара'
+            USING errcode = 50003;
+    END IF;
+    IF (rpmode = 1) THEN -- макс скорость
+        IF (delta > q_cont) THEN
+            -- нужно 10, есть три контейнера 2,5,7 || значения 8, 5, 3
+            RETURN (delta - q_cont);
+        ELSE
+            -- нужно 10, есть три контейнера 12,15,17 || значения -0.5, -0.2, -0.14
+            IF (q_cont - delta) = 0 THEN
+                RETURN -99999999;
+            ELSE
+                RETURN -1/(q_cont - delta);
+            END IF;
+        END IF;
+    ELSE -- макс порядок, ищем минимум
+        RETURN q_cont;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.get_quantity_accordance(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.get_quantity_accordance(bigint, bigint, bigint)
+    IS 'считает параметр для сортировки команд отбора';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.gen_cnt_out_multi_gd(
+    rp_ repository_part)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    qnt_izlish BIGINT;
+    cnt BIGINT;
+    sq BIGINT;
+    qnt BIGINT;
+    rps repository;
+    cg command_gas;
+    cics RECORD;
+BEGIN
+    ------------------------------------------
+    -- для склада с мультихранением товара - нет ли возможности забрать
+    -- с уже подвезенных контейнеров по другим товарам
+    FOR rps IN (
+        SELECT id
+            FROM repository
+            WHERE container_multi_gd = 1
+    ) LOOP
+        FOR cg IN (
+            SELECT *
+                FROM command_gas
+                WHERE state_ind IN (0,1,3)
+                    AND command_type_id = 12
+                    AND rp_id = rp_.id
+        ) LOOP
+            --obj_ask.log('    GAS: по мультигуду пытаемся впихнуть для команды '||cg.id );
+            FOR cics IN (
+                SELECT DISTINCT c.id, ccnt.good_desc_id, c.barcode,
+                    cc.cell_name, ccnt.gdp_id gd_party_id,
+                    c.cell_id
+                    FROM container c
+                    INNER JOIN container_collection cc
+                        ON c.id = cc.container_id
+                    INNER JOIN container_collection_content ccc
+                        ON ccc.cc_id = cc.id
+                    INNER JOIN container_content ccnt
+                        ON ccnt.container_id = c.id
+                    WHERE state = 0
+                        AND ccnt.good_desc_id = cg.good_desc_id
+                        AND coalesce(ccnt.gdp_id, 0) = coalesce(cg.gd_party_id, 0)
+            ) LOOP
+                -- если контейнер на рабочем столе или в ячейке закр. за компом команды
+                IF coalesce(cics.cell_id, 0) = 0
+                    OR service.is_cell_on_comp(cics.cell_id,cg.comp_name) = 1
+                THEN
+                    PERFORM obj_ask.log('      GAS: есть контейнер ' || cics.id || ' и условие пройдено');
+                    qnt_izlish := obj_cmd_order.get_container_izlish(cics.id, cics.good_desc_id, cics.gd_party_id);
+                    IF (qnt_izlish > 0) THEN -- есть что пхнуть
+                        PERFORM obj_ask.log('        GAS: qnt_izlish=' || qnt_izlish);
+                        -- запланировано
+                        SELECT count(*) INTO cnt
+                            FROM command_gas_out_container_plan
+                            WHERE cmd_gas_id = cg.id
+                                AND container_id = cics.id;
+                        --obj_ask.log('        GAS: ищем COMMAND_GAS_OUT_CONTAINER_PLAN sqc='||sqc||' cd.id='||cg.id||' cn.id='||cics.id||' cnt='||cnt );
+                        IF (cnt = 0) THEN
+                            sq := cg.quantity - obj_cmd_gas.get_cg_was_cnt_planned(cg.id);
+                            IF (qnt_izlish >= sq) THEN
+                                qnt := sq;
+                            ELSE
+                                qnt := qnt_izlish;
+                            END IF;
+                            INSERT INTO command_gas_out_container_plan (
+                                cmd_gas_id, container_id, quantity_all, quantity_to_pick
+                            ) VALUES (
+                                cg.id, cics.id, qnt_izlish, qnt
+                            );
+                            PERFORM obj_ask.log('        GAS: insert COMMAND_GAS_OUT_CONTAINER_PLAN ' || cg.id
+                                || ' ' || cics.id || ' ' || qnt_izlish || ' ' || qnt);
+                        END IF;
+                        -- уже подвезено для работы
+                        SELECT count(*) INTO cnt
+                            FROM command_gas_out_container
+                            WHERE cmd_gas_id = cg.id
+                                AND container_id = cics.id;
+                        IF (cnt = 0) THEN
+                            INSERT INTO command_gas_out_container (
+                                cmd_gas_id, container_id, container_barcode,
+                                good_desc_id, quantity,
+                                cell_name,
+                                gd_party_id
+                            ) VALUES (
+                                cg.id, cics.id, cics.barcode,
+                                cg.good_desc_id, qnt_izlish,
+                                obj_ask.get_cell_name(cics.cell_id),
+                                cg.gd_party_id
+                            );
+                            PERFORM obj_ask.log('        GAS: insert COMMAND_GAS_OUT_CONTAINER ' || cg.id
+                                || ' ' || cics.id || ' ' || qnt_izlish);
+                        END IF;
+                    END IF;
+                END IF;
+            END LOOP;
+        END LOOP;
+    END LOOP; -- поиска донапихания по мультитоварности контейнера
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.gen_cnt_out_multi_gd(repository_part) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.gen_cnt_out_multi_gd(repository_part)
+    IS 'сформировать план подвоза контейнеров по заказу товаров, если в одном контейнере может быть множество разных артикулов';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.gen_cnt_out_gd(
+    rp_ repository_part)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    qty_ BIGINT;
+    qty_cg_need BIGINT;
+    qty_cnt_rest BIGINT;
+    rps repository;
+    cg command_gas;
+    cics RECORD;
+BEGIN
+    FOR rps IN (
+        SELECT id
+            FROM repository
+            WHERE container_multi_gd = 0
+    ) LOOP
+        FOR cg IN (
+            SELECT *
+                FROM command_gas
+                WHERE state_ind IN (0)
+                    AND command_type_id = 12
+                    AND rp_id = rp_.id
+                    AND reserved = 1
+        ) LOOP
+            -- есть ли коллекции открытые по товару
+            FOR cics IN (
+                SELECT c.id, ccnt.good_desc_id, c.barcode, c.cell_id,
+                    sum(ccc.quantity_need - ccc.quantity_real - ccc.quantity_deficit) res,
+                    ccnt.quantity
+                    FROM container c
+                    INNER JOIN container_collection cc
+                        ON c.id = cc.container_id
+                    INNER JOIN container_collection_content ccc
+                        ON ccc.cc_id = cc.id
+                    INNER JOIN container_content ccnt
+                        ON ccnt.container_id = c.id
+                    WHERE state = 0
+                        AND coalesce(c.cell_id, 0) > 0 -- стоит в ячейке отбора
+                        AND ccnt.good_desc_id = cg.good_desc_id
+                        AND NOT exists(
+                            SELECT *
+                                FROM container_collection
+                                WHERE cmd_gas_id = cg.id
+                                    AND state = 0
+                        ) -- нет уже открытой коллекции
+                    GROUP BY c.id, ccnt.good_desc_id, c.barcode,c.cell_id, ccnt.quantity
+            ) LOOP
+                PERFORM obj_ask.log('        GAS: есть коллекции для доп по конт ' || cics.id || ' ' || cics.barcode);
+                IF (cics.quantity > cics.res) THEN -- есть хапнуть
+                    qty_cnt_rest := cics.quantity - cics.res;
+                    qty_cg_need := cg.quantity;
+                    IF (qty_cnt_rest >= qty_cg_need) THEN
+                        qty_ := qty_cg_need;
+                    ELSE
+                        qty_ := qty_cnt_rest;
+                    END IF;
+                    INSERT INTO command_gas_out_container_plan (
+                        cmd_gas_id, container_id, quantity_all, quantity_to_pick
+                    ) VALUES (
+                        cg.id, cics.id, qty_cnt_rest, qty_
+                    );
+                    PERFORM obj_ask.log('        GAS: insert COMMAND_GAS_OUT_CONTAINER ' || cg.id
+                        || ' ' || cics.id || ' ' || qty_);
+                    INSERT INTO command_gas_out_container (
+                        cmd_gas_id, container_id, container_barcode,
+                        good_desc_id, quantity, cell_name
+                    ) VALUES (
+                        cg.id, cics.id, cics.barcode,
+                        cg.good_desc_id, qty_, obj_ask.get_cell_name(cics.cell_id)
+                    );
+                    UPDATE command_gas
+                        SET state = 1
+                        WHERE id = cg.id;
+                END IF;
+            END LOOP;
+        END LOOP;
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.gen_cnt_out_gd(repository_part) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.gen_cnt_out_gd(repository_part)
+    IS 'сформировать план подвоза контейнеров по заказу товаров';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.otbor_loop_need_exit(
+    rp_ repository_part)
+    RETURNS boolean
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+    cmd_return_cnt BIGINT;
+    rps repository;
+    zt command_gas;
+BEGIN
+    FOR rps IN (
+        SELECT *
+            FROM repository
+    ) LOOP
+        -- считаем число возвратов незадействованных
+        SELECT count(*) INTO cmd_return_cnt
+            FROM command cmd
+            INNER JOIN command_gas cg
+                ON cmd.command_gas_id = cg.id
+            WHERE cmd.state = 1
+                AND cg.command_type_id = 18;
+        PERFORM obj_ask.log('    GAS: команд возврата насчитано cnt=' || cmd_return_cnt);
+        -- есть куда еще команд напихать (из нужных)?
+        SELECT count(*) INTO cnt
+            FROM command_rp crp
+            INNER JOIN command c
+                ON crp.command_id = c.id
+            INNER JOIN command_gas cg
+                ON c.command_gas_id = cg.id
+            WHERE crp.state = 1
+                AND crp.rp_id = rp_.id
+                AND cg.command_type_id = 12;
+        IF (cnt >= (rps.mo_cmd_gas_depth - cmd_return_cnt)) THEN
+            PERFORM obj_ask.log('    GAS: сейчас акт. cnt_command_rp=' || cnt || ', а max_cd=' || rps.mo_cmd_gas_depth);
+            RETURN true;
+        END IF;
+        -- и есть команды для напихания?
+        SELECT count(*) INTO cnt
+            FROM command_gas cg
+            INNER JOIN command_gas_cell_in cgc
+                ON cgc.command_gas_id = cg.id
+            INNER JOIN cell c
+                ON cgc.cell_id = c.id
+            WHERE state_ind IN (0,1)
+                AND command_type_id = 12
+                AND rp_id = rp_.id
+                AND (
+                    /*NVL(is_buffer_work,0)=0 */ 0=0 AND service.is_cell_accept_enable(c.is_full, c.max_full_size, c.id) = 1
+                    OR
+                    /* nvl(is_buffer_work,0)=1*/ 0=1 AND exists(
+                        SELECT *
+                            FROM cell cc
+                            WHERE repository_part_id = rp_.id
+                                AND zone_id = 0
+                                AND hi_level_type = 1
+                                AND is_error = 0
+                                AND service.is_cell_accept_enable(cc.is_full, cc.max_full_size, cc.id) = 1
+                    )
+                    --and (last_analized is null or cur_date-last_analized>service.get_sec(1));
+                );
+        --obj_ask.log('    GAS: сейчас акт. cnt command_gas='||cnt||'  выходим если =0 is_buffer_work='||is_buffer_work );
+        IF (cnt = 0) THEN
+            PERFORM obj_ask.log('    cmd_GAS: есть команды для напихания');
+            RETURN true;
+        END IF;
+        -- а нет ли застрятого в транзите
+        FOR zt IN (
+            SELECT cg.*
+                FROM cell c
+                INNER JOIN command_gas_out_container_plan cgop
+                    ON cgop.container_id = c.container_id
+                INNER JOIN command_gas cg
+                    ON cgop.cmd_gas_id = cg.id
+                INNER JOIN command_gas_cell_in cgci
+                    ON cgci.command_gas_id = cg.id
+                WHERE hi_level_type = 7
+                    AND is_full = 1
+                    AND repository_part_id = rp_.id
+                    AND cg.state_ind IN (0,1,3)
+                    AND NOT exists(
+                        SELECT *
+                            FROM cell_cmd_lock
+                            WHERE cell_id = cgci.cell_id
+                    )
+        ) LOOP -- нет команд
+            PERFORM obj_ask.log('    GAS: есть застрявший товар в транзите' );
+            RETURN false;
+        END LOOP;
+        -- и есть ли товар для отбора на складе отбора
+        SELECT count(*) INTO cnt
+            FROM command_gas cg
+            INNER JOIN container_content cc
+                ON cg.good_desc_id = cc.good_desc_id
+            INNER JOIN container cn
+                ON cn.id = cc.container_id
+            INNER JOIN cell
+                ON cell.container_id = cn.id
+            WHERE state_ind IN (0,1)
+                AND command_type_id = 12
+                AND coalesce(cg.gd_party_id, 0) = coalesce(cc.gdp_id, 0)
+                AND (rps.storage_by_firm = 0 OR cg.firm_id = cn.firm_id)
+                AND cg.rp_id = rp_.id
+                AND (
+                    (
+                        cell.hi_level_type = 1
+                            AND zone_id <> 0
+                            AND NOT exists(
+                                SELECT *
+                                    FROM command
+                                    WHERE state IN (0,1,3)
+                                        AND container_id = cn.id
+                            )
+                    ) OR (
+                        cell.hi_level_type = 7
+                            AND exists(
+                                SELECT *
+                                    FROM command cmd
+                                    INNER JOIN command_rp crp
+                                        ON cmd.id = crp.command_id
+                                    WHERE crp.state in (0,1,3)
+                                        AND cmd.container_id = cn.id
+                                        AND substate IS null
+                            )
+                    )
+                ) AND service.is_cell_over_locked(cell.id) = 0
+                AND cc.quantity > 0;
+        IF (cnt = 0) THEN
+            PERFORM obj_ask.log('    o_GAS: товар для отбора на складе отбора=' || cnt);
+            RETURN true;
+        END IF;
+        RETURN false;
+    END LOOP;
+    RETURN true; -- Should be unreachable
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.otbor_loop_need_exit(repository_part) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.otbor_loop_need_exit(repository_part)
+    IS 'нужно ли выйти из цикла формирования команд?';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.get_buffer_work_mode(
+    rp_ repository_part)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    is_buffer_work BIGINT;
+    cnt_robot_free BIGINT;
+    cnt BIGINT;
+    rps repository;
+BEGIN
+    FOR rps IN (
+        SELECT *
+            FROM repository
+    ) LOOP
+        SELECT count(*) INTO cnt_robot_free
+            FROM robot
+            WHERE repository_part_id = rp_.id
+                AND obj_robot.is_robot_ready_for_cmd(id) = 1;
+        PERFORM obj_ask.log('  роботов свободных=' || cnt_robot_free);
+        -- и есть ли ячейки свободные для приемки контейнеров?
+        SELECT count(*) INTO cnt
+            FROM cell c
+            INNER JOIN command_gas_cell_in cgc
+                ON c.id = cgc.cell_id
+            INNER JOIN command_gas cg
+                ON cgc.command_gas_id = cg.id
+            WHERE cg.command_type_id = 12
+                AND cg.state_ind IN (0,1)
+                AND cg.rp_id = rp_.id
+                AND c.is_full < c.max_full_size
+                AND service.is_cell_accept_enable(c.is_full, c.max_full_size, c.id) = 1;
+        PERFORM obj_ask.log('    GAS: есть ли ячейки свободные для приема=' || cnt);
+        IF (cnt = 0) THEN
+            -- нет свободных ячеек для приема
+            -- если нет и роботов свободных, то отлуп
+            IF (cnt_robot_free = 0) THEN
+                PERFORM obj_ask.log('    GAS: нет ячеек для приема, и роботов свободных нет');
+                RETURN -1;
+            END IF;
+            -- смотрим, а может есть в буферной зоне местцо
+            SELECT count(*) INTO cnt
+                FROM cell c
+                WHERE hi_level_type = 1
+                    AND zone_id = 0
+                    AND is_error = 0
+                    AND c.is_full < c.max_full_size
+                    AND service.is_cell_accept_enable(c.is_full, c.max_full_size, c.id) = 1;
+            IF (cnt = 0) OR (rp_.use_buffer_concept = 0) THEN
+                -- точно ничего нет для работы - вылазим
+                RETURN -1;
+            ELSE -- может что-то есть
+                -- а есть ли нужный товар в зонах иных нежели А
+                SELECT count(*) INTO cnt
+                    FROM command_gas cg
+                    INNER JOIN container_content cc
+                        ON cg.good_desc_id = cc.good_desc_id
+                    INNER JOIN container cn
+                        ON cn.id = cc.container_id
+                    INNER JOIN cell
+                        ON cell.container_id = cn.id
+                    INNER JOIN good_desc gd
+                        ON cg.good_desc_id = gd.id
+                    WHERE state_ind IN (0,1)
+                        AND command_type_id = 12
+                        AND coalesce(cg.gd_party_id, 0) = coalesce(cc.gdp_id, 0)
+                        AND (rps.storage_by_firm = 0 OR cg.firm_id = cn.firm_id)
+                        AND gd.abc_rang > obj_rpart.get_real_min_abc_zone(rp_.id) -- иная нежели Зона А, но не буфер
+                        AND (
+                            (
+                                cell.hi_level_type = 1
+                                    AND zone_id <> 0
+                                    AND NOT exists(
+                                        SELECT *
+                                            FROM command
+                                            WHERE state IN (0,1,3)
+                                                AND container_id = cn.id
+                                    )
+                            ) OR (
+                                cell.hi_level_type = 7
+                                    AND exists(
+                                        SELECT *
+                                            FROM command cmd
+                                            INNER JOIN command_rp crp
+                                                ON cmd.id = crp.command_id
+                                            WHERE crp.state IN (0,1,3)
+                                                AND cmd.container_id = cn.id
+                                                AND substate IS null
+                                    )
+                            )
+                        )
+                        AND service.is_cell_over_locked(cell.id) = 0
+                        AND cc.quantity > 0;
+                IF (cnt > 0) THEN
+                    PERFORM obj_ask.log('    GAS: НО есть место в буфере плюс товар заказной в ЗОНЕ >А' );
+                    is_buffer_work := 1; -- буфер иб ту ю мэмэ
+                ELSE
+                    RETURN -1;
+                END IF;
+            END IF;
+        ELSE
+            is_buffer_work := 0; -- есть ячейки реальные для сброса, никакого буфера
+        END IF;
+        RETURN is_buffer_work;
+    END LOOP;
+    RETURN -1; -- Should be unreachable
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.get_buffer_work_mode(repository_part) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.get_buffer_work_mode(repository_part)
+    IS 'получить режим работы с буфером';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.get_max_priority(
+    rp_ repository_part,
+    cur_date date,
+    is_buffer_work bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    pr BIGINT;
+BEGIN
+    -- ищем макс. приоритет в котором вертеться
+    SELECT /*+RULE*/ max(priority) INTO pr
+        FROM command_gas cg
+        INNER JOIN good_desc gd
+            ON cg.good_desc_id = gd.id
+        WHERE state_ind IN (0,1)
+            AND command_type_id = 12
+            AND (
+                is_buffer_work = 0
+                OR
+                gd.abc_rang > obj_rpart.get_real_min_abc_zone(rp_.id)
+            ) -- или не буфер, или иная зона нежели А
+            AND (
+                last_analized IS null
+                OR
+                cur_date - last_analized > INTERVAL '10 secs'
+            );
+    PERFORM obj_ask.log('    GAS: max(priority)=' || pr);
+    RETURN pr;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.get_max_priority(repository_part, date, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.get_max_priority(repository_part, date, bigint)
+    IS 'получить максимальный приоритет команд по огурцу';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.is_cg_otbor_cell_out_unlock(
+    cg_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cg command_gas_cell_in;
+BEGIN
+    FOR cg IN (
+        SELECT *
+            FROM command_gas_cell_in cgci
+            WHERE command_gas_id = cg_id_
+                AND NOT exists(
+                    SELECT *
+                        FROM cell_cmd_lock
+                        WHERE cell_id = cgci.cell_id
+                )
+    ) LOOP
+        RETURN 1;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.is_cg_otbor_cell_out_unlock(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.is_cg_otbor_cell_out_unlock(bigint)
+    IS 'есть ли незанятые командами ячейки для сброса';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.recovery_lost_cmd(
+    rp_ repository_part)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    new_cmd_id BIGINT;
+    cgw RECORD;
+    cc RECORD;
+BEGIN
+    FOR cgw IN (
+        SELECT /*+RULE*/ cg.id, cg.state, cg.priority,
+            cn.cell_id, cs.repository_part_id rp_cs_id,
+            cs.sname cs_name, cn.id cont_id
+            FROM command_gas cg
+            CROSS JOIN command_gas_out_container_plan cgo
+            INNER JOIN command_gas_cell_in cgc
+                ON cgc.command_gas_id = cg.id
+            INNER JOIN cell c
+                ON c.id = cgc.cell_id
+            INNER JOIN container cn
+                ON cgo.container_id = cn.id
+            INNER JOIN cell cs
+                ON cn.cell_id = cs.id
+            WHERE state_ind IN (0,1)
+                AND cg.id = cmd_gas_id
+                AND NOT exists(
+                    SELECT *
+                        FROM command cmd
+                        WHERE command_gas_id = cg.id
+                            AND cmd.container_id = cgo.container_id
+                )
+                AND cg.rp_id = rp_.id
+                AND cs.hi_level_type IN (1,7) -- только из ячеек хранения или переозначенную транзитную
+                AND NOT exists(
+                    SELECT *
+                        FROM cell_cmd_lock
+                        WHERE cell_id = c.id
+                ) -- точно нет команд
+                AND service.is_cell_accept_enable(c.is_full, c.max_full_size, c.id) = 1
+            ORDER BY cg.id
+    ) LOOP
+        PERFORM obj_ask.log('    GAS: нашли cogp ошибочную команду =' || cgw.id || ' из ячейки ' || cgw.cs_name);
+        IF obj_cmd_gas.is_cg_otbor_cell_out_unlock(cgw.id) = 1 THEN
+            PERFORM obj_ask.log('    GAS: is_cg_otbor_cell_out_unlock=1');
+            IF (cgw.state = 0) THEN
+                UPDATE command_gas
+                    SET state = 1
+                    WHERE id = cgw.id;
+            END IF;
+            FOR cc IN (
+                SELECT cell.sname, cell.is_full,
+                    cell.max_full_size, cell.id
+                    FROM cell
+                    INNER JOIN command_gas_cell_in cmdc
+                        ON cmdc.cell_id = cell.id
+                    WHERE cmdc.command_gas_id = cgw.id
+                        AND cell.is_full < cell.max_full_size
+                        AND NOT exists(
+                            SELECT *
+                                FROM cell_cmd_lock
+                                WHERE cell_id = cell.id
+                        ) -- точно нет команд
+                        AND cell.repository_part_id IN (
+                            SELECT id
+                                FROM repository_part
+                                WHERE purpose_id IN (2,3)
+                        ) --rp.id  можно убрать
+                        AND service.is_cell_accept_enable(is_full, max_full_size, cell.id) = 1
+            ) LOOP
+                IF service.is_cell_accept_enable(cc.is_full, cc.max_full_size, cc.id) = 1 THEN
+                    PERFORM obj_ask.log('    GAS: cogp нашли ячейку-куда ложить=' || cc.sname);
+                    -- добавляем команду
+                    INSERT INTO command (
+                        command_gas_id, command_type_id,
+                        rp_src_id, cell_src_sname,
+                        rp_dest_id, cell_dest_sname,
+                        priority, container_id
+                    ) VALUES (
+                        cgw.id, 1,
+                        cgw.rp_cs_id, cgw.cs_name,
+                        rp_.id, cc.sname,
+                        cgw.priority, cgw.cont_id
+                    ) RETURNING id INTO new_cmd_id;
+                    UPDATE container
+                        SET cell_goal_id = obj_rpart.get_cell_id_by_name(rp_.id, cc.sname)
+                        WHERE id = cgw.cont_id;
+                END IF;
+                EXIT;
+            END LOOP;
+        END IF;
+        EXIT; -- по одной команде берем в одну ячейку
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.recovery_lost_cmd(repository_part) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.recovery_lost_cmd(repository_part)
+    IS 'восстановление потерянных из-за сбоя команд';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.get_cmd_side(
+    rp_ repository_part)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cmd_0_side BIGINT;
+    cmd_1_side BIGINT;
+    cmd_side BIGINT;
+    cnt BIGINT;
+BEGIN
+    SELECT count(*) INTO cmd_0_side
+        FROM command cmd
+        INNER JOIN cell c1
+            ON cmd.cell_src_id = c1.id
+        INNER JOIN cell c2
+            ON cmd.cell_dest_id = c2.id
+        WHERE cmd.rp_src_id = cmd.rp_dest_id
+            AND cmd.rp_dest_id = rp_.id
+            AND c1.side = c2.side
+            AND state IN (0,1,3)
+            AND command_type_id = 1
+            AND c1.side = 0;
+    SELECT count(*) INTO cmd_1_side
+        FROM command cmd
+        INNER JOIN cell c1
+            ON cmd.cell_src_id = c1.id
+        INNER JOIN cell c2
+            ON cmd.cell_dest_id = c2.id
+        WHERE cmd.rp_src_id = cmd.rp_dest_id
+            AND cmd.rp_dest_id = rp_.id
+            AND c1.side = c2.side
+            AND state IN (0,1,3)
+            AND command_type_id = 1
+            AND c1.side = 1;
+    IF (cmd_0_side > cmd_1_side) THEN
+        cmd_side := 1;
+    ELSIF (cmd_0_side < cmd_1_side) THEN
+        cmd_side := 0;
+    ELSE
+        cmd_side := -1; -- по фиг какая
+    END IF;
+    PERFORM obj_ask.log('    GAS: cmd_side=' || cmd_side);
+    -- уточняем сторону
+    IF (cmd_side <> -1) THEN
+        -- если есть предпочтение по стороне, то смотрим, а есть ли там свободные приемные ячейки
+        SELECT coalesce(
+            sum(service.empty_cell_capability(c.is_full, c.max_full_size, c.id)),
+            0
+        ) INTO cnt
+            FROM cell c
+            INNER JOIN command_gas_cell_in cgc
+                ON c.id = cgc.cell_id
+            INNER JOIN command_gas cg
+                ON cgc.command_gas_id = cg.id
+            WHERE cg.command_type_id = 12
+                AND cg.state_ind IN (0,1)
+                AND c.side = cmd_side
+                AND cg.rp_id = rp_.id
+                AND c.is_full < c.max_full_size
+                AND service.is_cell_accept_enable(c.is_full, c.max_full_size, c.id) = 1;
+        IF (cnt = 0) THEN -- по порядку сия сторона, а сувать некуда
+            PERFORM obj_ask.log('    GAS: в выбранной стороне нет свободного места для сброса' );
+            SELECT coalesce(
+                sum(service.empty_cell_capability(c.is_full, c.max_full_size, c.id)),
+                0
+            ) INTO cnt
+                FROM cell c
+                INNER JOIN command_gas_cell_in cgc
+                    ON c.id = cgc.cell_id
+                INNER JOIN command_gas cg
+                    ON cgc.command_gas_id = cg.id
+                WHERE cg.command_type_id = 12
+                    AND cg.state_ind IN (0,1)
+                    AND c.side = CASE cmd_side WHEN 1 THEN 0 ELSE 1 END
+                    AND cg.rp_id = rp_.id
+                    AND c.is_full < c.max_full_size
+                    AND service.is_cell_accept_enable(c.is_full, c.max_full_size, c.id) = 1;
+            IF (cnt <> 0) THEN -- можем присунуть сюда
+                cmd_side := CASE cmd_side WHEN 1 THEN 0 ELSE 1 END;
+                PERFORM obj_ask.log('  GAS: меняем cmd_side на ' || cmd_side);
+            END IF;
+        END IF;
+    END IF;
+    RETURN cmd_side;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.get_cmd_side(repository_part) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.get_cmd_side(repository_part)
+    IS 'получить приоритетную стороны команды для огурца (чтоб не клинило механику робота нужно чередовать стороны)';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.presence_in_side(
+    cg_id bigint,
+    cmd_side bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    wm BIGINT;
+    mnq BIGINT;
+    cgrec command_gas;
+    sq_need BIGINT;
+    sbq BIGINT;
+    bq RECORD;
+BEGIN
+    IF (cmd_side = -1) THEN -- по фиг какая
+        RETURN 0;
+    ELSE
+        SELECT current_mode INTO wm
+            FROM repository;
+        SELECT * INTO cgrec
+            FROM command_gas
+            WHERE id = cg_id;
+        -- считаем, сколько уже по command_gas подвезено, а сколько надо
+        sq_need := cgrec.quantity - obj_cmd_gas.get_always_out_bcg(cg_id, cgrec.good_desc_id, cgrec.gd_party_id);
+        IF (sq_need = 0) THEN
+            RETURN 0; -- уже все
+        ELSE
+            sbq := 0;
+            FOR bq IN (
+                SELECT cnt_cont.quantity
+                    FROM cell c
+                    INNER JOIN container cntr
+                        ON cntr.cell_id = c.id
+                    INNER JOIN container_content cnt_cont
+                        ON cnt_cont.container_id = cntr.id
+                    WHERE c.hi_level_type = 1
+                        AND zone_id <> 0
+                        AND service.is_cell_over_locked(c.id) = 0
+                        AND cnt_cont.good_desc_id = cgrec.good_desc_id
+                    ORDER BY obj_cmd_gas.get_quantity_accordance(
+                        sq_need, wm, cnt_cont.quantity
+                    )
+            ) LOOP
+                sbq := bq.quantity;
+            END LOOP;
+            FOR bq IN (
+                SELECT cnt_cont.quantity
+                FROM cell c
+                INNER JOIN container cntr
+                    ON cntr.cell_id = c.id
+                INNER JOIN container_content cnt_cont
+                    ON cnt_cont.container_id = cntr.id
+                WHERE c.hi_level_type = 1
+                    AND zone_id <> 0
+                    AND service.is_cell_over_locked(c.id) = 0
+                    AND cnt_cont.good_desc_id = cgrec.good_desc_id
+                    AND c.side = cmd_side
+                    AND cnt_cont.quantity = sbq
+            ) LOOP
+                RETURN 0;
+            END LOOP;
+            RETURN 1;
+        END IF;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.presence_in_side(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.presence_in_side(bigint, bigint)
+    IS 'высчитать сторону предпочтительную для забора товара';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.presence_in_side_accurance(
+    rp_id bigint,
+    rp_max_npp bigint,
+    cg_id bigint,
+    cmd_side bigint,
+    rpmode bigint,
+    q_need bigint,
+    gd_id text)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cc RECORD;
+BEGIN
+    IF (cmd_side = -1) THEN -- по фиг какая сторона
+        RETURN 0;
+    ELSE
+        FOR cc IN (
+            SELECT c.side
+                FROM cell c
+                INNER JOIN container cn
+                    ON cn.cell_id = c.id
+                INNER JOIN container_content ccont
+                    ON ccont.container_id = cn.id
+                WHERE ccont.good_desc_id = gd_id
+                    AND c.repository_part_id = rp_id
+                    AND (
+                        (hi_level_type = 1 AND zone_id <> 0 )
+                        OR
+                        (hi_level_type = 7
+                            AND exists(
+                                SELECT *
+                                    FROM command_rp
+                                    WHERE command_type_id = 3
+                                        AND state IN (1,3)
+                                        AND c.id = cell_src_id
+                                        AND substate IS null
+                            )
+                        )
+                    )
+                    AND service.is_cell_over_locked(c.id) = 0
+                ORDER BY obj_cmd_gas.get_quantity_accordance(q_need, rpmode, ccont.quantity),
+                    CASE cmd_side WHEN -1 THEN 0 ELSE abs(c.side-cmd_side) END,
+                    obj_rpart.calc_robot_nearest(rp_id, rp_max_npp, c.track_npp)
+        ) LOOP
+            IF cc.side = cmd_side THEN
+                RETURN 0;
+            ELSE
+                RETURN 1;
+            END IF;
+        END LOOP;
+    END IF;
+    -- сюда не должны доходить, но на всякий случай
+    RETURN 1;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.presence_in_side_accurance(bigint, bigint, bigint, bigint, bigint, bigint, text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.presence_in_side_accurance(bigint, bigint, bigint, bigint, bigint, bigint, text)
+    IS '=0 если есть на нужной стороне, 1 - нет';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.set_next_last_side_zone(
+    rp_id_ bigint,
+    side_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+    tmp BIGINT;
+    nres BIGINT;
+    cnt BIGINT;
+BEGIN
+    res := obj_cmd_gas.get_last_side_zone(rp_id_, side_);
+    SELECT max(id) INTO tmp
+        FROM zone;
+    IF (res = tmp) THEN
+        SELECT min(id) INTO nres
+            FROM zone
+            WHERE id <> 0;
+    ELSE
+        SELECT min(id) INTO nres
+            FROM zone
+            WHERE id > res;
+    END IF;
+    SELECT count(*) INTO cnt
+        FROM last_side_zone
+        WHERE side = side_
+            AND rp_id = rp_id_;
+    IF (cnt = 0) THEN -- нету - добавляем
+        INSERT INTO last_side_zone (
+            rp_id, side, zone_id
+        ) VALUES (
+            rp_id_, side_, nres
+        );
+    ELSE -- обновляем
+        UPDATE last_side_zone
+            SET zone_id = nres
+            WHERE rp_id = rp_id_
+                AND side = side_;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.set_next_last_side_zone(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.set_next_last_side_zone(bigint, bigint)
+    IS 'установить последнюю сторону команды для конкретной зоны';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.log_cg_set_cmd(
+    cg_id_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt_ BIGINT;
+    cc RECORD;
+BEGIN
+    FOR cc IN (
+        SELECT cell.sname, cell.id
+            FROM cell
+            INNER JOIN command_gas_cell_in cmdc
+                ON cmdc.cell_id = cell.id
+            WHERE cmdc.command_gas_id = cg_id_
+                AND cell.is_full < cell.max_full_size
+    ) LOOP
+        PERFORM obj_ask.log('    GAS: log_cg_set_cmd cell.is_full<cell.max_full_size:' || cc.sname);
+    END LOOP;
+    FOR cc IN (
+        SELECT cell.sname, cell.id
+            FROM cell
+            INNER JOIN command_gas_cell_in cmdc
+                ON cmdc.cell_id = cell.id
+            WHERE cmdc.command_gas_id = cg_id_
+                AND cell.repository_part_id IN (
+                    SELECT id
+                        FROM repository_part
+                        WHERE purpose_id IN (2,3)
+                ) --rp.id  можно убрать
+    ) LOOP
+        PERFORM obj_ask.log('    GAS: log_cg_set_cmd cell.repository_part_id in ' || cc.sname);
+    END LOOP;
+    FOR cc IN (
+        SELECT cell.sname, cell.id
+            FROM cell
+            INNER JOIN command_gas_cell_in cmdc
+                ON cmdc.cell_id = cell.id
+            WHERE cmdc.command_gas_id = cg_id_
+                AND service.is_cell_accept_enable(is_full, max_full_size, cell.id) = 1
+    ) LOOP
+        PERFORM obj_ask.log('    GAS: log_cg_set_cmd is_cell_accept_enable ' || cc.sname);
+    END LOOP;
+    FOR cc IN (
+        SELECT cell.sname, cell.id
+            FROM cell
+            INNER JOIN command_gas_cell_in cmdc
+                ON cmdc.cell_id = cell.id
+            WHERE cmdc.command_gas_id = cg_id_
+                AND obj_ask.is_cell_locked_by_cmd(cell.id) = 0 -- не стоит пихать туда, где уже есть команда
+    ) LOOP
+        PERFORM obj_ask.log('    GAS: log_cg_set_cmd Is_Cell_Locked_By_Cmd ' || cc.sname);
+    END LOOP;
+    FOR cc IN (
+        SELECT cell.sname, cell.id
+            FROM cell
+            INNER JOIN command_gas_cell_in cmdc
+                ON cmdc.cell_id = cell.id
+            WHERE cmdc.command_gas_id = cg_id_
+                AND NOT exists(
+                    SELECT *
+                        FROM cell_cmd_lock
+                        WHERE cell_id = cell.id
+                ) -- точно нет команд
+    ) LOOP
+        PERFORM obj_ask.log('    GAS: log_cg_set_cmd not exists cmd_lock - ' || cc.sname);
+    END LOOP;
+EXCEPTION WHEN others THEN
+    PERFORM obj_ask.log('    GAS: log_cg_set_cmd not - ошибка создания лога ');
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.log_cg_set_cmd(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.log_cg_set_cmd(bigint)
+    IS 'залоггировать факт назначения команды';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.handle_cgas_on_loop(
+    rp_ repository_part,
+    is_buffer_work bigint,
+    pr bigint,
+    cmd_side bigint,
+    cur_date date)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    sq BIGINT;
+    sqc BIGINT;
+    is_found_cnt BOOLEAN;
+    cnt BIGINT;
+    cmd_id BIGINT;
+    cell_d_id BIGINT;
+    cmd_state BIGINT;
+    new_cmd_id BIGINT;
+    rps repository;
+    cg RECORD;
+    cn RECORD;
+    cc RECORD;
+BEGIN
+    FOR rps IN (
+        SELECT *
+            FROM repository
+    ) LOOP
+        -- берем в цикле одну command_gas с которой работаем ^^^
+        PERFORM obj_ask.log('      GAS: начинаем цикл по командам отбора rp.id=' || rp_.id
+            || ' is_buffer_work=' || is_buffer_work
+            || ' cmd_side=' || cmd_side
+            || ' pr=' || pr
+            || ' cur_date=' || to_char(cur_date, 'dd.mm.yy hh24:mi'));
+        FOR cg IN (
+            SELECT cgl.id, cgl.quantity,
+                cgl.good_desc_id, cgl.priority,
+                cgl.firm_id, gd_party_id,
+                obj_cmd_gas.presence_in_side(cgl.id, cmd_side) pp
+                FROM command_gas cgl
+                INNER JOIN good_desc gd
+                    ON cgl.good_desc_id = gd.id
+                WHERE cgl.state_ind IN (0,1)
+                    AND cgl.command_type_id=12
+                    AND pr = priority
+                    AND obj_cmd_gas.is_cg_otbor_cell_out_unlock(cgl.id) = 1 -- есть ли ячейки незаблоченые для сброса по команде?
+                    AND (
+                        cgl.last_analized IS null
+                        OR
+                        cur_date - cgl.last_analized > INTERVAL '10 secs'
+                    )
+                    AND cgl.rp_id = rp_.id
+                    AND obj_cmd_gas.get_cg_was_cnt_planned(cgl.id) < coalesce(cgl.quantity, 0) -- чтоб уже распланированные не тянуть
+                    AND (
+                        is_buffer_work = 0
+                        OR
+                        gd.abc_rang > obj_rpart.get_real_min_abc_zone(rp_.id)
+                    ) -- или не буфер, или иная зона нежели А
+                ORDER BY cgl.priority,
+                    gd.abc_rang - obj_cmd_gas.get_last_side_zone(rp_.id, cmd_side), -- вначале привозим из зоны А
+                    obj_cmd_gas.presence_in_side_accurance(
+                        rp_.id, rp_.max_npp, -- =0 если сторона что надо
+                        cgl.id, cmd_side,rps.current_mode,
+                        cgl.quantity - obj_cmd_gas.get_always_out_bcg(
+                            cgl.id, cgl.good_desc_id, cgl.gd_party_id
+                        ), gd.id
+                    ),
+                    cgl.id -- чтоб старые привозило
+                    --presence_in_side(cgl.id,cmd_side),
+        ) LOOP
+            PERFORM obj_ask.log('        GAS: нашли необходимую command_gas=' || cg.id);
+            PERFORM obj_cmd_gas.set_next_last_side_zone(rp_.id, cmd_side);
+            --sq:=cg.quantity-gas.get_always_out_bcg(cg.id, cg.good_desc_id, cg.gd_party_id); тут ошибка - не то вызывалось
+            sq := cg.quantity - obj_cmd_gas.get_cg_was_cnt_planned(cg.id);
+            PERFORM obj_ask.log('        GAS: посчитали сколько отсалось подвезти = ' || sq);
+            IF (sq <= 0) THEN
+                --update command_gas set state=3 where id=cg.id; -- усе уже есть, странно что сюда дошли
+                PERFORM obj_ask.log('        ERROR - GAS: sq<=0 ' || sq);
+            ELSE
+                -- есть еще неназначенный товар по этой команде
+                PERFORM obj_ask.log('        GAS: ищем т.к. sq= ' || sq || ' >0');
+                -- берем одну ячейку - источник, откуда контейнер ### тута надо вставить ###
+                is_found_cnt := false;
+                FOR cn IN (
+                    SELECT c.sname, cn_.id, c.track_npp,
+                        c.hi_level_type, c.repository_part_id,
+                        c.id cell_id, ccont.quantity
+                        FROM cell c
+                        INNER JOIN container cn_
+                            ON cn_.cell_id = c.id
+                        INNER JOIN container_content ccont
+                            ON ccont.container_id = cn_.id
+                        WHERE ccont.good_desc_id = cg.good_desc_id
+                            AND coalesce(ccont.gdp_id, 0) = coalesce(cg.gd_party_id, 0)
+                            AND (
+                                rps.storage_by_firm = 0
+                                OR
+                                cg.firm_id = cn_.firm_id
+                            )
+                            AND c.repository_part_id IN (
+                                SELECT id
+                                    FROM repository_part
+                                    WHERE purpose_id IN (2,3)
+                            ) --rp.id -- ищем товар где угодно
+                            AND (
+                                (hi_level_type = 1 AND c.zone_id <> 0)
+                                OR
+                                (hi_level_type = 7 AND exists(
+                                        SELECT *
+                                            FROM command_rp
+                                            WHERE command_type_id = 3
+                                                AND state IN (1,3)
+                                                AND c.id = cell_src_id
+                                                AND substate IS null
+                                        )
+                                )
+                            )
+                            AND service.is_cell_over_locked(c.id) = 0
+                            AND ccont.quantity > 0
+                        ORDER BY abs(c.repository_part_id-rp_.id), -- берем из текущего склада, но если не находим, то хоть откуда нибудь
+                            obj_cmd_gas.get_quantity_accordance(sq, rps.current_mode, ccont.quantity),
+                            CASE cmd_side WHEN -1 THEN 0 ELSE abs(c.side - cmd_side) END,
+                            obj_rpart.calc_robot_nearest(rp_.id, rp_.max_npp, c.track_npp)
+                ) LOOP
+                    is_found_cnt := true;
+                    PERFORM obj_ask.log('        GAS: нашли ячейку-откуда брать=' || cn.sname
+                        || ' со склада ' || cn.repository_part_id);
+                    -- делаем план по контейнерам
+                    IF (sq <= cn.quantity) THEN -- контейнер найденный полностью покрывает нужду
+                        sqc := sq;
+                    ELSE
+                        sqc := cn.quantity;
+                    END IF;
+                    SELECT count(*) INTO cnt
+                        FROM command_gas_out_container_plan
+                        WHERE cmd_gas_id = cg.id
+                            AND container_id = cn.id;
+                    PERFORM obj_ask.log('        GAS: ищем COMMAND_GAS_OUT_CONTAINER_PLAN sqc=' || sqc
+                        || ' cd.id=' || cg.id
+                        || ' cn.id=' || cn.id
+                        || ' cnt=' || cnt);
+                    IF (cnt = 0) THEN
+                        INSERT INTO command_gas_out_container_plan (
+                            cmd_gas_id, container_id, quantity_all, quantity_to_pick
+                        ) VALUES (
+                            cg.id, cn.id, cn.quantity, sqc
+                        );
+                        PERFORM obj_ask.log('        GAS: insert COMMAND_GAS_OUT_CONTAINER_PLAN ' || cg.id
+                            || ' ' || cn.id
+                            || ' ' || cn.quantity
+                            || ' ' || sqc);
+                        IF (cn.hi_level_type = 7) THEN -- если ячейка-источник = транзитной
+                            PERFORM obj_ask.log('    GAS: ячейка-источник транзитная' );
+                            -- надо завершить команду приема товара успешно досрочно
+                            SELECT id, cell_dest_id, state
+                                INTO cmd_id, cell_d_id, cmd_state
+                                FROM command
+                                WHERE state IN (0,1,3)
+                                    AND command_type_id = 1
+                                    AND container_id = (
+                                        SELECT container_id
+                                            FROM cell
+                                            WHERE id = cn.cell_id
+                                    );
+                            PERFORM obj_ask.log('    GAS: команда для досрочного завершения=' || cmd_id);
+                            PERFORM service.cell_unlock_from_cmd(cell_d_id, cmd_id);
+                            -- удаляем crp
+                            DELETE FROM command_rp
+                                WHERE command_id = cmd_id
+                                    AND rp_id = rp_.id
+                                    AND state IN (1,3)
+                                    AND substate IS null
+                                    AND rp_id = rp_.id
+                                    AND cell_src_id = cn.cell_id;
+                            UPDATE robot
+                                SET command_rp_id = 0
+                                WHERE NOT exists(
+                                    SELECT *
+                                        FROM command_rp
+                                        WHERE id = command_rp_id
+                                );
+                            UPDATE command
+                                SET state = 5,
+                                    cell_dest_sname = cn.sname
+                                WHERE id = cmd_id;
+                            UPDATE command_gas
+                                SET state = 5,
+                                    container_cell_name = cn.sname,
+                                    container_rp_id = rp_.id
+                                WHERE id = (
+                                    SELECT command_gas_id
+                                        FROM command
+                                        WHERE id = cmd_id
+                                    )
+                                    AND command_type_id IN (11,18);
+                        END IF;
+                        -- узнали ячейку - источник, теперь приемник ищем
+                        IF (is_buffer_work = 0) THEN -- прямо в ячейку сброса
+                            PERFORM obj_ask.log('    GAS: is_buffer_work=0');
+                            PERFORM obj_cmd_gas.log_cg_set_cmd(cg.id);
+                            FOR cc IN (
+                                SELECT cell.sname, cell.id
+                                    FROM cell
+                                    INNER JOIN command_gas_cell_in cmdc
+                                        ON cmdc.cell_id = cell.id
+                                    WHERE cmdc.command_gas_id = cg.id
+                                        AND cell.is_full < cell.max_full_size
+                                        AND cell.repository_part_id IN (
+                                            SELECT id
+                                                FROM repository_part
+                                                WHERE purpose_id IN (2,3)
+                                        ) --rp.id  можно убрать
+                                        AND service.is_cell_accept_enable(is_full, max_full_size, cell.id) = 1
+                                        AND obj_ask.is_cell_locked_by_cmd(cell.id) = 0 -- не стоит пихать туда, где уже есть команда
+                                        AND NOT exists(
+                                            SELECT *
+                                                FROM cell_cmd_lock
+                                                WHERE cell_id = cell.id
+                                        ) -- точно нет команд
+                                    -- идем другим путем
+                                    ORDER by obj_ask.calc_distance(
+                                        rp_.repository_type, rp_.max_npp, cell.track_npp, cn.track_npp
+                                    )
+                            ) LOOP
+                                PERFORM obj_ask.log('    GAS: нашли ячейку-куда ложить=' || cc.sname);
+                                -- добавляем команду
+                                INSERT INTO command (
+                                    command_gas_id, command_type_id, rp_src_id,
+                                    cell_src_sname, rp_dest_id, cell_dest_sname,
+                                    priority, container_id
+                                ) VALUES (
+                                    cg.id, 1, cn.repository_part_id,
+                                    cn.sname, rp_.id, cc.sname,
+                                    cg.priority, cn.id
+                                ) RETURNING id INTO new_cmd_id;
+                                UPDATE container
+                                    SET cell_goal_id = obj_rpart.get_cell_id_by_name(rp_.id, cc.sname)
+                                WHERE id = cn.id;
+                                EXIT;
+                            END LOOP;
+                            EXIT;
+                        ELSE -- в промежуточные ячейки везем
+                            PERFORM obj_ask.log('    GAS: поиск промежут rp.id=' || rp_.id || ' ');
+                            FOR cc IN (
+                                SELECT cell.sname
+                                    FROM cell
+                                    WHERE zone_id = 0
+                                        AND hi_level_type = 1
+                                        AND is_error = 0
+                                        AND cell.is_full < cell.max_full_size
+                                        AND cell.repository_part_id = rp_.id
+                                        AND service.is_cell_accept_enable(is_full, max_full_size, cell.id) = 1
+                                    -- идем другим путем
+                                    ORDER BY obj_ask.calc_distance(
+                                        rp_.repository_type, rp_.max_npp,
+                                        cell.track_npp, cn.track_npp
+                                    )
+                            ) LOOP
+                                PERFORM obj_ask.log('    GAS: нашли промежуточную ячейку в буфере ячейку-куда ложить=' || cc.sname);
+                                -- добавляем команду
+                                INSERT INTO command (
+                                    command_gas_id, command_type_id, rp_src_id,
+                                    cell_src_sname, rp_dest_id, cell_dest_sname,
+                                    priority, container_id, is_intermediate
+                                ) VALUES (
+                                    cg.id, 1, cn.repository_part_id,
+                                    cn.sname, rp_.id, cc.sname,
+                                    cg.priority, cn.id, 1
+                                ) RETURNING id INTO new_cmd_id;
+                                UPDATE container
+                                    SET cell_goal_id = obj_rpart.get_cell_id_by_name(rp_.id, cc.sname)
+                                    WHERE id = cn.id;
+                                EXIT;
+                            END LOOP;
+                            EXIT;
+                        END IF;
+                    ELSE
+                        PERFORM obj_ask.log('    GAS: ошибка CGOCP уник сработал бы' );
+                        UPDATE command_gas
+                            SET last_analized = cur_date
+                            WHERE id = cg.id;
+                        --return;
+                    END IF;
+                END LOOP;
+                IF NOT is_found_cnt THEN
+                    PERFORM obj_ask.log('    GAS: нехватка товара' );
+                    UPDATE command_gas
+                        SET last_analized = cur_date
+                        WHERE id = cg.id;
+                END IF;
+            END IF;
+            EXIT;
+        END LOOP;
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.handle_cgas_on_loop(repository_part, bigint, bigint, bigint, date) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.handle_cgas_on_loop(repository_part, bigint, bigint, bigint, date)
+    IS 'обработка команд в цикле';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.form_cmds_by_otbor(
+    )
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+    rps_rec repository;
+    rp_rec repository_part;
+    rp repository_part;
+    cur_date DATE;
+    max_loop_cnt BIGINT;
+    loop_cnt BIGINT;
+    is_buffer_work BIGINT; -- в буфер ли выгружаем(=1), или в ячейки сброса(=0)?
+    pr BIGINT;
+    cmd_side BIGINT;
+BEGIN
+    cur_date := LOCALTIMESTAMP;
+    SELECT * INTO rps_rec
+        FROM repository;
+    FOR rp IN (
+        SELECT *
+            FROM repository_part
+            WHERE purpose_id IN (2,3)
+    ) LOOP -- id, max_npp, repository_type
+        PERFORM obj_ask.log('Form_Cmds_By_Otbor: вошли в цикле в подсклад=' || rp.id);
+        PERFORM obj_cmd_gas.gd_resrve_on_cg_otbor(rp);
+        --up_prior_buf_if_ness(rp.id); -- смотрим - не надо ли что забрать срочно с буферного огурца
+        -- пошел цикл главный
+        max_loop_cnt := 4;
+        loop_cnt := 0;
+        PERFORM obj_ask.log('  Form_Cmds_GAS_By_Otbor: начинаем цикл главный');
+        LOOP
+            loop_cnt := loop_cnt + 1;
+            PERFORM obj_ask.log('    Form_Cmds_gas_By_Otbor: цикл главный такт ***');
+            PERFORM obj_cmd_gas.prav_cg_status(rp.id);
+            cnt := obj_cmd_gas.gen_cmd_from_buffer(rp);
+            PERFORM obj_ask.log('    gen_cmd_from_buffer=' || cnt);
+            EXIT WHEN cnt = 1;
+            PERFORM obj_cmd_gas.gen_cnt_out_multi_gd(rp);
+            PERFORM obj_cmd_gas.gen_cnt_out_gd(rp); -- можно ли хапануть с уже подвезенных контейнеров
+            EXIT WHEN obj_cmd_gas.otbor_loop_need_exit(rp);
+            is_buffer_work := obj_cmd_gas.get_buffer_work_mode(rp);
+            PERFORM obj_ask.log('    is_buffer_work=' || is_buffer_work);
+            EXIT WHEN is_buffer_work < 0;
+            pr := obj_cmd_gas.get_max_priority(rp, cur_date, is_buffer_work);
+            PERFORM obj_ask.log('    get_max_priority=' || pr);
+            EXIT WHEN pr IS null;
+            -- проверим вариант, когда ошибочно план поставился, а реальная команда не далася
+            PERFORM obj_cmd_gas.recovery_lost_cmd(rp);
+            -- определяем приоритетную сторону команды
+            cmd_side := obj_cmd_gas.get_cmd_side(rp);
+            PERFORM obj_cmd_gas.handle_cgas_on_loop(rp, is_buffer_work, pr, cmd_side, cur_date);
+            EXIT WHEN loop_cnt > max_loop_cnt;
+        END LOOP; -- главного цикла
+        PERFORM obj_ask.log('  GAS: вышли из цикла главного');
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.form_cmds_by_otbor() OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.form_cmds_by_otbor()
+    IS 'сформировать команды по отбору товаров';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.form_cmds_by_pri_vozvr(
+    )
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rp_d_id__ BIGINT;
+    new_rp_id__ BIGINT;
+    cell_sname__ TEXT;
+    sbf__ BIGINT;
+    rpmode__ BIGINT;
+    mcd__ BIGINT;
+    is_party_c__ BIGINT;
+    curpri__ BIGINT;
+    cg command_gas;
+    ccg cell;
+    pp repository_part;
+    ccgd RECORD;
+BEGIN
+    SELECT current_mode, mo_cmd_gas_depth, storage_by_firm, is_party_calc
+        INTO rpmode__, mcd__, sbf__, is_party_c__
+        FROM repository;
+    FOR cg IN (
+        SELECT *
+            FROM command_gas g
+            WHERE command_type_id IN (11,18)
+                AND state IN (1,0)
+                AND NOT exists(
+                    SELECT *
+                        FROM command
+                        WHERE command_gas_id = g.id
+                )
+    ) LOOP
+        PERFORM obj_ask.log('  GAS: анализируем command_gas nnn id=' || cg.id );
+        -- смотрим ячейку приема - не освободилась ли
+        FOR ccg IN (
+            SELECT *
+                FROM cell
+                WHERE repository_part_id = cg.rp_id
+                    AND sname = cg.cell_name
+                    AND (
+                        (is_full = 0)
+                        OR
+                        (is_full = 1 AND cell.container_id = cg.container_id)
+                    )
+                    AND obj_ask.is_cell_locked_by_cmd(cell.id) = 0
+        ) LOOP
+            -- ура - можно работать
+            -- уточняем rp_d_id для пилюгино
+            FOR pp IN (
+                SELECT rp.id
+                    FROM repository_part rp
+                    WHERE purpose_id IN (2,3)
+                    ORDER BY abs(cg.rp_id - rp.id)
+            ) LOOP
+                PERFORM obj_ask.log('  GAS уточнили : rp_d_id=' || rp_d_id__ );
+                rp_d_id__ := pp.id;
+                EXIT;
+            END LOOP;
+            PERFORM obj_ask.log('  GAS: ячейка приема/возврата свободна или там уже стоит то что нужно');
+            SELECT obj_cmd_gas.get_cell_name_for_accept(
+                rp_d_id__, cg.container_id, cg.command_type_id,
+                cg.cell_name, cg.rp_id
+            ) INTO new_rp_id__, cell_sname__;
+            rp_d_id__ := new_rp_id__;
+            PERFORM obj_ask.log('  GAS: ячейка для хранения определена как =' || cell_sname__
+                || ' склад для хранения=' || new_rp_id__ );
+            IF (cell_sname__ <> '-') THEN
+                IF (ccg.is_full = 0) THEN
+                    IF coalesce(ccg.container_id, 0) = 0 THEN
+                        UPDATE cell
+                            SET container_id = cg.container_id
+                            WHERE id = ccg.id;
+                    ELSE
+                        UPDATE cell
+                            SET container_id = 0
+                            WHERE id = ccg.id;
+                        UPDATE cell
+                            SET container_id = cg.container_id
+                            WHERE id = ccg.id;
+                    END IF;
+                END IF;
+                UPDATE command_gas
+                    SET cell_out_name = cell_sname__,
+                        zone_letter = (
+                            SELECT letter
+                                FROM zone
+                                WHERE id = (
+                                    SELECT zone_id
+                                        FROM cell
+                                        WHERE sname = cell_sname__
+                                            AND repository_part_id = rp_d_id__
+                                )
+                        )
+                    WHERE id = cg.id;
+                IF (ccg.is_full = 0) THEN
+                    UPDATE cell
+                        SET is_full = is_full + 1
+                        WHERE id = ccg.id;
+                END IF;
+                CASE cg.command_type_id
+                    WHEN 11 THEN
+                        IF service.get_rp_param_number('Particular_Accept_Priority', 0) = 1 THEN
+                            curpri__ := cg.priority;
+                        ELSE
+                            curpri__ := obj_cmd_gas."CMD_PRIORITY_CONTAINER_ACCEPT"();
+                        END IF;
+                    ELSE
+                        curpri__ := obj_ask.get_cur_max_cmd_priority();
+                END CASE;
+                PERFORM obj_ask.set_command(
+                    cg.id, 1,
+                    cg.rp_id, cg.cell_name,
+                    rp_d_id__, cell_sname__,
+                    curpri__ , cg.container_id
+                );
+                -- увеличиваем кол-во при приеме
+                IF (cg.command_type_id = 11) THEN
+                    FOR ccgd IN (
+                        SELECT cc.*, gd.good_desc_id gdid_
+                            FROM container_content cc
+                            INNER JOIN good_desc gd
+                                ON cc.good_desc_id = gd.id
+                            WHERE cc.container_id = cg.container_id
+                    ) LOOP
+                        PERFORM obj_ask.log('  GAS учет кол-ва при приеме ' || ccgd.id);
+                        IF (sbf__ = 1) THEN -- учет товаров по фирме
+                            BEGIN
+                                INSERT INTO firm_gd (
+                                    firm_id, gd_id, quantity
+                                ) VALUES (
+                                    cg.firm_id,ccgd.good_desc_id,ccgd.quantity
+                                );
+                            EXCEPTION WHEN others THEN
+                                UPDATE firm_gd
+                                    SET quantity = quantity + ccgd.quantity
+                                    WHERE gd_id = ccgd.good_desc_id
+                                        AND firm_id = cg.firm_id;
+                            END;
+                        ELSIF coalesce(is_party_c__, 0) = 1 THEN -- учет по партиям
+                            PERFORM obj_ask.log('  GAS учет по партиям ccgd.gdid_=' || ccgd.gdid_
+                                || ' ccgd.gdp_id=' || ccgd.gdp_id
+                                || ' ccgd.quantity=' || ccgd.quantity);
+                            UPDATE gd_party
+                                SET qty = qty + ccgd.quantity
+                                WHERE gd_id = ccgd.gdid_
+                                    AND (
+                                        pname IS null AND coalesce(ccgd.gdp_id, 0) = 0
+                                        OR
+                                        ccgd.gdp_id::TEXT = id
+                                    );
+                        ELSE -- общий учет товаров
+                            UPDATE good_desc
+                                SET quantity = quantity + ccgd.quantity
+                                WHERE id = ccgd.good_desc_id;
+                        END IF;
+                    END LOOP;
+                END IF;
+                INSERT INTO shelving_need_to_redraw (
+                    shelving_id
+                ) SELECT shelving_id
+                    FROM cell
+                    WHERE id = ccg.id
+                        AND NOT exists(
+                            SELECT *
+                                FROM shelving_need_to_redraw
+                                WHERE shelving_id = cell.shelving_id
+                        );
+            END IF;
+        END LOOP;
+    END LOOP;
+    -- COMMIT;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.form_cmds_by_pri_vozvr() OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.form_cmds_by_pri_vozvr()
+    IS 'сформировать команды по приходу/возврату';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.form_commands(
+    )
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rep repository;
+    msg__ TEXT;
+    sqlerrm__ TEXT;
+BEGIN
+    FOR rep IN (
+        SELECT * FROM repository
+    ) LOOP
+        -- COMMIT;  -- если пул остался незакоммиченным, корммитим
+        BEGIN
+            PERFORM obj_cmd_gas.form_cmds_by_pri_vozvr();
+            -- COMMIT;
+        EXCEPTION WHEN others THEN
+            GET STACKED DIAGNOSTICS sqlerrm__ = MESSAGE_TEXT;
+            msg__ := 'ERROR - ошибка из cmd_gas.Form_Commands-Form_Cmds_By_Pri_Vozvr: ' || sqlerrm__;
+            -- ROLLBACK;
+            PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ASK"(), null, null, msg__);
+            PERFORM obj_ask.log(msg__);
+        END;
+        IF rep.abstract_level >= 3 THEN
+            BEGIN
+                PERFORM obj_cmd_gas.form_cmds_by_otbor();
+                -- COMMIT;
+            EXCEPTION WHEN others THEN
+                GET STACKED DIAGNOSTICS sqlerrm__ = MESSAGE_TEXT;
+                msg__ := 'ERROR - ошибка из cmd_gas.Form_Commands-Form_Cmds_By_Otbor: ' || sqlerrm__;
+                -- ROLLBACK;
+                PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ASK"(), null, null, msg__);
+                PERFORM obj_ask.log(msg__);
+            END;
+        END IF;
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.form_commands() OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.form_commands()
+    IS 'основная процедура - формирование команд';
 
 
 CREATE OR REPLACE FUNCTION obj_cmd_gas.parse_cg_cc(

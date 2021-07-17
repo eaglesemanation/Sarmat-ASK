@@ -66,18 +66,18 @@
     - [x] workload_info
 
 - obj_cmd_gas
-    - [ ] Form_Commands
+    - [x] form_commands
     - [ ] crash_test_cmd_Gas_tact
     - [ ] crash_test_cmd_accept
     - [x] get_acc_cell_src_npp_rp
-    - [ ] get_always_out_bcg
-    - [ ] get_cg_was_cnt_planned
+    - [x] get_always_out_bcg
+    - [x] get_cg_was_cnt_planned
     - [ ] get_container_last_rp
-    - [ ] get_last_side_zone
-    - [ ] get_quantity_accordance
-    - [ ] prav_cg_status
-    - [ ] presence_in_side
-    - [ ] presence_in_side_accurance
+    - [x] get_last_side_zone
+    - [x] get_quantity_accordance
+    - [x] prav_cg_status
+    - [x] presence_in_side
+    - [x] presence_in_side_accurance
     - [x] get_cell_name_for_accept
     - [ ] is_cg_otbor_cell_out_unlock
     - [x] parse_cg_cc
@@ -248,11 +248,11 @@
     - [ ] get_rp_param_string
     - [ ] get_sec
     - [x] get_ust_cell_dir
-    - [ ] is_cell_accept_enable
+    - [x] is_cell_accept_enable
     - [x] is_cell_cmd_locked
     - [x] is_cell_full_check
     - [x] is_cell_near_edge
-    - [ ] is_cell_on_comp
+    - [x] is_cell_on_comp
     - [x] is_cell_over_locked
     - [x] is_free_way
     - [ ] is_hibernate
@@ -274,7 +274,7 @@
     - [ ] recover_last_ocil
     - [ ] robot_goto_cell
     - [x] unlock_all_not_ness
-    - [ ] empty_cell_capability
+    - [x] empty_cell_capability
     - [ ] ml_get_val
     - [x] ml_get_rus_eng_val
     - [ ] make_bkp_stamp
