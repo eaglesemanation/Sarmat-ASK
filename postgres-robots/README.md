@@ -83,15 +83,15 @@
     - [x] parse_cg_cc
 
 - obj_cmd_order
-    - [ ] Form_Commands
-    - [ ] get_Order_Content_Out_Picked
-    - [ ] get_Order_Content_Out_Promis
-    - [ ] get_container_izlish
+    - [x] form_commands
+    - [x] get_order_content_out_picked
+    - [x] get_order_content_out_promis
+    - [x] get_container_izlish
     - [x] get_ras_gd_rest
     - [x] get_rasdoc_rest
-    - [ ] is_rashod_shortage
-    - [ ] Order_Content_Out_Doz_on_dfct
-    - [ ] Cancel_Error_Cmd_Cont_Out
+    - [x] is_rashod_shortage
+    - [x] order_content_out_doz_on_dfct
+    - [x] cancel_error_cmd_cont_out
 
 - obj_robot
     - [x] log
