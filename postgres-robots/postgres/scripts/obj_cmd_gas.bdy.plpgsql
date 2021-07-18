@@ -351,6 +351,40 @@ COMMENT ON FUNCTION obj_cmd_gas.get_cg_was_cnt_planned(bigint)
     IS 'сколько штук запланировано к подвозу?';
 
 
+CREATE OR REPLACE FUNCTION obj_cmd_gas.get_container_last_rp(
+    container_barcode_ text)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    max_id_ BIGINT;
+    cont_id_ BIGINT;
+    cg command_gas;
+BEGIN
+    SELECT id INTO cont_id_
+        FROM container
+        WHERE barcode = container_barcode_;
+    SELECT coalesce(max(id), 0) INTO max_id_
+        FROM command_gas
+        WHERE container_id = cont_id_
+            AND coalesce(rp_id, 0) > 0;
+    FOR cg IN (
+        SELECT *
+            FROM command_gas
+            WHERE id = max_id_
+    ) LOOP
+        RETURN cg.rp_id;
+    END LOOP;
+    RETURN null;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.get_container_last_rp(text) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.get_container_last_rp(text)
+    IS 'возвращает огурец, на котором последний раз хранился товар';
+
+
 CREATE OR REPLACE FUNCTION obj_cmd_gas.get_last_side_zone(
     rp_id_ bigint,
     side_ bigint)
@@ -1988,6 +2022,197 @@ COMMENT ON FUNCTION obj_cmd_gas.form_commands()
     IS 'основная процедура - формирование команд';
 
 
+CREATE OR REPLACE FUNCTION obj_cmd_gas.crash_test_cmd_gas_tact(
+    rp_id_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    lstate BIGINT;
+    cnt__ BIGINT;
+    cfull RECORD;
+    cmd command_gas;
+    cnt container;
+    sqlerrm__ TEXT;
+BEGIN
+    SELECT count(*) INTO cnt__
+        FROM command_gas
+        WHERE rp_id = rp_id_
+            AND command_type_id = 18
+            AND state NOT IN (2,5);
+    PERFORM obj_rpart.log(rp_id_, 'crash_test_cmd_Gas_tact cnt__=' || cnt__);
+    IF (cnt__ <= 3) THEN
+        -- вначале вывозим все полные ячейки
+        FOR cfull IN (
+            SELECT cl.*, b.barcode bc
+                FROM cell cl
+                INNER JOIN container b
+                    ON cl.container_id = b.id
+                WHERE hi_level_type IN (15)
+                    AND is_full = 1
+                    AND NOT exists(
+                        SELECT *
+                            FROM cell_cmd_lock
+                            WHERE cell_id = cl.id
+                    )
+                    AND repository_part_id = rp_id_
+                ORDER BY random()
+        ) LOOP
+            PERFORM obj_rpart.log(rp_id_, '  c15name=' || cfull.sname);
+            -- ищем последнюю команду на возврат
+            lstate := 5;
+            FOR cmd IN (
+                SELECT *
+                    FROM command_gas
+                    WHERE command_type_id = 18
+                        AND cell_name = cfull.sname
+                        AND rp_id = cfull.repository_part_id
+                    ORDER BY id DESC
+            ) LOOP
+                lstate := cmd.state;
+                EXIT;
+            END LOOP;
+            IF (lstate = 5) THEN --последняя команда выполнилась, даем новую
+                PERFORM obj_rpart.log(rp_id_, '  перед command_gas');
+                INSERT INTO command_gas (
+                    command_type_id, cell_name, rp_id,
+                    state, container_barcode
+                ) VALUES (
+                    18, cfull.sname, cfull.repository_part_id,
+                    0, cfull.bc
+                );
+                PERFORM obj_rpart.log(rp_id_, '  после  command_gas');
+                --COMMIT;
+                EXIT;
+            END IF;
+        END LOOP;
+    END IF;
+    -- теперь заказываем в пустые ячейки
+    SELECT count(*) INTO cnt__
+        FROM command_gas
+        WHERE rp_id = rp_id_
+            AND command_type_id = 14
+            AND state NOT IN (2,5);
+    PERFORM obj_rpart.log(rp_id_, '  заказ в пустые ' || cnt__);
+    IF (cnt__ <= 3) THEN
+        FOR cfull IN (
+            SELECT cl.*
+                FROM cell cl
+                WHERE hi_level_type IN (15)
+                    AND is_full = 0
+                    AND repository_part_id = rp_id_
+                    AND service.is_cell_cmd_locked(cl.id) = 0
+                    AND is_error = 0
+                ORDER BY random()
+        ) LOOP
+            PERFORM obj_rpart.log(rp_id_, '  выбрали ячейку сброса ' || cfull.sname);
+            lstate := 5;
+            FOR cmd IN (
+                SELECT *
+                    FROM command_gas
+                    WHERE command_type_id = 14
+                        AND cell_name = cfull.sname
+                        AND rp_id = cfull.repository_part_id
+                    ORDER BY id DESC
+            ) LOOP
+                lstate := cmd.state;
+                EXIT;
+            END LOOP;
+            IF (lstate = 5) THEN --последняя команда выполнилась, даем новую
+                FOR cnt IN (
+                    SELECT *
+                        FROM container
+                        WHERE location = 1
+                            AND cell_id IN (
+                                SELECT id
+                                    FROM cell
+                                    WHERE repository_part_id = rp_id_
+                            )
+                        ORDER BY random()
+                ) LOOP
+                    BEGIN
+                        PERFORM obj_rpart.log(rp_id_, '  перед ');
+                        INSERT INTO command_gas (
+                            command_type_id, cell_name, rp_id,
+                            state, container_barcode
+                        ) VALUES (
+                            14, cfull.sname, cfull.repository_part_id,
+                            0, cnt.barcode
+                        );
+                        PERFORM obj_rpart.log(rp_id_, '  после  ');
+                        --COMMIT;
+                    EXCEPTION WHEN others THEN
+                        GET STACKED DIAGNOSTICS sqlerrm__ = MESSAGE_TEXT;
+                        PERFORM obj_rpart.log(rp_id_, '  error:  ' || sqlerrm__);
+                    END;
+                    EXIT;
+                END LOOP;
+            END IF;
+            EXIT;
+        END LOOP;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.crash_test_cmd_gas_tact(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.crash_test_cmd_gas_tact(bigint)
+    IS 'такт общего крэш-теста';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.crash_test_cmd_accept(
+    cell_name_ text,
+    rp_id_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cc cell;
+    cnt_ container;
+BEGIN
+    FOR cc IN (
+        SELECT *
+            FROM cell
+            WHERE sname = cell_name_
+                AND repository_part_id = rp_id_
+                AND hi_level_type IN (16,9)
+                AND is_full = 0
+    ) LOOP
+        FOR cnt_ IN (
+            SELECT *
+                FROM container cnt
+                WHERE location = 0
+                    AND NOT exists(
+                        SELECT *
+                            FROM container_content
+                            WHERE container_id = cnt.id
+                                AND quantity > 0
+                    )
+        ) LOOP
+            BEGIN
+                INSERT INTO command_gas (
+                    command_type_id, rp_id, container_barcode,
+                    content, cell_name
+                ) VALUES (
+                    11, rp_id_, cnt_.barcode,
+                    '[9534273;67]', cell_name_
+                );
+                -- COMMIT;
+            EXCEPTION WHEN others THEN
+                RETURN;
+            END;
+            EXIT;
+        END LOOP;
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.crash_test_cmd_accept(text, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.crash_test_cmd_accept(text, bigint)
+    IS 'крэш-тест приемки товара';
+
+
 CREATE OR REPLACE FUNCTION obj_cmd_gas.parse_cg_cc(
     cg_id bigint,
     ccont text,
@@ -2363,6 +2588,36 @@ COMMENT ON FUNCTION obj_cmd_gas.get_cell_name_for_accept(bigint, bigint, bigint,
     IS 'возвращает название и подсклад ячейки для хранения контейнера
 принимает: склад, контейнер, команду, ячейку-источник, склад команды
 возвращает - название ячейки и подсклад';
+
+
+CREATE OR REPLACE FUNCTION obj_cmd_gas.is_cg_otbor_cell_out_unlock(
+    cg_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cg command_gas_cell_in;
+BEGIN
+    FOR cg IN (
+        SELECT *
+            FROM command_gas_cell_in cgci
+            WHERE command_gas_id = cg_id_
+                AND NOT exists(
+                    SELECT *
+                        FROM cell_cmd_lock
+                        WHERE cell_id = cgci.cell_id
+                )
+    ) LOOP
+        RETURN 1;
+    END LOOP;
+    RETURN 0;
+END;
+$BODY$;
+ALTER FUNCTION obj_cmd_gas.is_cg_otbor_cell_out_unlock(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_cmd_gas.is_cg_otbor_cell_out_unlock(bigint)
+    IS 'есть ли незанятые командами ячейки для сброса';
 
 
 -- vim: ft=pgsql

@@ -67,19 +67,19 @@
 
 - obj_cmd_gas
     - [x] form_commands
-    - [ ] crash_test_cmd_Gas_tact
-    - [ ] crash_test_cmd_accept
+    - [x] crash_test_cmd_gas_tact
+    - [x] crash_test_cmd_accept
     - [x] get_acc_cell_src_npp_rp
     - [x] get_always_out_bcg
     - [x] get_cg_was_cnt_planned
-    - [ ] get_container_last_rp
+    - [x] get_container_last_rp
     - [x] get_last_side_zone
     - [x] get_quantity_accordance
     - [x] prav_cg_status
     - [x] presence_in_side
     - [x] presence_in_side_accurance
     - [x] get_cell_name_for_accept
-    - [ ] is_cg_otbor_cell_out_unlock
+    - [x] is_cg_otbor_cell_out_unlock
     - [x] parse_cg_cc
 
 - obj_cmd_order
