@@ -1,7 +1,6 @@
 version: "3.1"
 
 services:
-
   postgres:
     build: ./postgres-robots
     image: postgres-robots
@@ -14,12 +13,17 @@ services:
       POSTGRES_DB: postgres
 
   pgadmin:
-    image: dpage/pgadmin4
+    image: index.docker.io/dpage/pgadmin4
     restart: always
     ports:
-      - 80:80
+      - 8080:8080
     environment:
-      PGADMIN_DEFAULT_EMAIL: root@muralovka.ru
-      PGADMIN_DEFAULT_PASSWORD: toor
+      PGADMIN_DEFAULT_EMAIL: root@pgadmin.org
+      PGADMIN_DEFAULT_PASSWORD: root
+      PGADMIN_LISTEN_PORT: 8080
     volumes:
-      - ./servers.json:/pgadmin4/servers.json:Z,ro
+      - ./servers.json:/pgadmin4/servers.json:z,ro
+      - pgadmin-data:/var/lib/pgadmin
+
+volumes:
+  pgadmin-data:
