@@ -37,3 +37,7 @@ COMMENT ON SCHEMA obj_doc_expense IS 'Migrated obj_doc_expense package';
 DROP SCHEMA IF EXISTS extend;
 CREATE SCHEMA extend AUTHORIZATION postgres;
 COMMENT ON SCHEMA extend IS 'Migrated extend package';
+
+DROP SCHEMA IF EXISTS api;
+CREATE SCHEMA api AUTHORIZATION postgres;
+COMMENT ON SCHEMA api IS 'Migrated api package';

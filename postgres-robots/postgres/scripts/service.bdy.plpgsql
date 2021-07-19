@@ -159,6 +159,132 @@ COMMENT ON FUNCTION service.ml_get_rus_eng_val(text, text)
 мультиязычность - получить значение в зависимости от языка';
 
 
+CREATE OR REPLACE FUNCTION service.ml_get_val(
+    var_name_ text,
+    val_def_ text)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    -- TODO: originally depends on call stack information to determine full key, which is definitely a hack
+    -- Either change keys in db itself, or modify all calls to that function to include full name
+    RETURN val_def_;
+END;
+$BODY$;
+ALTER FUNCTION service.ml_get_val(text, text) OWNER TO postgres;
+COMMENT ON FUNCTION service.ml_get_val(text, text)
+    IS 'мультиязычность - получить значение ';
+
+
+CREATE OR REPLACE FUNCTION service.get_last_cmd(
+    comp_name_ text,
+    OUT cmd_name text,
+    OUT cmd_name_full text,
+    OUT dt_cr text,
+    OUT sost text,
+    OUT error_ text)
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cgid BIGINT;
+    cmd command;
+    cr robot;
+BEGIN
+    error_ := '0';
+    FOR cmd IN (
+        SELECT cmd_.*
+            FROM command cmd_
+            INNER JOIN cell cl
+                ON cl.id IN (cmd_.cell_src_id, cmd_.cell_dest_id)
+            CROSS JOIN repository rp
+            WHERE date_trunc('day', LOCALTIMESTAMP) - cmd_.date_time_create < INTERVAL '50 days'
+                AND (
+                    trim(upper(cl.notes)) = trim(upper(comp_name_))
+                    OR
+                    rp.cell_by_comp = 0
+                )
+            ORDER BY cmd_.id DESC
+    ) LOOP
+        cmd_name := service.ml_get_val('get_last_cmd.transfer_container', 'переместить контейнер');
+        cmd_name_full := cmd.cell_src_sname || '(' || cmd.rp_src_id || ') -> '
+            || cmd.cell_dest_sname || '(' || cmd.rp_dest_id || ')';
+        dt_cr := to_char(cmd.date_time_create, 'dd.mm.yy hh24:mi');
+        IF (cmd.state = 0) THEN
+            sost := service.ml_get_val('get_last_cmd.prepared', 'готовится');
+        ELSIF (cmd.state = 1) THEN
+            sost := service.ml_get_val('get_last_cmd.received', 'получена АСК');
+        ELSIF (cmd.state = 3) THEN
+            sost := service.ml_get_val('get_last_cmd.running', 'запущена');
+        ELSIF (cmd.state = 5) THEN
+            sost := service.ml_get_val('get_last_cmd.finished', 'выполнена');
+        ELSIF (cmd.state = 6) THEN
+            sost := service.ml_get_val('get_last_cmd.canceled', 'отменена');
+        ELSIF (cmd.state = 2) THEN
+            sost := service.ml_get_val('get_last_cmd.error_serious', 'ошибка - обратитесь к сисадмину!');
+        ELSE
+            sost := service.ml_get_val('get_last_cmd.undefined', 'неопределено');
+        END IF;
+        FOR cr IN (
+            SELECT r.*
+                FROM robot r
+                INNER JOIN command_inner ci
+                    ON r.command_inner_id = ci.id
+                INNER JOIN cell cl
+                    ON (ci.command_type_id = 4 AND cl.id = cell_src_id
+                        OR
+                        ci.command_type_id = 5 AND cl.id = cell_dest_id)
+                CROSS JOIN repository rp
+                WHERE wait_for_problem_resolve = 1
+                    AND (
+                        trim(upper(cl.notes)) = trim(upper(comp_name_))
+                        OR
+                        rp.cell_by_comp = 0
+                    )
+        ) LOOP
+            sost := service.ml_get_val('get_last_cmd.error_simple', 'Ошибка - жду решения оп-ра');
+            error_ := '1';
+        END LOOP;
+        IF (error_ = '0') THEN
+            FOR cr IN (
+                SELECT r.*
+                    FROM robot r
+                    INNER JOIN command_inner ci
+                        ON r.command_inner_id = ci.id
+                    INNER JOIN command_rp crp
+                        ON ci.command_rp_id = crp.id
+                    INNER JOIN command cmd_
+                        ON crp.command_id = cmd_.id
+                    INNER JOIN cell cl
+                        ON cl.id IN (cmd_.cell_src_id, cmd_.cell_dest_id)
+                    CROSS JOIN repository rp
+                    WHERE wait_for_problem_resolve = 1
+                        AND (
+                            trim(upper(cl.notes)) = trim(upper(comp_name_))
+                            OR
+                            rp.cell_by_comp = 0
+                        )
+            ) LOOP
+                sost := service.ml_get_val('get_last_cmd.error_serious','Ошибка - обратитесь к сисадмину!');
+                error_ := '2';
+            END LOOP;
+        END IF;
+        RETURN;
+    END LOOP;
+    cmd_name := '-';
+    cmd_name_full := '-';
+    dt_cr := '-';
+    sost := '-';
+END;
+$BODY$;
+ALTER FUNCTION service.get_last_cmd(text) OWNER TO postgres;
+COMMENT ON FUNCTION service.get_last_cmd(text)
+    IS 'получить информацию о состоянии последней команды, отданной с указанного компьютера';
+
+
 CREATE OR REPLACE FUNCTION service.get_another_robot_id(
     rid bigint)
     RETURNS bigint

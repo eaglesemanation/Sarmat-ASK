@@ -3,24 +3,24 @@
 ![Progress](https://progress-bar.dev/78/)
 
 - api
-    - [ ] get_cmd_gas_time_end
-    - [ ] get_cmd_gas_time_begin
-    - [ ] get_cmd_problem_state
-    - [ ] Get_Container_Last_Robot
-    - [ ] get_last_cmd
-    - [ ] get_problem_resolve_text
-    - [ ] Calc_Min_Distance
-    - [ ] Calc_Min_Distance
-    - [ ] Container_Accept_by_id
-    - [ ] Container_Add
-    - [ ] Container_Transfer
-    - [ ] Container_Transfer_by_ID
-    - [ ] Container_Return
-    - [ ] Container_Return_by_id
-    - [ ] Container_Return
-    - [ ] Container_Remove
-    - [ ] Container_Remove_by_id
-    - [ ] Problem_Resolve
+    - [x] get_cmd_gas_time_end
+    - [x] get_cmd_gas_time_begin
+    - [x] get_cmd_problem_state
+    - [x] get_container_last_robot
+    - [x] get_last_cmd
+    - [x] get_problem_resolve_text
+    - [x] calc_min_distance
+    - [x] calc_min_distance
+    - [x] container_accept_by_id
+    - [x] container_add
+    - [x] container_transfer
+    - [x] container_transfer_by_id
+    - [x] container_return
+    - [x] container_return_by_id
+    - [x] container_return
+    - [x] container_remove
+    - [x] container_remove_by_id
+    - [x] problem_resolve
     - [ ] Robot_Problem_Resolve
 
 - emu
@@ -237,7 +237,7 @@
     - [x] get_container_sum_qty
     - [ ] get_corr_shelving_id
     - [ ] get_free_rest
-    - [ ] get_last_cmd
+    - [x] get_last_cmd
     - [ ] get_max_cmd_priority
     - [ ] get_robot_ci_cnt_bc
     - [ ] get_robot_ci_cell_src
@@ -275,7 +275,7 @@
     - [ ] robot_goto_cell
     - [x] unlock_all_not_ness
     - [x] empty_cell_capability
-    - [ ] ml_get_val
+    - [x] ml_get_val
     - [x] ml_get_rus_eng_val
     - [ ] make_bkp_stamp
     - [ ] make_bkp_good

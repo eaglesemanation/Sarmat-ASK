@@ -1,0 +1,494 @@
+CREATE OR REPLACE FUNCTION api.get_cmd_gas_time_end(
+    cg_id_ bigint)
+    RETURNS date
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cmd command;
+BEGIN
+    FOR cmd IN (
+        SELECT *
+            FROM command
+            WHERE command_gas_id = cg_id_
+            ORDER BY date_time_end DESC
+    ) LOOP
+        RETURN cmd.date_time_end;
+    END LOOP;
+    RETURN null;
+END;
+$BODY$;
+ALTER FUNCTION api.get_cmd_gas_time_end(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION api.get_cmd_gas_time_end(bigint)
+    IS 'получить время завершения команды перемещения контейнера';
+
+
+CREATE OR REPLACE FUNCTION api.get_cmd_gas_time_begin(
+    cg_id_ bigint)
+    RETURNS date
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cmd command;
+BEGIN
+    FOR cmd IN (
+        SELECT *
+            FROM command
+            WHERE command_gas_id = cg_id_
+            ORDER BY date_time_begin
+    ) LOOP
+        RETURN cmd.date_time_begin;
+    END LOOP;
+    RETURN null;
+END;
+$BODY$;
+ALTER FUNCTION api.get_cmd_gas_time_begin(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION api.get_cmd_gas_time_begin(bigint)
+    IS 'получить время начала команды перемещения контейнера';
+
+
+CREATE OR REPLACE FUNCTION api.get_cmd_problem_state(
+    cmd_id_ bigint)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN '';
+END;
+$BODY$;
+ALTER FUNCTION api.get_cmd_problem_state(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION api.get_cmd_problem_state(bigint)
+    IS 'пустышка на будущее';
+
+
+CREATE OR REPLACE FUNCTION api.get_container_last_robot(
+    container_id_ bigint,
+    mode_ bigint DEFAULT 3)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    ci_ command_inner;
+BEGIN
+    IF (mode_ = 1) THEN
+        FOR ci_ IN (
+            SELECT *
+                FROM command_inner
+                WHERE container_id = container_id_
+                ORDER BY id DESC
+        ) LOOP
+            RETURN ci_.robot_id;
+        END LOOP;
+    ELSIF (mode_ = 2) THEN
+        FOR ci_ IN (
+            SELECT *
+                FROM command_inner
+                WHERE container_id = container_id_
+                    AND state = 5
+                    AND date_time_end IS NOT null
+                ORDER BY id DESC
+        ) LOOP
+            RETURN ci_.robot_id;
+        END LOOP;
+    ELSIF (mode_ = 3) THEN
+        FOR ci_ IN (
+            SELECT ci.robot_id
+                FROM command_inner ci
+                INNER JOIN command_rp crp
+                    ON ci.command_rp_id = crp.id
+                WHERE ci.container_id = container_id_
+                    AND ci.state = 5
+                    AND crp.state = 5
+                ORDER BY ci.id DESC
+        ) LOOP
+            RETURN ci_.robot_id;
+        END LOOP;
+    END IF;
+    RETURN null;
+END;
+$BODY$;
+ALTER FUNCTION api.get_container_last_robot(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION api.get_container_last_robot(bigint, bigint)
+    IS 'получить ID робота, который последний работал с указанным контейнером';
+
+
+CREATE OR REPLACE FUNCTION api.get_last_cmd(
+    comp_name_ text,
+    OUT cmd_name text,
+    OUT cmd_name_full text,
+    OUT dt_cr text,
+    OUT sost text,
+    OUT error_ text)
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    SELECT service.get_last_cmd(comp_name_)
+        INTO cmd_name, cmd_name_full, dt_cr, sost, error_;
+END;
+$BODY$;
+ALTER FUNCTION api.get_last_cmd(text) OWNER TO postgres;
+COMMENT ON FUNCTION api.get_last_cmd(text)
+    IS 'получить информацию по последней команде, поданной с указанного компьютера';
+
+
+CREATE OR REPLACE FUNCTION api.get_problem_resolve_text(
+    comp_name_ text)
+    RETURNS text
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN obj_robot.get_problem_resolve_text(comp_name_);
+END;
+$BODY$;
+ALTER FUNCTION api.get_problem_resolve_text(text) OWNER TO postgres;
+COMMENT ON FUNCTION api.get_problem_resolve_text(text)
+    IS 'получить запрос оператору на решение проблемы';
+
+
+CREATE OR REPLACE FUNCTION api.calc_min_distance(
+    rp_type bigint,
+    max_npp bigint,
+    n1 bigint,
+    n2 bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN obj_rpart.calc_min_distance(rp_type, max_npp, n1, n2);
+END;
+$BODY$;
+ALTER FUNCTION api.calc_min_distance(bigint, bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION api.calc_min_distance(bigint, bigint, bigint, bigint)
+    IS 'высчитать минимальное расстояние между №№ секций';
+
+
+CREATE OR REPLACE FUNCTION api.calc_min_distance(
+    rp_id_ bigint,
+    cell1_ text,
+    cell2_ text)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN obj_rpart.calc_min_distance(rp_id_, cell1_, cell2_);
+END;
+$BODY$;
+ALTER FUNCTION api.calc_min_distance(bigint, text, text) OWNER TO postgres;
+COMMENT ON FUNCTION api.calc_min_distance(bigint, text, text)
+    IS 'высчитать минимальное расстояние между ячейками';
+
+
+CREATE OR REPLACE FUNCTION api.container_accept_by_id(
+    container_id_ bigint,
+    container_barcode_ text,
+    container_type_ bigint,
+    cell_id_ bigint,
+    priority_ bigint DEFAULT 0)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    id_ bigint;
+BEGIN
+    INSERT INTO command_gas (
+        command_type_id, container_id, container_barcode,
+        container_type, cell_id, priority
+    ) VALUES (
+        11, container_id_, container_barcode_,
+        container_type_, cell_id_, priority_
+    ) RETURNING id INTO id_;
+    RETURN id_;
+END;
+$BODY$;
+ALTER FUNCTION api.container_accept_by_id(bigint, text, bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION api.container_accept_by_id(bigint, text, bigint, bigint, bigint)
+    IS 'принять контейнер по ID';
+
+
+CREATE OR REPLACE FUNCTION api.container_add(
+    container_barcode_ text,
+    size_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    id_ bigint;
+BEGIN
+    INSERT INTO container (
+        barcode, type
+    ) VALUES (
+        container_barcode_, size_
+    ) RETURNING id INTO id_;
+    RETURN id_;
+END;
+$BODY$;
+ALTER FUNCTION api.container_add(text, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION api.container_add(text, bigint)
+    IS 'команда добавления нового контейнера в систему';
+
+
+CREATE OR REPLACE FUNCTION api.container_transfer(
+    repository_part_id_ bigint,
+    container_barcode_ text,
+    cell_name_ text,
+    priority_ bigint DEFAULT 0,
+    comp_name_ text DEFAULT '')
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    id_ BIGINT;
+BEGIN
+    INSERT INTO command_gas (
+        command_type_id, rp_id, container_barcode,
+        cell_name, comp_name, priority
+    ) VALUES (
+        14, repository_part_id_, container_barcode_,
+        cell_name_, comp_name_, priority_
+    ) RETURNING id INTO id_;
+    RETURN id_;
+END;
+$BODY$;
+ALTER FUNCTION api.container_transfer(bigint, text, text, bigint, text) OWNER TO postgres;
+COMMENT ON FUNCTION api.container_transfer(bigint, text, text, bigint, text)
+    IS 'команда перемещения контейнера';
+
+
+CREATE OR REPLACE FUNCTION api.container_transfer_by_id(
+    container_id_ bigint,
+    cell_id_ bigint,
+    priority_ bigint DEFAULT 0)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    id_ BIGINT;
+BEGIN
+    INSERT INTO command_gas (
+        command_type_id, container_id, cell_id, priority
+    ) VALUES (
+        14, container_id_, cell_id_, priority_
+    ) RETURNING id INTO id_;
+    RETURN id_;
+END;
+$BODY$;
+ALTER FUNCTION api.container_transfer_by_id(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION api.container_transfer_by_id(bigint, bigint, bigint)
+    IS 'команда перемещения контейнера по ID';
+
+
+CREATE OR REPLACE FUNCTION api.container_return(
+    repository_part_id_ bigint,
+    container_barcode_ text,
+    cell_name_ text,
+    comp_name_ text DEFAULT '')
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    id_ BIGINT;
+BEGIN
+    INSERT INTO command_gas (
+        command_type_id, rp_id, container_barcode,
+        cell_name, comp_name
+    ) VALUES (
+        18, repository_part_id_, container_barcode_,
+        cell_name_, comp_name_
+    ) RETURNING id INTO id_;
+    RETURN id_;
+END;
+$BODY$;
+ALTER FUNCTION api.container_return(bigint, text, text, text) OWNER TO postgres;
+COMMENT ON FUNCTION api.container_return(bigint, text, text, text)
+    IS 'команда возврата контейнера';
+
+
+CREATE OR REPLACE FUNCTION api.container_return_by_id(
+    container_id_ bigint,
+    cell_id_ bigint,
+    priority_ bigint DEFAULT 0)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    id_ BIGINT;
+BEGIN
+    INSERT INTO command_gas (
+        command_type_id, container_id, cell_id, priority
+    ) VALUES (
+        18, container_id_, cell_id_, priority_
+    ) RETURNING id INTO id_;
+    RETURN id_;
+END;
+$BODY$;
+ALTER FUNCTION api.container_return_by_id(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION api.container_return_by_id(bigint, bigint, bigint)
+    IS 'команда возврата контейнера по ID';
+
+
+CREATE OR REPLACE FUNCTION api.container_return(
+    container_barcode_ text)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    id_ BIGINT;
+BEGIN
+    INSERT INTO command_gas (
+        command_type_id, container_barcode
+    ) VALUES (
+        18, container_barcode_
+    ) RETURNING id INTO id_;
+    RETURN id_;
+END;
+$BODY$;
+ALTER FUNCTION api.container_return(text) OWNER TO postgres;
+COMMENT ON FUNCTION api.container_return(text)
+    IS 'команда возврата контейнера';
+
+
+CREATE OR REPLACE FUNCTION api.container_remove(
+    container_barcode_ text,
+    comp_name_ text DEFAULT '')
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    id_ BIGINT;
+BEGIN
+    INSERT INTO command_gas (
+        command_type_id, container_barcode, comp_name
+    ) VALUES (
+        13, container_barcode_, comp_name_
+    ) RETURNING id INTO id_;
+    RETURN id_;
+END;
+$BODY$;
+ALTER FUNCTION api.container_remove(text, text) OWNER TO postgres;
+COMMENT ON FUNCTION api.container_remove(text, text)
+    IS 'команда извлечения контейнера из АСК';
+
+
+CREATE OR REPLACE FUNCTION api.container_remove_by_id(
+    container_id_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    id_ BIGINT;
+BEGIN
+    INSERT INTO command_gas (
+        command_type_id, container_id
+    ) VALUES (
+        13, container_id_
+    ) RETURNING id INTO id_;
+    RETURN id_;
+END;
+$BODY$;
+ALTER FUNCTION api.container_remove_by_id(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION api.container_remove_by_id(bigint)
+    IS 'команда извлечения контейнера из АСК по ID';
+
+
+CREATE OR REPLACE FUNCTION api.problem_resolve(
+    comp_name_ text)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN obj_robot.problem_resolve(comp_name_);
+END;
+$BODY$;
+ALTER FUNCTION api.problem_resolve(text) OWNER TO postgres;
+COMMENT ON FUNCTION api.problem_resolve(text)
+    IS 'запустить процесс решения проблемы';
+
+
+CREATE OR REPLACE FUNCTION api.robot_problem_resolve(
+    rid_ bigint,
+    problem_resolve_id_ bigint,
+    add_par_ text)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rr robot;
+    ci command_inner;
+    pr problem_resolving;
+BEGIN
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE id = rid_
+                AND coalesce(command_inner_id, 0) > 0
+    ) LOOP
+        FOR ci IN (
+            SELECT *
+                FROM command_inner
+                WHERE id = rr.command_inner_id
+        ) LOOP
+            FOR pr IN (
+                SELECT *
+                    FROM problem_resolving pr
+                    WHERE command_type_id = ci.command_type_id
+                        AND rr.platform_busy = coalesce(platform_busy,rr.platform_busy)
+                        AND id = problem_resolve_id_
+            ) LOOP
+                UPDATE command_inner
+                    SET problem_resolving_id = problem_resolve_id_,
+                        problem_resolving_par = add_par_
+                    WHERE id = rr.command_inner_id;
+                -- COMMIT;
+                RETURN;
+            END LOOP;
+            RAISE EXCEPTION 'Выбран неверный вариант решения проблемы!'
+                USING errcode = 50012;
+        END LOOP;
+    END LOOP;
+    RAISE EXCEPTION 'Нет возможности решить проблему для робота без команды!'
+        USING errcode = 50012;
+END;
+$BODY$;
+ALTER FUNCTION api.robot_problem_resolve(bigint, bigint, text) OWNER TO postgres;
+COMMENT ON FUNCTION api.robot_problem_resolve(bigint, bigint, text)
+    IS 'запустить расширенный процесс решения проблемы';
+
+
+-- vim: ft=pgsql
