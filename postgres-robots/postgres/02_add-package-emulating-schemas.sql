@@ -41,3 +41,7 @@ COMMENT ON SCHEMA extend IS 'Migrated extend package';
 DROP SCHEMA IF EXISTS api;
 CREATE SCHEMA api AUTHORIZATION postgres;
 COMMENT ON SCHEMA api IS 'Migrated api package';
+
+DROP SCHEMA IF EXISTS emu;
+CREATE SCHEMA emu AUTHORIZATION postgres;
+COMMENT ON SCHEMA emu IS 'Migrated emu package';

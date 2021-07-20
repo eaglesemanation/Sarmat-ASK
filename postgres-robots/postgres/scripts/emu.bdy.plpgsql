@@ -1,0 +1,1165 @@
+DROP TYPE IF EXISTS emu.ttt_rec CASCADE;
+CREATE TYPE emu.ttt_rec AS (
+	id BIGINT,
+	npp BIGINT,
+	locked_by_robot_id BIGINT,
+	speed BIGINT,
+	length BIGINT,
+	cell_sname TEXT
+); -- элемент трека
+
+DROP TYPE IF EXISTS emu.trp_rec CASCADE;
+CREATE TYPE emu.trp_rec AS (
+    id BIGINT,
+    repository_type BIGINT,
+    min_npp BIGINT,
+    max_npp BIGINT,
+    ttt_cnt BIGINT,
+    sorb BIGINT,
+    num_of_robots BIGINT
+); -- огурец
+
+DROP TYPE IF EXISTS emu.tr_rec CASCADE;
+CREATE TYPE emu.tr_rec AS (
+    mo_cmd_depth BIGINT,
+    mo_emu_step BIGINT
+); -- общие параметры эмуляции
+
+DROP TYPE IF EXISTS emu.t_cmd_emu_info CASCADE;
+CREATE TYPE emu.t_cmd_emu_info AS ( -- для эмуляции команды
+    begin_track_id BIGINT,  -- начальное ID трека
+    begin_track_npp BIGINT, -- начальный № трека
+    src_track_id BIGINT,  -- ID трека-источника
+    src_track_npp BIGINT, -- № трека-источника
+    dst_track_id BIGINT,  -- ID трека-применика
+    dst_track_npp BIGINT, -- № трека-применика
+    tl_pl_tul BIGINT,  -- время выдвижения + время задвижения рабочего стола
+    tpos BIGINT, -- время позиционирования робота
+    t_start_m BIGINT,  -- время начала движения робота
+    t_stop_m BIGINT  -- время полной остановки робота
+);
+
+
+CREATE OR REPLACE FUNCTION emu."LOG_TRIGGER"()
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 1;
+END;
+$BODY$;
+ALTER FUNCTION emu."LOG_TRIGGER"() OWNER TO postgres;
+COMMENT ON FUNCTION emu."LOG_TRIGGER"()
+    IS '=0 - в таблицу log, =1 - в файл LOG, =3 - dbms';
+CREATE OR REPLACE FUNCTION emu."EMU_LOG_LEVEL"()
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 1;
+END;
+$BODY$;
+ALTER FUNCTION emu."EMU_LOG_LEVEL"() OWNER TO postgres;
+COMMENT ON FUNCTION emu."EMU_LOG_LEVEL"()
+    IS '-- 0- нет логов, 1 - минимум, 2 - средне, 3 - максимум';
+CREATE OR REPLACE FUNCTION emu."CHECK_TTRACK_CONSISTENCE"()
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN 1;
+END;
+$BODY$;
+ALTER FUNCTION emu."CHECK_TTRACK_CONSISTENCE"() OWNER TO postgres;
+COMMENT ON FUNCTION emu."CHECK_TTRACK_CONSISTENCE"()
+    IS 'проверять ли корректность трека на каждом шаге?';
+
+
+CREATE OR REPLACE FUNCTION emu.mo_log(
+    s text)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    IF (emu."EMU_LOG_LEVEL"() <> 0) THEN
+        IF (emu."LOG_TRIGGER"() = 1) THEN
+            PERFORM service.log2filen('molog', s);
+        ELSE
+            RAISE NOTICE '% %', to_char(LOCALTIMESTAMP,'hh24:mi:ss.ff'), s;
+        END IF;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION emu.mo_log(text) OWNER TO postgres;
+COMMENT ON FUNCTION emu.mo_log(text)
+    IS 'запись в лог';
+
+
+CREATE OR REPLACE FUNCTION emu.emu_log(
+    lstr text)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    IF (emu."EMU_LOG_LEVEL"() <> 0) THEN
+        IF (emu."LOG_TRIGGER"() = 0) THEN
+            RAISE NOTICE '%; %', to_char(LOCALTIMESTAMP,'hh24:mi:ss.ff'), lstr;
+        ELSE
+            PERFORM service.log2filen('emulog', lstr);
+        END IF;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION emu.emu_log(text) OWNER TO postgres;
+COMMENT ON FUNCTION emu.emu_log(text)
+    IS 'запись в лог';
+
+
+CREATE OR REPLACE FUNCTION emu.log_tmp_track(
+    rp_rec emu.trp_rec,
+    ttrack emu.ttt_rec[])
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rr TEXT;
+    track emu.ttt_rec;
+BEGIN
+    IF (emu."EMU_LOG_LEVEL"() >= 3) THEN
+        rr := ' ';
+        FOREACH track IN ARRAY ttrack LOOP
+            --emu_log('tcnt='||tcnt);
+            rr := rr || track.locked_by_robot_id;
+        END LOOP;
+        PERFORM emu.emu_log(rr);
+    END IF;
+    IF (rp_rec.num_of_robots > 1) THEN
+        PERFORM emu.check_locking_consistence(rp_rec, ttrack);
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION emu.log_tmp_track(emu.trp_rec, emu.ttt_rec[]) OWNER TO postgres;
+COMMENT ON FUNCTION emu.log_tmp_track(emu.trp_rec, emu.ttt_rec[])
+    IS 'запись в лог трека';
+
+
+CREATE OR REPLACE FUNCTION emu.check_locking_consistence(
+    rp_rec emu.trp_rec,
+    ttrack emu.ttt_rec[])
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    RETURN; -- TODO: Check if this function is still required, because it looks like it isn't
+    IF (emu."CHECK_TTRACK_CONSISTENCE"() = 0) THEN
+        RETURN;
+    END IF;
+--    for j in 1..rp_rec.num_of_robots loop
+--        rr(j).state:=0;
+--        rr(j).id:=0;
+--    end loop;
+--    for i in 0..rp_rec.ttt_cnt loop
+--        if ttrack(i).locked_by_robot_id<>0 then
+--            if rr(1).id=0 then
+--                -- назначаем первого робота
+--                rr(1).id:=ttrack(i).locked_by_robot_id;
+--            elsif rr(2).id=0 and rr(1).id<>ttrack(i).locked_by_robot_id then
+--                -- назначаем второго робота
+--                rr(2).id:=ttrack(i).locked_by_robot_id;
+--            elsif rr(1).id<>ttrack(i).locked_by_robot_id and rr(2).id<>ttrack(i).locked_by_robot_id then
+--                raise_application_error (-20003, 'Ошибка проверки целостности блокировки - лишний robot_id='||ttrack(i).locked_by_robot_id||' при i='||i , TRUE);
+--            end if;
+--        end if;
+--        for j in 1..2 loop
+--            anrocnt:=get_another_robot_num(j);
+--            if ttrack(i).locked_by_robot_id<>0 then
+--                if ttrack(i).locked_by_robot_id=rr(j).id then
+--                    -- блокировка текущим роботом
+--                    if rr(j).state=0 then
+--                        -- появился
+--                        rr(j).state:=1;
+--                    elsif rr(j).state=2 then
+--                        -- появился после пропажи
+--                        if ttrack(0).locked_by_robot_id=rr(j).id then
+--                            rr(j).state:=3;
+--                        else
+--                            raise_application_error (-20003, 'MO1: Ошибка проверки целостности блокировки -  появился робот после пропажи не в конце пути npp='||i, TRUE);
+--                        end if;
+--                    end if;
+--                    if rr(anrocnt).state = 1 then
+--                        rr(anrocnt).state:= 2;
+--                    elsif rr(anrocnt).state = 3 then
+--                        raise_application_error (-20003, 'Ошибка проверки целостности блокировки -  исчез робот до конца пути npp='||i, TRUE);
+--                    end if;
+--                end if;
+--            else -- нулевой бокировка - никем не забл
+--                if rr(j).state = 1 then
+--                    rr(j).state:= 2;
+--                elsif rr(j).state = 3 then
+--                    raise_application_error (-20003, 'Ошибка проверки целостности блокировки -  исчез робот до конца пути npp='||i, TRUE);
+--                end if;
+--            end if;
+--        end loop;
+--    end loop;
+END;
+$BODY$;
+ALTER FUNCTION emu.check_locking_consistence(emu.trp_rec, emu.ttt_rec[]) OWNER TO postgres;
+COMMENT ON FUNCTION emu.check_locking_consistence(emu.trp_rec, emu.ttt_rec[])
+    IS 'проверка корректности трека
+0 -не было еще, 1 - появился, 2 - пропал, 3 - появился после пропажи';
+
+
+CREATE OR REPLACE FUNCTION emu.init_ttrack(
+    rp_id_ bigint)
+    RETURNS RECORD
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    t RECORD;
+    rp_rec emu.trp_rec;
+    ttrack emu.ttt_rec[];
+BEGIN
+    IF (emu."EMU_LOG_LEVEL"() >= 11) THEN
+        PERFORM emu.emu_log('init_ttrack: - начало');
+    END IF;
+    rp_rec.ttt_cnt := 0;
+    rp_rec.id := rp_id_;
+    rp_rec.min_npp := 0;
+    SELECT id, repository_type, spacing_of_robots, num_of_robots
+        INTO rp_rec.id, rp_rec.repository_type, rp_rec.sorb, rp_rec.num_of_robots
+        FROM repository_part
+        WHERE id = rp_id_;
+    FOR t IN (
+        SELECT tr.id, tr.npp, cell_sname sname, tr.length, tr.speed, tr.locked_by_robot_id
+            FROM track tr
+            WHERE repository_part_id = rp_id_
+            ORDER BY npp
+    ) LOOP
+        ttrack[rp_rec.ttt_cnt] := (
+            t.id,
+            t.npp,
+            coalesce(t.locked_by_robot_id, 0),
+            t.speed,
+            t.length,
+            t.sname
+        );
+        rp_rec.max_npp := t.npp;
+        rp_rec.ttt_cnt := rp_rec.ttt_cnt + 1;
+    END LOOP;
+    rp_rec.ttt_cnt := rp_rec.ttt_cnt - 1;
+    PERFORM emu.log_tmp_track(rp_rec, ttrack);
+    IF (emu."EMU_LOG_LEVEL"() >= 11) THEN
+        PERFORM emu.emu_log('init_ttrack: - завершение');
+    END IF;
+    RETURN (rp_rec, ttrack);
+END;
+$BODY$;
+ALTER FUNCTION emu.init_ttrack(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.init_ttrack(bigint)
+    IS 'инициализация трека с базы';
+
+
+CREATE OR REPLACE FUNCTION emu.get_next_npp(
+    rp_rec emu.trp_rec,
+    cur_npp bigint,
+    npp_to bigint,
+    dir bigint,
+    INOUT next_npp bigint,
+    INOUT is_loop_end bigint)
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    is_loop_end := 0;
+    IF (cur_npp = npp_to) THEN
+        is_loop_end := 1;
+    END IF;
+    IF (dir = 1) THEN -- по часовой
+        IF (cur_npp < rp_rec.ttt_cnt) THEN
+            next_npp := cur_npp + 1;
+        ELSIF (cur_npp = rp_rec.ttt_cnt) THEN
+            next_npp := 0;
+        ELSE
+            IF emu."EMU_LOG_LEVEL"() >= 1 THEN
+                PERFORM emu.emu_log('  gnp: Error cur_npp=' || cur_npp);
+            END IF;
+        END IF;
+    ELSE
+        IF (cur_npp > 0) THEN
+            next_npp := cur_npp - 1;
+        ELSIF (cur_npp = 0) THEN
+            next_npp := rp_rec.ttt_cnt;
+        ELSE
+            IF (emu."EMU_LOG_LEVEL"() >= 1) THEN
+                PERFORM emu.emu_log('  gnp: Error cur_npp=' || cur_npp);
+            END IF;
+        END IF;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION emu.get_next_npp(emu.trp_rec, bigint, bigint, bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.get_next_npp(emu.trp_rec, bigint, bigint, bigint, bigint, bigint)
+    IS 'получить следующий № трека';
+
+
+CREATE OR REPLACE FUNCTION emu.ce_move(
+    rp_rec emu.trp_rec,
+    ttrack emu.ttt_rec[],
+    cei_loc emu.t_cmd_emu_info,
+    date_time_begin date,
+    date_time_now date,
+    track_rec_b_npp bigint,
+    track_rec_e_npp bigint,
+    dir bigint,
+    INOUT sec_past bigint,
+    INOUT current_track_id bigint,
+    INOUT current_track_npp bigint,
+    OUT res bigint
+    )
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    is_loop_exit BIGINT;
+    nctn BIGINT;
+BEGIN
+    current_track_npp := track_rec_b_npp;
+    IF (track_rec_e_npp = track_rec_b_npp) THEN
+        res := 1;
+        RETURN; -- уже там где надо - нет нужды двигаться
+    END IF;
+    IF (date_time_begin + make_interval(secs => cei_loc.t_start_m) >= date_time_now) THEN
+        -- по времени еще не тронулись с места - разгонямся только
+        res := 0;
+        RETURN;
+    END IF;
+    sec_past := cei_loc.t_start_m; -- тронулись
+    LOOP
+        sec_past := sec_past + ttrack[current_track_npp].length / ttrack[current_track_npp].speed;
+        current_track_id := ttrack[current_track_npp].id;
+        IF (date_time_begin + make_interval(secs => sec_past) >= date_time_now)
+            AND current_track_npp <> track_rec_e_npp
+        THEN
+            res := 0;
+            RETURN;
+        END IF;
+        PERFORM emu.get_next_npp(rp_rec, current_track_npp, track_rec_e_npp, dir, nctn, is_loop_exit);
+        EXIT WHEN is_loop_exit = 1;
+        current_track_npp := nctn;
+    END LOOP;
+    IF (date_time_begin + make_interval(secs => sec_past + cei_loc.t_stop_m) >= date_time_now) THEN
+        res := 0;
+        RETURN; -- дошли куда надо но еще не остановились
+    ELSE
+        sec_past := sec_past + cei_loc.t_stop_m;
+        res := 1;
+        RETURN;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION emu.ce_move(emu.trp_rec, emu.ttt_rec[], emu.t_cmd_emu_info, date, date, bigint, bigint, bigint, bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.ce_move(emu.trp_rec, emu.ttt_rec[], emu.t_cmd_emu_info, date, date, bigint, bigint, bigint, bigint, bigint, bigint)
+    IS 'функция движения';
+
+
+CREATE OR REPLACE FUNCTION emu.ce_get_ecp_data(
+    robot_id bigint,
+    no_ bigint,
+    OUT cp bigint,
+    OUT dt date)
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    r BIGINT;
+    ecp emu_checkpoint;
+BEGIN
+    r := 0;
+    FOR ecp IN (
+        SELECT *
+            FROM emu_checkpoint
+            WHERE robot_id = r_id
+            ORDER BY dt
+    ) LOOP
+        r := r + 1;
+        IF (no_ = r) THEN
+            cp := ecp.npp;
+            dt := ecp.dt;
+            RETURN;
+        END IF;
+    END LOOP;
+    cp := null;
+    dt := null;
+END;
+$BODY$;
+ALTER FUNCTION emu.ce_get_ecp_data(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.ce_get_ecp_data(bigint, bigint)
+    IS 'взять инфо по точке останова  №';
+
+
+CREATE OR REPLACE FUNCTION emu.ce_move_cp(
+    rp_rec emu.trp_rec,
+    ttrack emu.ttt_rec[],
+    cei_loc emu.t_cmd_emu_info,
+    robot_id bigint,
+    date_time_begin date,
+    date_time_now date,
+    track_rec_b_npp bigint,
+    track_rec_e_npp bigint,
+    dir bigint,
+    INOUT sec_past bigint,
+    INOUT current_track_id bigint,
+    INOUT current_track_npp bigint,
+    OUT res bigint)
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    is_loop_exit BIGINT;
+    nctn BIGINT;
+    ecp_pos BIGINT;
+    ecp_npp BIGINT;
+    ecp_dt DATE;
+    was_stop BOOLEAN;
+BEGIN
+    current_track_npp := track_rec_b_npp;
+    IF (track_rec_e_npp = track_rec_b_npp) THEN
+        res := 1;
+        RETURN; -- уже там где надо - нет нужды двигаться
+    END IF;
+    sec_past := 0;
+    ecp_pos := 1; -- первая точка останова
+    was_stop := true;
+    LOOP
+        SELECT emu.ce_get_ecp_data(robot_id, ecp_pos) INTO ecp_npp, ecp_dt;
+        RAISE NOTICE 'get_ecp_data ecp_pos=% ecp_npp=% ecp_dt=%',
+            ecp_pos, ecp_npp, to_char(ecp_dt,'dd.mm.yy hh24:mi:ss');
+        IF ecp_npp IS null THEN -- вышли за пределы точек останова, но конечная еще не достигнута
+            RAISE NOTICE 'за пределами';
+            IF (current_track_npp = track_rec_e_npp) THEN
+                RAISE NOTICE '1';
+                res := 1;
+                RETURN;
+            ELSE
+                RAISE NOTICE '0';
+                res := 0;
+                RETURN;
+            END IF;
+        END IF;
+        IF (date_time_begin + make_interval(secs => sec_past) >= ecp_dt) THEN
+            IF was_stop THEN
+                was_stop := false;
+                sec_past := sec_past + cei_loc.t_start_m;
+                IF (date_time_begin + make_interval(secs => sec_past) >= date_time_now)
+                    AND current_track_npp <> track_rec_e_npp
+                THEN
+                    res := 0
+                    RETURN;
+                END IF;
+            END IF;
+            sec_past := sec_past + ttrack[current_track_npp].length / ttrack[current_track_npp].speed;
+            RAISE NOTICE '  current_track_npp=% sec_paste=%',
+                current_track_npp, to_char(date_time_begin + make_interval(secs => sec_past),'dd.mm.yy hh24:mi:ss');
+            current_track_id := ttrack[current_track_npp].id;
+            IF (date_time_begin + make_interval(secs => sec_past) >= date_time_now)
+                AND current_track_npp <> track_rec_e_npp
+            THEN
+                res := 0
+                RETURN;
+            END IF;
+            IF current_track_npp = ecp_npp THEN
+                ecp_pos := ecp_pos + 1;
+            ELSE
+                PERFORM emu.get_next_npp(rp_rec, current_track_npp, track_rec_e_npp, dir, nctn, is_loop_exit);
+                EXIT WHEN is_loop_exit = 1;
+                current_track_npp := nctn;
+            END IF;
+        ELSE
+            was_stop := true;
+            sec_past := sec_past + 1;
+            RAISE NOTICE '  current_track_npp=% sec_paste=%',
+                current_track_npp, to_char(date_time_begin + make_interval(secs => sec_past), 'dd.mm.yy hh24:mi:ss');
+        END IF;
+    END LOOP;
+    IF (date_time_begin + make_interval(secs => sec_past + cei_loc.t_stop_m) >= date_time_now) THEN
+        res := 0;
+        RETURN; -- дошли куда надо но еще не остановились
+    ELSE
+        sec_past := sec_past + cei_loc.t_stop_m;
+        res := 1;
+        RETURN;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION emu.ce_move_cp(emu.trp_rec, emu.ttt_rec[], emu.t_cmd_emu_info, bigint, date, date, bigint, bigint, bigint, bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.ce_move_cp(emu.trp_rec, emu.ttt_rec[], emu.t_cmd_emu_info, bigint, date, date, bigint, bigint, bigint, bigint, bigint, bigint)
+    IS 'функция движения с промежуточными точками -- ее менять!';
+
+
+CREATE OR REPLACE FUNCTION emu.get_ttrack_npp_by_id(
+    rp_rec emu.trp_rec,
+    ttrack emu.ttt_rec[],
+    tid bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    FOR i IN 0..rp_rec.ttt_cnt LOOP
+        IF ttrack[i].id = tid THEN
+            RETURN i;
+        END IF;
+    END LOOP;
+    IF emu."EMU_LOG_LEVEL"() >= 1 THEN
+        PERFORM emu.emu_log('  gtnbi: ERROR - выход за рамки массива ttrack с id=' || tid);
+    END IF;
+    RETURN -1;
+END;
+$BODY$;
+ALTER FUNCTION emu.get_ttrack_npp_by_id(emu.trp_rec, emu.ttt_rec[], bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.get_ttrack_npp_by_id(emu.trp_rec, emu.ttt_rec[], bigint)
+    IS 'получить № трека по его ID';
+
+
+CREATE OR REPLACE FUNCTION emu.command_emu(
+    robot_id BIGINT,         -- на робота
+    date_time_begin DATE,    -- время начала выполнения команды
+    date_time_now DATE,      -- время текушее
+    begin_track_id BIGINT,   -- участок пути, на котором робот начал выполнение команды
+    command_type BIGINT,     -- тип команды: 1 - move, 2-  transfer, 3 - unload, 4 - load
+    cell_src TEXT,           -- название  ячейки-источника
+    cell_dst TEXT,           -- название ячейки-приемника
+    direction BIGINT,        -- направление: 1 - по часовой стрелки, -1 - против
+    im_npp_ BIGINT,          -- промежуточная точка, =-1 или Null, если нет
+    cpl_xml_ TEXT,           -- промежуточные точки - <CPL>  <cp type="53" datetime="15.12.2020 14:34:27" /> </CPL>
+    OUT current_track_id BIGINT,-- положение робота на текущий момент
+    OUT command_finished BIGINT,-- завершена ли команда к текущему моменту: 0 - нет, 1 - да
+    use_cmd_emu_info BIGINT DEFAULT 0 -- использовать переменную инфо команды для ускорения
+    )
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    cei_loc emu.t_cmd_emu_info;
+    tpos BIGINT;
+    t_start_m BIGINT;
+    t_stop_m BIGINT;
+    track_rec_b_npp BIGINT;
+    track_rec_e_npp BIGINT;
+    dir BIGINT;
+    sec_past BIGINT;
+    current_track_npp BIGINT;
+    xml_ XML;
+    cc RECORD;
+    init_ttrack_res__ RECORD;
+    rp_rec emu.trp_rec;
+    ttrack emu.ttt_rec[];
+    res BIGINT;
+BEGIN
+    PERFORM emu.mo_log('command_emu: robot_id=' || robot_id || '; '
+        || 'date_time_begin=' || to_char(date_time_begin,'dd.mm.yyyy hh24:mi:ss') || '; '
+        || 'date_time_now=' || to_char(date_time_now,'dd.mm.yyyy hh24:mi:ss') || '; '
+        || 'begin_track_id=' || begin_track_id || '; '
+        || 'command_type=' || command_type || '; '
+        || 'cell_src=' || cell_src || '; '
+        || 'cell_dst=' || cell_dst || '; '
+        || 'direction=' || direction || '; '
+        || 'im_npp_=' || im_npp_ || '; '
+        || 'cpl_xml_=' || cpl_xml_);
+    DELETE FROM emu_checkpoint WHERE robot_id = r_id;
+    IF coalesce(im_npp_, -1) >= 0 THEN
+        INSERT INTO emu_checkpoint (
+            npp, dt, r_id
+        ) VALUES (
+            im_npp_, date_time_begin, robot_id
+        );
+    END IF;
+    xml_ := cpl_xml_::XML;
+    FOR cc IN (
+		SELECT xmltable.*
+  			FROM XMLTABLE(
+				'.//CPL/cp' PASSING (SELECT xml_)
+					COLUMNS npp_ TEXT PATH './/@npp',
+						datetime_ TEXT PATH './/@datetime'
+			)
+	) LOOP
+        RAISE NOTICE '% %', cc.npp_, cc.datetime_;
+        INSERT INTO emu_checkpoint (
+            npp, dt, r_id
+        ) VALUES (
+            cc.npp_::BIGINT, to_date(cc.datetime_, 'dd.mm.yyyy hh24:mi:ss'), robot_id
+        );
+    END LOOP;
+    command_finished := 0;
+    sec_past := 0;
+    IF (use_cmd_emu_info = 1) THEN
+        --cei_loc := cmd_emu_info;
+        -- FIXME: use_cmd_emu_info now should always be 0
+        -- Maybe there should be exception if it isn't?
+    ELSE
+        cei_loc.begin_track_id := begin_track_id;
+        SELECT npp INTO cei_loc.begin_track_npp
+            FROM track
+            WHERE id = begin_track_id;
+        SELECT repository_part_id, time_load + time_unload,
+            time_targeting, time_start_move, time_stop_move
+            INTO rp_rec.id, cei_loc.tl_pl_tul,
+                cei_loc.tpos, cei_loc.t_start_m, cei_loc.t_stop_m
+            FROM robot
+            WHERE id = robot_id;
+        SELECT repository_type, max_npp
+            INTO rp_rec.repository_type, rp_rec.max_npp
+            FROM repository_part
+            WHERE id = rp_rec.id;
+        SELECT * INTO init_ttrack_res__
+            FROM emu.init_ttrack(rp_rec.id)
+            AS (rp_rec emu.trp_rec, ttrack emu.ttt_rec[]);
+        rp_rec := init_ttrack_res__.rp_rec;
+        ttrack := init_ttrack_res__.ttrack;
+        IF cell_dst IS NOT null THEN
+            SELECT npp INTO cei_loc.dst_track_npp
+                FROM track
+                WHERE repository_part_id = rp_rec.id
+                    AND id IN (
+                        SELECT track_id
+                            FROM shelving
+                            WHERE id IN (
+                                SELECT shelving_id
+                                    FROM cell
+                                    WHERE sname = cell_dst
+                            )
+                    );
+        END IF;
+        IF cell_src IS NOT null THEN
+            SELECT npp INTO cei_loc.src_track_npp
+                FROM track
+                WHERE repository_part_id = rp_rec.id
+                    AND id IN (
+                        SELECT track_id
+                            FROM shelving
+                            WHERE id IN (
+                                SELECT shelving_id
+                                    FROM cell
+                                    WHERE sname = cell_src
+                            )
+                    );
+        END IF;
+    END IF;
+    current_track_id := cei_loc.begin_track_id;
+    current_track_npp := cei_loc.begin_track_npp;
+    /*if emu_log_level>=2 then
+        emu_log('command_emu: robot_id='||robot_id||'; '||
+            'date_time_begin='||to_char(date_time_begin,'hh24:mi:ss')||'; '||
+            'date_time_now='||to_char(date_time_now,'hh24:mi:ss')||'; '||
+            'begin_track_npp='||cei_loc.begin_track_npp||'; '||
+            'command_type='||command_type||'; '||
+            'cell_src='||cell_src||'; '||
+            'cell_dst='||cell_dst||'; '||
+            'direction='||direction);
+    end if;  */
+    --***********************************************************
+    --move
+    --***********************************************************
+    IF (command_type = 1) THEN
+        dir := direction;
+        track_rec_b_npp := cei_loc.begin_track_npp;
+        track_rec_e_npp := cei_loc.dst_track_npp;
+        IF cei_loc.dst_track_npp IS null THEN
+            RAISE EXCEPTION 'Ошибка - в COMMAND_EMU вызывана команда MOVE с NULL ключевым параметром'
+                USING errcode = 50013;
+        END IF;
+        SELECT emu.ce_move(
+            rp_rec,
+            ttrack,
+            cei_loc,
+            date_time_begin,
+            date_time_now,
+            track_rec_b_npp,
+            track_rec_e_npp,
+            dir,
+            sec_past,
+            current_track_id,
+            current_track_npp
+        ) INTO res;
+        IF res = 1 THEN -- переместить успели
+            -- раз сюда дошли, то команда MOVE закончилась
+            command_finished := 1;
+        END IF;
+    --***********************************************************
+    --inity
+    --***********************************************************
+    ELSIF (command_type = 32) THEN
+        IF (date_time_begin + INTERVAL '12 secs' <= date_time_now) THEN
+            command_finished := 1;
+        END IF;
+    --***********************************************************
+    --unload
+    --***********************************************************
+    ELSIF (command_type = 3) THEN
+        dir := direction;
+        track_rec_b_npp := cei_loc.begin_track_npp;
+        track_rec_e_npp := cei_loc.dst_track_npp;
+        IF cei_loc.dst_track_npp IS null THEN
+            RAISE EXCEPTION 'Ошибка - в COMMAND_EMU вызывана команда UNLOAD с NULL ключевым параметром'
+                USING errcode = 50013;
+        END IF;
+        IF coalesce(im_npp_, -1) >= 0 THEN -- с промежуточной точкой
+            --track_rec_e_npp:=im_npp_;
+            SELECT emu.ce_move_cp(
+                rp_rec,
+                ttrack,
+                cei_loc,
+                robot_id,
+                date_time_begin,
+                date_time_now,
+                track_rec_b_npp,
+                track_rec_e_npp,
+                dir,
+                sec_past,
+                current_track_id,
+                current_track_npp
+            ) INTO res;
+            IF (res = 1) THEN -- передвижение завершено
+                RAISE NOTICE 'move_cp=1';
+                -- успеем выгрузить?
+                IF (track_rec_b_npp = track_rec_e_npp) THEN
+                    tpos := 0;
+                ELSE
+                    tpos := cei_loc.tpos;
+                END IF;
+                sec_past := sec_past + cei_loc.tl_pl_tul + tpos;
+                IF (date_time_begin + make_interval(secs => sec_past) <= date_time_now) THEN
+                    command_finished := 1;
+                END IF;
+            END IF;
+        ELSE -- обычная команда
+            SELECT emu.ce_move(
+                rp_rec,
+                ttrack,
+                cei_loc,
+                date_time_begin,
+                date_time_now,
+                track_rec_b_npp,
+                track_rec_e_npp,
+                dir,
+                sec_past,
+                current_track_id,
+                current_track_npp
+            ) INTO res;
+            IF res = 1 THEN -- передвижение завершено
+                -- успеем выгрузить?
+                IF (track_rec_b_npp = track_rec_e_npp) THEN
+                    tpos := 0;
+                ELSE
+                    tpos := cei_loc.tpos;
+                END IF;
+                sec_past := sec_past + cei_loc.tl_pl_tul + tpos;
+                IF (date_time_begin + make_interval(secs => sec_past) <= date_time_now) THEN
+                    command_finished := 1;
+                END IF;
+            END IF;
+        END IF;
+    --***********************************************************
+    --load
+    --***********************************************************
+    ELSIF (command_type = 4) THEN
+        dir := direction;
+        track_rec_b_npp := cei_loc.begin_track_npp;
+        track_rec_e_npp := cei_loc.src_track_npp;
+        IF cei_loc.src_track_npp IS null THEN
+            RAISE EXCEPTION 'Ошибка - в COMMAND_EMU вызывана команда LOAD с NULL ключевым параметром'
+                USING errcode = 50013;
+        END IF;
+        IF coalesce(im_npp_, -1) >= 0 THEN -- с промежуточной точкой
+            --track_rec_e_npp:=im_npp_;
+            SELECT emu.ce_move_cp(
+                rp_rec,
+                ttrack,
+                cei_loc,
+                robot_id,
+                date_time_begin,
+                date_time_now,
+                track_rec_b_npp,
+                track_rec_e_npp,
+                dir,
+                sec_past,
+                current_track_id,
+                current_track_npp
+            ) INTO res;
+            IF (res = 1) THEN -- передвижение завершено
+                RAISE NOTICE 'move_cp=1';
+                -- успеем выгрузить?
+                IF (track_rec_b_npp = track_rec_e_npp) THEN
+                    tpos := 0;
+                ELSE
+                    tpos := cei_loc.tpos;
+                END IF;
+                sec_past := sec_past + cei_loc.tl_pl_tul + tpos;
+                IF (date_time_begin + make_interval(secs => sec_past) <= date_time_now) THEN
+                    command_finished := 1;
+                END IF;
+            END IF;
+        ELSE -- обычная команда
+            SELECT emu.ce_move(
+                rp_rec,
+                ttrack,
+                cei_loc,
+                date_time_begin,
+                date_time_now,
+                track_rec_b_npp,
+                track_rec_e_npp,
+                dir,
+                sec_past,
+                current_track_id,
+                current_track_npp
+            ) INTO res;
+            IF res = 1 THEN -- передвижение завершено
+                -- успеем выгрузить?
+                IF (track_rec_b_npp = track_rec_e_npp) THEN
+                    tpos := 0;
+                ELSE
+                    tpos := cei_loc.tpos;
+                END IF;
+                sec_past := sec_past + cei_loc.tl_pl_tul + tpos;
+                IF (date_time_begin + make_interval(secs => sec_past) <= date_time_now) THEN
+                    command_finished := 1;
+                END IF;
+            END IF;
+        END IF;
+    --***********************************************************
+    --transfer
+    --***********************************************************
+    ELSIF (command_type = 2) THEN
+        IF rp_rec.repository_type = 0 THEN -- только для линейного склада
+            track_rec_b_npp := cei_loc.begin_track_npp;
+            track_rec_e_npp := cei_loc.src_track_npp;
+            IF cei_loc.dst_track_npp IS null
+                OR cei_loc.src_track_npp IS null
+            THEN
+                RAISE EXCEPTION 'Ошибка - в COMMAND_EMU вызывана команда TRANSFER с NULL ключевым параметром'
+                    USING errcode = 50013;
+            END IF;
+            IF (track_rec_e_npp > track_rec_b_npp) THEN
+                dir := 1;
+            ELSE
+                dir := 0;
+            END IF;
+            SELECT emu.ce_move(
+                rp_rec,
+                ttrack,
+                cei_loc,
+                date_time_begin,
+                date_time_now,
+                track_rec_b_npp,
+                track_rec_e_npp,
+                dir,
+                sec_past,
+                current_track_id,
+                current_track_npp
+            ) INTO res;
+            IF res = 1 THEN -- доехали таки
+                -- успеем загрузить?
+                sec_past := sec_past + cei_loc.tl_pl_tul;
+                IF (date_time_begin + make_interval(secs => sec_past) <= date_time_now) THEN
+                    track_rec_b_npp := emu.get_ttrack_npp_by_id(rp_rec, ttrack, current_track_id);
+                    track_rec_e_npp := cei_loc.dst_track_npp;
+                    IF (track_rec_e_npp > track_rec_b_npp) THEN
+                        dir := 1;
+                    ELSE
+                        dir := 0;
+                    END IF;
+                    SELECT emu.ce_move(
+                        rp_rec,
+                        ttrack,
+                        cei_loc,
+                        date_time_begin,
+                        date_time_now,
+                        track_rec_b_npp,
+                        track_rec_e_npp,
+                        dir,
+                        sec_past,
+                        current_track_id,
+                        current_track_npp
+                    ) INTO res;
+                    IF res = 1 THEN -- приехали таки
+                        sec_past := sec_past + cei_loc.tl_pl_tul;
+                        IF (date_time_begin + make_interval(secs => sec_past) <= date_time_now) THEN
+                            command_finished := 1;
+                        END IF;
+                    END IF;
+                END IF;
+            END IF;
+        ELSE -- если для кольцевого - пишем ошибку
+            RAISE EXCEPTION 'Couldn''t  send TRANSFER command for circular repository part!'
+                USING errcode = 50002;
+        END IF;
+    END IF;
+    IF (emu."EMU_LOG_LEVEL"() >= 2) THEN
+        PERFORM emu.emu_log('  ce завершение: cur_track_npp=' || current_track_npp
+            || '; command_finished=' || command_finished);
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION emu.command_emu(bigint, date, date, bigint, bigint, text, text, bigint, bigint, text, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.command_emu(bigint, date, date, bigint, bigint, text, text, bigint, bigint, text, bigint)
+    IS 'основная процедура - эмулятор команды';
+
+
+CREATE OR REPLACE FUNCTION emu.get_another_robot_num(
+    rnum bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    IF (rnum = 1) THEN
+        RETURN 2;
+    ELSE
+        RETURN 1;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION emu.get_another_robot_num(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.get_another_robot_num(bigint)
+    IS 'взять номер другого робота';
+
+
+CREATE OR REPLACE FUNCTION emu.get_new_platform_busy(
+    rid_ bigint,
+    pb_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    re emu_robot_problem;
+BEGIN
+    FOR re IN (
+        SELECT *
+            FROM emu_robot_problem
+            WHERE state = 1
+                AND robot_id = rid_
+                AND type_id = 6
+                AND tttype_id = 8
+    ) LOOP
+        UPDATE emu_robot_problem
+            SET state = 5
+            WHERE id = re.id;
+        -- COMMIT;
+        IF (pb_ = 1) THEN
+            RETURN 0;
+        ELSE
+            RETURN 1;
+        END IF;
+    END LOOP;
+    RETURN pb_;
+END;
+$BODY$;
+ALTER FUNCTION emu.get_new_platform_busy(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.get_new_platform_busy(bigint, bigint)
+    IS 'взять новое состояние платформы при решении проблемы при работе эмулятора';
+
+
+CREATE OR REPLACE FUNCTION emu.gen_new_platform_busy(
+    rid_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    rr robot;
+BEGIN
+    FOR rr IN (
+        SELECT *
+            FROM robot
+            WHERE id = rid_
+    ) LOOP
+        --if rr.platform_busy=1 then
+        INSERT INTO emu_robot_problem (
+            state, robot_id, type_id, tttype_id, set_platform_busy
+        ) VALUES (
+            1, rid_, 6, 8, 0
+        );
+        -- COMMIT;
+        --else
+        --end if;
+    END LOOP;
+END;
+$BODY$;
+ALTER FUNCTION emu.gen_new_platform_busy(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.gen_new_platform_busy(bigint)
+    IS 'сгенерировать новое состояние платформы при решении проблемы при работе эмулятора';
+
+
+CREATE OR REPLACE FUNCTION emu.get_wms_lock_cmd_id(
+    ct_ bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    res BIGINT;
+BEGIN
+    SELECT nextval('seq_wms_l') INTO res;
+    INSERT INTO wms_robot_lock_cmd (
+        id, ct
+    ) VALUES (
+        res, ct_
+    );
+    -- COMMIT;
+    RETURN res;
+END;
+$BODY$;
+ALTER FUNCTION emu.get_wms_lock_cmd_id(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.get_wms_lock_cmd_id(bigint)
+    IS 'взять ID новой команды блокировки WMS';
+
+
+CREATE OR REPLACE FUNCTION emu.decode_dir(
+    dir bigint,
+    no bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    IF (no = 1) THEN
+        IF dir IN (1, 2) THEN
+            RETURN 1;
+        ELSE
+            RETURN 0;
+        END IF;
+    ELSE
+        IF dir IN (1,3) THEN
+            RETURN 1;
+        ELSE
+            RETURN 0;
+        END IF;
+    END IF;
+END;
+$BODY$;
+ALTER FUNCTION emu.decode_dir(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.decode_dir(bigint, bigint)
+    IS 'расшифровать направление эмулятора в обычное';
+
+
+CREATE OR REPLACE FUNCTION emu.inc_npp_prim(
+    cur_npp bigint,
+    dir bigint,
+    max_npp bigint)
+    RETURNS bigint
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+DECLARE
+    next_npp BIGINT;
+BEGIN
+    IF (dir = 1) THEN -- по часовой
+        IF (cur_npp < max_npp) THEN
+            next_npp := cur_npp + 1;
+        ELSIF (cur_npp = max_npp) THEN
+            next_npp := 0;
+        END IF;
+    ELSE
+        IF (cur_npp > 0) THEN
+            next_npp := cur_npp - 1;
+        ELSIF (cur_npp = 0) THEN
+            next_npp := max_npp;
+        END IF;
+    END IF;
+    RETURN next_npp;
+END;
+$BODY$;
+ALTER FUNCTION emu.inc_npp_prim(bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.inc_npp_prim(bigint, bigint, bigint)
+    IS 'увеличить № трека по направлению';
+
+
+CREATE OR REPLACE FUNCTION emu.real_cmd_begin(
+    rid_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    UPDATE emu_robot_problem
+        SET state = 5
+        WHERE robot_id = rid_
+            AND tttype_id = 7
+            AND state IN (1,3);
+    -- COMMIT;
+END;
+$BODY$;
+ALTER FUNCTION emu.real_cmd_begin(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.real_cmd_begin(bigint)
+    IS 'начать реальную команду';
+
+
+CREATE OR REPLACE FUNCTION emu.reset_all_ep()
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    UPDATE emu_robot_problem
+        SET state = 0
+        WHERE state IN (1,3);
+    -- COMMIT;
+END;
+$BODY$;
+ALTER FUNCTION emu.reset_all_ep() OWNER TO postgres;
+COMMENT ON FUNCTION emu.reset_all_ep()
+    IS 'сбросить все эмуляции проблем';
+
+
+CREATE OR REPLACE FUNCTION emu.set_robot_wms_state(
+    rid_ bigint,
+    st_ bigint)
+    RETURNS void
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE PARALLEL UNSAFE
+AS $BODY$
+BEGIN
+    UPDATE robot
+        SET emu_wms_lock_state = st_
+        WHERE id = rid_;
+    -- COMMIT;
+END;
+$BODY$;
+ALTER FUNCTION emu.set_robot_wms_state(bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.set_robot_wms_state(bigint, bigint)
+    IS 'установить режим WMS блокировки робота';
+
+
+-- vim: ft=pgsql

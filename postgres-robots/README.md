@@ -21,21 +21,21 @@
     - [x] container_remove
     - [x] container_remove_by_id
     - [x] problem_resolve
-    - [ ] Robot_Problem_Resolve
+    - [x] robot_problem_resolve
 
 - emu
-    - [ ] mo_log
-    - [ ] init_ttrack
-    - [ ] command_emu
-    - [ ] get_another_robot_num
-    - [ ] get_new_platform_busy
-    - [ ] gen_new_platform_busy
-    - [ ] get_wms_lock_cmd_id
-    - [ ] decode_dir
-    - [ ] inc_npp_prim
-    - [ ] real_cmd_begin
-    - [ ] reset_all_ep
-    - [ ] set_robot_wms_state
+    - [x] mo_log
+    - [x] init_ttrack
+    - [x] command_emu
+    - [x] get_another_robot_num
+    - [x] get_new_platform_busy
+    - [x] gen_new_platform_busy
+    - [x] get_wms_lock_cmd_id
+    - [x] decode_dir
+    - [x] inc_npp_prim
+    - [x] real_cmd_begin
+    - [x] reset_all_ep
+    - [x] set_robot_wms_state
 
 - obj_ask
     - [x] form_commands
