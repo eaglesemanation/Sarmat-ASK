@@ -15,7 +15,7 @@ During start all scripts from postgres-robots/postgres/ will be executed in alph
 docker-compose up --build
 ```
 
-After that pgAdmin should be available at http://[::]:8080
+After that pgAdmin should be available at <http://localhost:8080>
 Default credentials are specified in docker-compose.yml
 
 ### Stopping
