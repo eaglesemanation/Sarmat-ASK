@@ -1041,7 +1041,7 @@ COMMENT ON FUNCTION obj_robot.get_cmd_robot_name(bigint)
     IS 'возвращает робота, который делал команду перемещения контейнеров';
 
 
-CREATE FUNCTION obj_robot.get_cmd_text_another_dir(IN ct text)
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_text_another_dir(IN ct text)
     RETURNS text
     LANGUAGE 'plpgsql'
 AS $BODY$
@@ -1061,7 +1061,7 @@ COMMENT ON FUNCTION obj_robot.get_cmd_text_another_dir(text)
     IS 'возвращает текст команды робота с иным направлением движения по/против часовой стрелке';
 
 
-CREATE FUNCTION obj_robot.get_cmd_text_new_cp(
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_text_new_cp(
     IN ct_ text,
     IN new_cp_ bigint)
     RETURNS text
@@ -1090,7 +1090,7 @@ COMMENT ON FUNCTION obj_robot.get_cmd_text_new_cp(text, bigint)
     IS 'заменяет ''cp=NNN'' в тексте команды на другую секцию';
 
 
-CREATE FUNCTION obj_robot.get_cmd_text_wo_cp(IN ct_ text)
+CREATE OR REPLACE FUNCTION obj_robot.get_cmd_text_wo_cp(IN ct_ text)
     RETURNS text
     LANGUAGE 'plpgsql'
 AS $BODY$
@@ -1119,7 +1119,7 @@ COMMENT ON FUNCTION obj_robot.get_cmd_text_wo_cp(text)
     IS 'исключает ''cp=NNN'' из текста команды';
 
 
-CREATE FUNCTION obj_robot.get_robot_name(
+CREATE OR REPLACE FUNCTION obj_robot.get_robot_name(
     rid_ bigint)
     RETURNS text
     LANGUAGE 'plpgsql'
@@ -1144,7 +1144,7 @@ COMMENT ON FUNCTION obj_robot.get_robot_name(bigint)
     IS 'получить имя робота по его ID для отчета';
 
 
-CREATE FUNCTION obj_robot.get_robot_rp_id(
+CREATE OR REPLACE FUNCTION obj_robot.get_robot_rp_id(
     rid_ bigint)
     RETURNS bigint
     LANGUAGE 'plpgsql'
@@ -1167,7 +1167,7 @@ COMMENT ON FUNCTION obj_robot.get_robot_rp_id(bigint)
     IS 'получить подсклад робота по его ID';
 
 
-CREATE FUNCTION obj_robot.get_robot_rp_name(
+CREATE OR REPLACE FUNCTION obj_robot.get_robot_rp_name(
     rid_ bigint)
     RETURNS text
     LANGUAGE 'plpgsql'
@@ -1192,7 +1192,7 @@ COMMENT ON FUNCTION obj_robot.get_robot_rp_name(bigint)
     IS 'получить имя подсклада робота по ID робота';
 
 
-CREATE FUNCTION obj_robot.get_robot_state(
+CREATE OR REPLACE FUNCTION obj_robot.get_robot_state(
     rid_ bigint)
     RETURNS bigint
     LANGUAGE 'plpgsql'
@@ -1215,7 +1215,7 @@ COMMENT ON FUNCTION obj_robot.get_robot_state(bigint)
     IS 'получить состояние робота по его ID';
 
 
-CREATE FUNCTION obj_robot.get_problem_resolve_text(
+CREATE OR REPLACE FUNCTION obj_robot.get_problem_resolve_text(
     comp_name_ text)
     RETURNS text
     LANGUAGE 'plpgsql'
@@ -1259,7 +1259,7 @@ COMMENT ON FUNCTION obj_robot.get_problem_resolve_text(text)
     IS 'берем простой вариант запроса для решения проблемы (Да/нет), чтобы потом задать его оператору';
 
 
-CREATE FUNCTION obj_robot.get_robot_problem_resolve_cs(
+CREATE OR REPLACE FUNCTION obj_robot.get_robot_problem_resolve_cs(
     rid_ bigint)
     RETURNS text
     LANGUAGE 'plpgsql'
@@ -1309,7 +1309,7 @@ COMMENT ON FUNCTION obj_robot.get_robot_problem_resolve_cs(bigint)
     IS 'возвращает в XML варианты решения проблемы';
 
 
-CREATE FUNCTION obj_robot.get_error_msg_by_code(
+CREATE OR REPLACE FUNCTION obj_robot.get_error_msg_by_code(
     error_code bigint)
     RETURNS text
     LANGUAGE 'plpgsql'
@@ -1343,7 +1343,7 @@ COMMENT ON FUNCTION obj_robot.get_error_msg_by_code(bigint)
     IS 'формируем строку ошибки робота в заивиммости от кода ошибки';
 
 
-CREATE FUNCTION obj_robot.get_last_comp_ci(
+CREATE OR REPLACE FUNCTION obj_robot.get_last_comp_ci(
     comp_name_ text)
     RETURNS bigint
     LANGUAGE 'plpgsql'
@@ -1382,7 +1382,7 @@ COMMENT ON FUNCTION obj_robot.get_last_comp_ci(text)
     IS 'возвращает последнюю команду _inner от компьютера оператора';
 
 
-CREATE FUNCTION obj_robot.smtr_cancel_command(
+CREATE OR REPLACE FUNCTION obj_robot.smtr_cancel_command(
     cid_ bigint,
     crp_id_ bigint)
     RETURNS void
@@ -1408,7 +1408,7 @@ COMMENT ON FUNCTION obj_robot.smtr_cancel_command(bigint, bigint)
     IS 'Migrated inline procedure for obj_robot.set_mode_to_repair';
 
 
-CREATE FUNCTION obj_robot.smtr_finish_command_by_hand(
+CREATE OR REPLACE FUNCTION obj_robot.smtr_finish_command_by_hand(
     cid_ bigint,
     crp_id_ bigint)
     RETURNS void
@@ -1453,7 +1453,7 @@ COMMENT ON FUNCTION obj_robot.smtr_finish_command_by_hand(bigint, bigint)
     IS 'Migrated inline procedure for obj_robot.set_mode_to_repair';
 
 
-CREATE FUNCTION obj_robot.set_mode_to_repair(
+CREATE OR REPLACE FUNCTION obj_robot.set_mode_to_repair(
     rid_ bigint,
     npp_rep bigint,
     param bigint)
@@ -1635,7 +1635,7 @@ COMMENT ON FUNCTION obj_robot.set_mode_to_repair(bigint, bigint, bigint)
     IS 'перевести робота в режим починки';
 
 
-CREATE FUNCTION obj_robot.set_repair_done(
+CREATE OR REPLACE FUNCTION obj_robot.set_repair_done(
     rid_ bigint)
     RETURNS text
     LANGUAGE 'plpgsql'
@@ -1653,7 +1653,7 @@ COMMENT ON FUNCTION obj_robot.set_repair_done(bigint)
     IS 'выйти из режима починки робота в нормальный рабочий режим';
 
 
-CREATE FUNCTION obj_robot.get_repair_stop_param(
+CREATE OR REPLACE FUNCTION obj_robot.get_repair_stop_param(
     rid_ bigint)
     RETURNS bigint
     LANGUAGE 'plpgsql'
@@ -1711,7 +1711,7 @@ COMMENT ON FUNCTION obj_robot.get_repair_stop_param(bigint)
     IS 'получение информации о дополнительных параметрах для перевода робота в режим почники по ID робота';
 
 
-CREATE FUNCTION obj_robot.change_only_move_status(
+CREATE OR REPLACE FUNCTION obj_robot.change_only_move_status(
     rid_ bigint)
     RETURNS void
     LANGUAGE 'plpgsql'
@@ -1763,7 +1763,7 @@ COMMENT ON FUNCTION obj_robot.change_only_move_status(bigint)
     IS 'сменить у робота режим "Only Move"';
 
 
-CREATE FUNCTION obj_robot.correct_ci_id_on_checkpoint(
+CREATE OR REPLACE FUNCTION obj_robot.correct_ci_id_on_checkpoint(
     cmdid_ bigint)
     RETURNS bigint
     LANGUAGE 'plpgsql'
@@ -1789,7 +1789,7 @@ COMMENT ON FUNCTION obj_robot.correct_ci_id_on_checkpoint(bigint)
     IS 'корректируем ID команды, если вернутое есть ID промежуточной точки. Заодно помечаем кмд промежут как переданную';
 
 
-CREATE FUNCTION obj_robot.ifs_ilog(
+CREATE OR REPLACE FUNCTION obj_robot.ifs_ilog(
     txt_ text,
     rid_ bigint,
     rez_ text,
@@ -1811,7 +1811,7 @@ COMMENT ON FUNCTION obj_robot.ifs_ilog(text, bigint, text, boolean)
     IS 'Migrated inline procedure from obj_robot.info_from_sarmat';
 
 
-CREATE FUNCTION obj_robot.info_from_sarmat(
+CREATE OR REPLACE FUNCTION obj_robot.info_from_sarmat(
     rid_ bigint,
     rez_ text)
     RETURNS void
@@ -2057,7 +2057,7 @@ COMMENT ON FUNCTION obj_robot.info_from_sarmat(bigint, text)
     IS 'доклад SQL серверу о состоянии робота с Sarmat';
 
 
-CREATE FUNCTION obj_robot.mark_cmd_inner_send_to_robot(
+CREATE OR REPLACE FUNCTION obj_robot.mark_cmd_inner_send_to_robot(
     robot_id_ bigint,
     cmd_inner_id_ bigint)
     RETURNS void
@@ -2080,7 +2080,7 @@ COMMENT ON FUNCTION obj_robot.mark_cmd_inner_send_to_robot(bigint, bigint)
     IS 'отмечаем, что команда успешно отдана роботу на исполнение';
 
 
-CREATE FUNCTION obj_robot.mark_ci_cp_send_to_robot(
+CREATE OR REPLACE FUNCTION obj_robot.mark_ci_cp_send_to_robot(
     cpcg_id_ bigint,
     new_status_ bigint DEFAULT 1)
     RETURNS void
@@ -2118,7 +2118,7 @@ COMMENT ON FUNCTION obj_robot.mark_ci_cp_send_to_robot(bigint, bigint)
     IS 'пометить промежуточные точки как посланные роботу';
 
 
-CREATE FUNCTION obj_robot.set_cmdrp(
+CREATE OR REPLACE FUNCTION obj_robot.set_cmdrp(
     crp_id_ bigint,
     robot_id_ bigint,
     dir1_ bigint,
@@ -2188,7 +2188,7 @@ COMMENT ON FUNCTION obj_robot.set_cmdrp(bigint, bigint, bigint, bigint, bigint, 
     IS 'назначает команду на SQL сервере на робота с оптимизатора Sarmat';
 
 
-CREATE FUNCTION obj_robot.change_cmd_unload_goal(
+CREATE OR REPLACE FUNCTION obj_robot.change_cmd_unload_goal(
     cmd_inner_id_ bigint,
     new_cell_goal_id_ bigint)
     RETURNS void
@@ -2307,7 +2307,7 @@ COMMENT ON FUNCTION obj_robot.change_cmd_unload_goal(bigint, bigint)
     IS 'изменить целевую ячейку команды для робота (Unload)';
 
 
-CREATE FUNCTION obj_robot.change_wpr_dir(
+CREATE OR REPLACE FUNCTION obj_robot.change_wpr_dir(
     ci_id_ bigint,
     new_dir_ bigint)
     RETURNS void
@@ -2334,7 +2334,7 @@ COMMENT ON FUNCTION obj_robot.change_wpr_dir(bigint, bigint)
     IS 'изменить направление команды робота на противоположное';
 
 
-CREATE FUNCTION obj_robot.to_problem_resolve_mode(
+CREATE OR REPLACE FUNCTION obj_robot.to_problem_resolve_mode(
     rid_ bigint,
     errm_ text DEFAULT '')
     RETURNS void
@@ -2355,7 +2355,7 @@ COMMENT ON FUNCTION obj_robot.to_problem_resolve_mode(bigint, text)
     IS 'Переключаем робота в режим решение проблемы';
 
 
-CREATE FUNCTION obj_robot.problem_resolve(
+CREATE OR REPLACE FUNCTION obj_robot.problem_resolve(
     comp_name_ text)
     RETURNS bigint
     LANGUAGE 'plpgsql'
@@ -2396,7 +2396,7 @@ COMMENT ON FUNCTION obj_robot.problem_resolve(text)
     IS 'решение с компьютера оператора, простое';
 
 
-CREATE FUNCTION obj_robot.problem_resolve(
+CREATE OR REPLACE FUNCTION obj_robot.problem_resolve(
     rid_ bigint,
     cit_ bigint,
     pb_ bigint,

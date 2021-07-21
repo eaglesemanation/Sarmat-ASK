@@ -1,6 +1,6 @@
 SET client_encoding = 'UTF8';
 
-CREATE FUNCTION robot_bu_state_e()
+CREATE OR REPLACE FUNCTION robot_bu_state_e()
     RETURNS trigger
     LANGUAGE 'plpgsql'
     COST 100
