@@ -15,7 +15,7 @@ DECLARE
 BEGIN
     NEW.user_name:=user;
 
-    IF (NEW.ID IS null) THEN
+    IF (NEW.id IS null) THEN
         SELECT nextval('seq_command_rp') INTO NEW.ID;
         NEW.date_time_create := LOCALTIMESTAMP;
         NEW.time_create := LOCALTIMESTAMP;
@@ -50,7 +50,7 @@ BEGIN
             RAISE EXCEPTION 'Empty direction!'
                 USING errcode = 50070;
         END IF;
-        IF (NEW.cell_dest_sname IS null) THEN
+        IF extend.is_null_str(NEW.cell_dest_sname) THEN
             RAISE EXCEPTION 'Empty cell_dest_sname!'
                 USING errcode = 50700;
         END IF;

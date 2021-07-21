@@ -1182,7 +1182,7 @@ BEGIN
                                     FROM command_gas
                                     WHERE command_type_id = 11
                                         AND state_ind = 1
-                                        AND cell_out_name IS null
+                                        AND extend.is_null_str(cell_out_name)
                             )
                 )
         ) LOOP
@@ -1214,7 +1214,7 @@ BEGIN
                                     FROM command_gas
                                     WHERE command_type_id = 11
                                         AND state_ind = 1
-                                        AND cell_out_name IS null
+                                        AND extend.is_null_str(cell_out_name)
                             )
                 )
         ) LOOP

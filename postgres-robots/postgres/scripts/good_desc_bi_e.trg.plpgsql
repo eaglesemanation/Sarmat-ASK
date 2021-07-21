@@ -12,7 +12,7 @@ BEGIN
         SELECT -nextval('seq_gd_id') INTO NEW.id;
         --:new.id:=-1;
     END IF;
-    IF NEW.name IS null THEN
+    IF extend.is_null_str(NEW.name) THEN
         NEW.name := '-' || abs(NEW.id::BIGINT);
     END IF;
     RETURN NEW;

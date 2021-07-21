@@ -143,7 +143,7 @@ BEGIN
         ELSE
             SELECT id::BIGINT INTO rparty_id_
                 FROM gd_party
-                WHERE pname IS null
+                WHERE extend.is_null_str(pname)
                     AND gd_id = gd_id_;
         END IF;
         --dbms_output.put_line('  rparty_id_='||rparty_id_);
@@ -172,7 +172,7 @@ BEGIN
                 AND (
                     coalesce(gdp_id, 0) = coalesce(party_id_, 0)
                     OR
-                    pname_ IS null AND coalesce(gdp_id, 0) <= 0
+                    extend.is_null_str(pname_) AND coalesce(gdp_id, 0) <= 0
                 );
         --dbms_output.put_line('  res='||res);
         SELECT date_order INTO dd
@@ -674,7 +674,7 @@ BEGIN
                         SELECT id::BIGINT INTO ppid
                             FROM gd_party
                             WHERE gd_id = gg.good_desc_id
-                                AND pname IS null;
+                                AND extend.is_null_str(pname);
                     ELSE
                         ppid := co.gd_party_id;
                     END IF;

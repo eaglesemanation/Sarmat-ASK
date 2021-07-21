@@ -7,7 +7,7 @@ CREATE OR REPLACE FUNCTION gd_party_bi_e()
     VOLATILE NOT LEAKPROOF
 AS $BODY$
 BEGIN
-    IF (NEW.ID IS null) THEN
+    IF (NEW.id IS null) THEN
         SELECT nextval('seq_gd_p') INTO NEW.id;
     END IF;
     RETURN NEW;

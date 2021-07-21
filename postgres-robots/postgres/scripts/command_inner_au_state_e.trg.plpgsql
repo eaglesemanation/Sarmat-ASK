@@ -24,7 +24,7 @@ declare
 BEGIN
     FOR tcii IN (
         SELECT * FROM tmp_cmd_inner
-            WHERE action IS null
+            WHERE extend.is_null_str(action)
             ORDER BY ci_id
     ) LOOP
         SELECT * INTO cirec
@@ -56,7 +56,7 @@ BEGIN
             WHERE id = cirec.command_rp_id;
         DELETE FROM tmp_cmd_inner
             WHERE ci_id = tcii.ci_id
-            AND action IS null;
+            AND extend.is_null_str(action);
     END LOOP;
 
     -- пометить все исходные команды как плохие

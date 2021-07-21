@@ -3811,10 +3811,10 @@ BEGIN
                 EXCEPTION WHEN others THEN
                     cell_to__ := obj_rpart.assign_tmp_cell_any_size(rp_id_, cmrp.npp_src);
                 END;
-                IF cell_to__ IS null THEN
+                IF extend.is_null_str(cell_to__) THEN
                     cell_to__ := obj_rpart.assign_tmp_cell_any_size(rp_id_, cmrp.npp_src);
                 END IF;
-                IF cell_to__ IS null THEN
+                IF extend.is_null_str(cell_to__) THEN
                     msg_ := '  Error - Нет места в транзитном складе!';
                     PERFORM obj_rpart.log(rp_id_, msg_);
                     PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_RP"(), rp_id_, null, msg_);

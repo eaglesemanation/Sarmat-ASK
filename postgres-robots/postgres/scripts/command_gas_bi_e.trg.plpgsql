@@ -102,7 +102,7 @@ BEGIN
     -- GoodDesc.AddInfo
     --------------------------
     IF (NEW.command_type_id = 10) THEN
-        IF (NEW.good_desc_id IS null) THEN
+        IF extend.is_null_str(NEW.good_desc_id) THEN
             RAISE EXCEPTION 'Good_desc_id must be not Null!'
                 USING errcode = 50070;
         END IF;
@@ -170,11 +170,11 @@ BEGIN
         END IF;
 
         -- проверка на не NULL
-        IF (NEW.container_barcode IS null) THEN
+        IF extend.is_null_str(NEW.container_barcode) THEN
             RAISE EXCEPTION 'CONTAINER_BARCODE must be not Null!'
                 USING errcode = 50070;
         END IF;
-        IF (NEW.content IS null) AND (IAEC <> 1) THEN
+        IF extend.is_null_str(NEW.content) AND (IAEC <> 1) THEN
             RAISE EXCEPTION 'content must be not Null!'
                 USING errcode = 50070;
         END IF;
@@ -205,13 +205,13 @@ BEGIN
                 FROM repository
                 WHERE coalesce(is_strong_prihod_check, 0) = 1
         ) LOOP
-            IF (NEW.pri_doc_number IS null) THEN
+            IF extend.is_null_str(NEW.pri_doc_number) THEN
                 RAISE EXCEPTION 'Strong Check is ON on repository! Need debit document number!'
                     USING errcode = 50070;
             END IF;
         END LOOP;
         -- ячейка по умолчанию
-        IF (NEW.cell_name IS null) THEN
+        IF extend.is_null_str(NEW.cell_name) THEN
             SELECT count(*) INTO cnt
                 FROM cell
                 WHERE repository_part_id = NEW.rp_id
@@ -231,7 +231,7 @@ BEGIN
         -- определяем ячейку
         IF (NEW.cell_name = 'Desktop') THEN
             -- тут у нас вариант тупо на рабочий стол положили для дальнейшей работы
-            IF (NEW.content IS null) THEN
+            IF extend.is_null_str(NEW.content) THEN
                 RAISE EXCEPTION 'content must be not Null!'
                     USING errcode = 50070;
             END IF;
@@ -497,7 +497,7 @@ BEGIN
                         AND NOT exists(
                             SELECT *
                                 FROM gd_party
-                                WHERE pname IS null
+                                WHERE extend.is_null_str(pname)
                                     AND gd_id = gd.good_desc_id
                         );
             UPDATE command_gas_container_content cgu
@@ -508,7 +508,7 @@ BEGIN
                             SELECT good_desc_id
                                 FROM good_desc
                                 WHERE id = cgu.gd_id
-                        ) AND pname IS null
+                        ) AND extend.is_null_str(pname)
                 )
                 WHERE command_gas_id = NEW.id
                     AND gdp_id IS null;
@@ -517,7 +517,7 @@ BEGIN
                 SELECT container_id_, gd_id, qty, notes, (
                     SELECT id
                         FROM gd_party
-                        WHERE pname IS null
+                        WHERE extend.is_null_str(pname)
                             AND gd_id = (
                                 SELECT good_desc_id
                                     FROM good_desc
@@ -568,7 +568,7 @@ BEGIN
                         SET qty = qty + ccgd.quantity
                         WHERE gd_id = ccgd.gdid_
                             AND (
-                                pname IS null AND coalesce(ccgd.gdp_id, 0) = 0
+                                extend.is_null_str(pname) AND coalesce(ccgd.gdp_id, 0) = 0
                                 OR ccgd.gdp_id = id
                             );
 
@@ -659,7 +659,7 @@ BEGIN
             END IF;
         END IF;
         -- ячейки сброса по умолчанию
-        IF (NEW.cell_name IS null) THEN
+        IF extend.is_null_str(NEW.cell_name) THEN
             FOR csb IN (
                 SELECT *
                     FROM cell
@@ -667,7 +667,7 @@ BEGIN
                         AND repository_part_id = NEW.rp_id
                         AND hi_level_type IN (12,15)
             ) LOOP
-                IF (NEW.cell_name IS null) THEN
+                IF extend.is_null_str(NEW.cell_name) THEN
                     NEW.cell_name := csb.sname;
                 ELSE
                     NEW.cell_name := NEW.cell_name || ',' || csb.sname;
@@ -701,7 +701,7 @@ BEGIN
                 FROM cell
                 WHERE sname = s
                     AND repository_part_id = NEW.rp_id;
-            EXIT WHEN sn IS null;
+            EXIT WHEN extend.is_null_str(sn);
             --NEW.state:=1; -- как примем, тогда и назначим
         END LOOP;
 
@@ -818,7 +818,7 @@ BEGIN
             END IF;
         END IF;
         -- ячейку - приемник проверяем
-        IF (NEW.cell_name IS null) THEN
+        IF extend.is_null_str(NEW.cell_name) THEN
             -- вначале ищем, а нет ли автоматом назначить
             FOR cc IN (
                 SELECT *
@@ -830,7 +830,7 @@ BEGIN
             ) LOOP
                 NEW.cell_name := cc.sname;
             END LOOP;
-            IF (NEW.cell_name IS null) THEN
+            IF extend.is_null_str(NEW.cell_name) THEN
                 RAISE EXCEPTION 'cell_name  must be not Null!'
                     USING errcode = 50070;
             END IF;
@@ -1138,7 +1138,7 @@ BEGIN
                 USING errcode = 50070;
         END IF;
         -- проверяем контейнер
-        IF (NEW.container_barcode IS null) THEN
+        IF extend.is_null_str(NEW.container_barcode) THEN
             RAISE EXCEPTION 'CONTAINER_BARCODE must be not Null!'
                 USING errcode = 50070;
         END IF;
@@ -1371,7 +1371,7 @@ BEGIN
             WHERE id = NEW.good_desc_id;
 
         -- проверяем контейнер
-        IF (NEW.container_barcode IS null) THEN
+        IF extend.is_null_str(NEW.container_barcode) THEN
             RAISE EXCEPTION 'CONTAINER_BARCODE must be not Null!'
                 USING errcode = 50070;
         END IF;
@@ -1403,12 +1403,12 @@ BEGIN
                         AND NOT exists(
                             SELECT *
                                 FROM gd_party
-                                WHERE pname IS null
+                                WHERE extend.is_null_str(pname)
                                     AND gd_id = gd.good_desc_id
                         );
                 SELECT id INTO gdp_id__
                     FROM gd_party
-                    WHERE pname IS null
+                    WHERE extend.is_null_str(pname)
                         AND gd_id = gd_id_;
                 NEW.gd_party_id := gdp_id__;
             ELSE
@@ -1470,7 +1470,7 @@ BEGIN
                 SET qty = qty + NEW.quantity
                 WHERE gd_id = gd_id_
                     AND (
-                        pname IS null AND coalesce(NEW.gd_party_id,0) = 0
+                        extend.is_null_str(pname) AND coalesce(NEW.gd_party_id,0) = 0
                         OR NEW.gd_party_id = id
                     );
         ELSE
@@ -1502,11 +1502,11 @@ BEGIN
     --------------------------
     ELSIF (NEW.command_type_id = 26) THEN
         -- проверка на не NULL
-        IF (NEW.container_barcode IS null) THEN
+        IF extend.is_null_str(NEW.container_barcode) THEN
             RAISE EXCEPTION 'CONTAINER_BARCODE must be not Null!'
                 USING errcode = 50070;
         END IF;
-        IF (NEW.content IS null) THEN
+        IF extend.is_null_str(NEW.content) THEN
             RAISE EXCEPTION 'content must be not Null!'
                 USING errcode = 50070;
         END IF;
@@ -1751,12 +1751,12 @@ BEGIN
                     USING errcode = 50070;
             END IF;
         END IF;
-        IF (NEW.container_barcode IS null) THEN
+        IF extend.is_null_str(NEW.container_barcode) THEN
             RAISE EXCEPTION 'Container barcode must be not Null!'
                 USING errcode = 50070;
         END IF;
         -- проверяем контейнер
-        IF (NEW.container_id IS null) THEN
+        IF extend.is_null_str(NEW.container_id) THEN
             SELECT count(*) INTO cnt
                 FROM container
                 WHERE barcode = NEW.container_barcode;
@@ -1802,7 +1802,7 @@ BEGIN
         END IF;
 
         -- проверка на не NULL
-        IF (NEW.container_barcode IS null) THEN
+        IF extend.is_null_str(NEW.container_barcode) THEN
             RAISE EXCEPTION 'CONTAINER_BARCODE must be not Null!'
                 USING errcode = 50070;
         END IF;
@@ -1833,7 +1833,7 @@ BEGIN
             END IF;
         END IF;
         -- проверка ячеек
-        IF (NEW.cell_name IS null) THEN
+        IF extend.is_null_str(NEW.cell_name) THEN
             SELECT count(*) INTO cnt
                 FROM cell
                 WHERE repository_part_id = NEW.rp_id
@@ -1856,7 +1856,7 @@ BEGIN
                 ) LOOP
                     NEW.cell_name := ccel.sname; -- контейнер и так находится в ячейке возврата или универсальной
                 END LOOP;
-                IF (NEW.cell_name IS null) THEN
+                IF extend.is_null_str(NEW.cell_name) THEN
                     RAISE EXCEPTION '<cell_name> must be not Null!'
                         USING errcode = 50070;
                 END IF;

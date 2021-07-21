@@ -413,7 +413,7 @@ BEGIN
         ----------------------------------
         ELSIF NEW.command_type_id = 23 THEN
             -- проверяем робота
-            IF (NEW.robot_ip IS null) THEN
+            IF extend.is_null_str(NEW.robot_ip) THEN
                 RAISE EXCEPTION 'ERROR: cmd Cell.Verify.X need not null robot_ip'
                     USING errcode = 50005;
             END IF;
@@ -439,7 +439,7 @@ BEGIN
                     USING errcode = 50005;
             END IF;
             -- ячейки
-            IF (NEW.cells IS null) THEN
+            IF extend.is_null_str(NEW.cells) THEN
                 -- не означены
                 cnt := 0;
                 FOR cl IN (
@@ -500,7 +500,7 @@ BEGIN
                             END LOOP;
                         END IF;
                     END IF;
-                    EXIT WHEN cell_a IS null OR trim(cell_a) = '';
+                    EXIT WHEN extend.is_null_str(cell_a) OR trim(cell_a) = '';
                 END LOOP;
             END IF; -- NEW.cells IS null
             -- проверили, а есть ли ячейки
@@ -556,7 +556,7 @@ BEGIN
         ----------------------------------
         ELSEIF NEW.command_type_id = 19 THEN
             -- проверяем робота
-            IF (NEW.robot_ip IS null) THEN
+            IF extend.is_null_str(NEW.robot_ip) THEN
                 RAISE EXCEPTION 'ERROR: cmd Cell.Verify.X need not null robot_ip'
                     USING errcode = 50005;
             END IF;
@@ -586,7 +586,7 @@ BEGIN
                     USING errcode = 50005;
             END IF;
             -- ячейки
-            IF (NEW.cells IS null) THEN
+            IF extend.is_null_str(NEW.cells) THEN
                 -- не означены
                 cnt := 0;
                 FOR cl IN (
@@ -659,7 +659,7 @@ BEGIN
                             END LOOP;
                         END IF;
                     END IF;
-                    EXIT WHEN cell_a IS null OR trim(cell_a) = '';
+                    EXIT WHEN extend.is_null_str(cell_a) OR trim(cell_a) = '';
                 END LOOP;
             END IF; -- NEW.cells IS null
             -- проверили, а есть ли ячейки

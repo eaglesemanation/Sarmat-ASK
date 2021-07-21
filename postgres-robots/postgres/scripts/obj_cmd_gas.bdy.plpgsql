@@ -83,7 +83,7 @@ BEGIN
                 SELECT id INTO gd_party_id_
                     FROM gd_party
                     WHERE gd_id = gdid_
-                        AND pname IS null;
+                        AND extend.is_null_str(pname);
             ELSE
                 gd_party_id_ := nr.gd_party_id;
             END IF;
@@ -91,7 +91,7 @@ BEGIN
                 SET qty = qty + nr.quantity
                 WHERE gd_id = gdid_
                     AND (
-                        pname IS null AND coalesce(nr.gd_party_id, 0) = 0
+                        extend.is_null_str(pname) AND coalesce(nr.gd_party_id, 0) = 0
                         OR
                         nr.gd_party_id::TEXT = id
                     );
@@ -1946,7 +1946,7 @@ BEGIN
                                 SET qty = qty + ccgd.quantity
                                 WHERE gd_id = ccgd.gdid_
                                     AND (
-                                        pname IS null AND coalesce(ccgd.gdp_id, 0) = 0
+                                        extend.is_null_str(pname) AND coalesce(ccgd.gdp_id, 0) = 0
                                         OR
                                         ccgd.gdp_id::TEXT = id
                                     );
@@ -2316,7 +2316,7 @@ BEGIN
                     USING errcode = 50070;
             END IF;
         END IF;
-        EXIT WHEN s IS null;
+        EXIT WHEN extend.is_null_str(s);
     --end if;
     END LOOP;
     --exception when others then
@@ -2477,7 +2477,7 @@ BEGIN
                     AND cell_size <= cnt_rec__.type
                     AND rp.id = rp_id_
                     AND (
-                        src_npp_for_transfer_ IS null AND obj_rpart.calc_track_free_cell(rp.id,track_npp) > 1
+                        extend.is_null_str(src_npp_for_transfer_) AND obj_rpart.calc_track_free_cell(rp.id,track_npp) > 1
                         OR
                         coalesce(position('[' || track_npp || ']' IN src_npp_for_transfer_), 0) > 0
                     )

@@ -65,7 +65,7 @@ BEGIN
             entry := null;
         END IF;
         PERFORM pg_catalog.pg_file_write(filename, entryPart || E'\n', append);
-        EXIT WHEN entry IS null;
+        EXIT WHEN extend.is_null_str(entry);
     END LOOP;
 END;
 $BODY$;
@@ -106,7 +106,7 @@ BEGIN
             entry := null;
         END IF;
         PERFORM pg_catalog.pg_file_write(filename, entryPart || E'\n', append);
-        EXIT WHEN entry IS null;
+        EXIT WHEN extend.is_null_str(entry);
     END LOOP;
 END;
 $BODY$;

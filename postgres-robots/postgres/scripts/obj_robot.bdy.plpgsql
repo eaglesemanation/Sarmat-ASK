@@ -1325,7 +1325,7 @@ BEGIN
             ORDER BY code
     ) LOOP
         IF error_code & err.code <> 0 THEN
-            IF erm IS null THEN
+            IF extend.is_null_str(erm) THEN
                 erm := err.descr;
             ELSIF length(erm) + length(err.descr) < 250 THEN
                 -- FIXME: isn't first err.descr supposed to be erm?
@@ -1838,7 +1838,7 @@ DECLARE
 BEGIN
     ncmt__ := false;
     PERFORM obj_robot.ifs_ilog('Начало цикла INFO', rid_, rez_, log_prefix_was__);
-    IF (rez_ IS null) THEN -- нет связи
+    IF extend.is_null_str(rez_) THEN -- нет связи
         UPDATE robot
             SET state = 8
             WHERE id = rid_

@@ -37,13 +37,13 @@ BEGIN
             WHERE id = NEW.tttype_id
     ) LOOP
         IF (ttt.need_rstate = 1) THEN
-            IF (NEW.rstate_trigger IS null) THEN
+            IF extend.is_null_str(NEW.rstate_trigger) THEN
                 RAISE EXCEPTION 'Для данного типа проблемы обязательно указать состояние робота!'
                     USING errcode = 50123;
             END IF;
         END IF;
         IF (ttt.may_cmd = 0) THEN
-            IF NOT (NEW.cmd_trigger IS null) THEN
+            IF NOT extend.is_null_str(NEW.cmd_trigger) THEN
                 RAISE EXCEPTION 'Для данного типа проблемы нельзя задавать текст команды!'
                     USING errcode = 50123;
             END IF;
@@ -55,7 +55,7 @@ BEGIN
             END IF;
         END IF;
         IF (ttt.may_track_npp = 0) THEN
-            IF NOT (NEW.track_npp_trigger IS null) THEN
+            IF NOT extend.is_null_str(NEW.track_npp_trigger) THEN
                 RAISE EXCEPTION 'Для данного типа проблемы нельзя задавать № трека для условия!'
                     USING errcode = 50123;
             END IF;
@@ -74,37 +74,37 @@ BEGIN
             END IF;
         END IF;
         IF (t.need_error_msg = 1) THEN
-            IF (NEW.error_msg IS null) THEN
+            IF extend.is_null_str(NEW.error_msg) THEN
                 RAISE EXCEPTION 'Для данного типа проблемы требуется текст ошибки!'
                     USING errcode = 50123;
             END IF;
         END IF;
         IF (t.may_be_cmd_current = 0) THEN
-            IF NOT (NEW.cmd_current IS null) THEN
+            IF NOT extend.is_null_str(NEW.cmd_current) THEN
                 RAISE EXCEPTION 'Для данного типа проблемы нельзя указывать значение текущей команды!'
                     USING errcode = 50123;
             END IF;
         END IF;
         IF (t.need_robot_state = 1) THEN
-            IF (NEW.set_robot_state IS null) THEN
+            IF extend.is_null_str(NEW.set_robot_state) THEN
                 RAISE EXCEPTION 'Для данного типа проблемы требуется состояние робота!'
                     USING errcode = 50123;
             END IF;
         END IF;
         IF (t.need_platform_busy = 1) THEN
-            IF (NEW.set_platform_busy IS null) THEN
+            IF extend.is_null_str(NEW.set_platform_busy) THEN
                 RAISE EXCEPTION 'Для данного типа проблемы требуется состояние платформы!'
                     USING errcode = 50123;
             END IF;
         END IF;
         IF (t.may_track_npp = 0) THEN
-            IF NOT (NEW.set_track_npp IS null) THEN
+            IF NOT extend.is_null_str(NEW.set_track_npp) THEN
                 RAISE EXCEPTION 'Для данного типа проблемы нельзя указывать задаваемое значение секции!'
                     USING errcode = 50123;
             END IF;
         END IF;
         IF (t.may_cmd_answer = 0) THEN
-            IF NOT (NEW.set_cmd_answer IS null) THEN
+            IF NOT extend.is_null_str(NEW.set_cmd_answer) THEN
                 RAISE EXCEPTION 'Для данного типа проблемы нельзя указывать задаваемое значение ответа на команду!'
                     USING errcode = 50123;
             END IF;
