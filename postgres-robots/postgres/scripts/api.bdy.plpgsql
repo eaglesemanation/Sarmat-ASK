@@ -1,3 +1,5 @@
+SET client_encoding = 'UTF8';
+
 CREATE OR REPLACE FUNCTION api.get_cmd_gas_time_end(
     cg_id_ bigint)
     RETURNS date

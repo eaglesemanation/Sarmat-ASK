@@ -1,3 +1,5 @@
+SET client_encoding = 'UTF8';
+
 CREATE OR REPLACE FUNCTION obj_rpart.get_log_file_name(
     rp_id_ numeric)
     RETURNS text

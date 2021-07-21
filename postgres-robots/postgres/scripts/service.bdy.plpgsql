@@ -1,3 +1,5 @@
+SET client_encoding = 'UTF8';
+
 CREATE OR REPLACE FUNCTION service.bkp_to_file_active(
     )
     RETURNS boolean

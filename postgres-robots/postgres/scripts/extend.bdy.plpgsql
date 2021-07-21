@@ -1,3 +1,5 @@
+SET client_encoding = 'UTF8';
+
 CREATE OR REPLACE FUNCTION extend.str_concat(
     s1 text,
     s2 text,

@@ -1,3 +1,5 @@
+SET client_encoding = 'UTF8';
+
 CREATE OR REPLACE FUNCTION obj_ask."ERROR_TYPE_ROBOT_RP"(
 	)
     RETURNS bigint

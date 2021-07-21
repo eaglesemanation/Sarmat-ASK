@@ -1,3 +1,5 @@
+SET client_encoding = 'UTF8';
+
 DROP SCHEMA IF EXISTS helpers CASCADE;
 CREATE SCHEMA helpers AUTHORIZATION postgres;
 COMMENT ON SCHEMA helpers IS 'Helper functions/procedures that assist migration from Oracle';

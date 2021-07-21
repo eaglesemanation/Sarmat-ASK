@@ -1,3 +1,5 @@
+SET client_encoding = 'UTF8';
+
 CREATE OR REPLACE FUNCTION obj_cmd_order.get_container_izlish(
 	cnt_id_ bigint,
     gd_id_ text,

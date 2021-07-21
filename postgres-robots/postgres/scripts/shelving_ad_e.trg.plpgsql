@@ -1,3 +1,5 @@
+SET client_encoding = 'UTF8';
+
 CREATE OR REPLACE FUNCTION shelving_ad_e()
     RETURNS trigger
     LANGUAGE 'plpgsql'

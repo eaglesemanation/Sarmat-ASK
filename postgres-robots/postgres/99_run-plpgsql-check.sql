@@ -1,5 +1,7 @@
 -- Taken from https://github.com/okbob/plpgsql_check README
 
+SET client_encoding = 'UTF8';
+
 -- check all plpgsql functions (functions or trigger functions with defined triggers)
 SELECT
     (pcf).functionid::regprocedure, (pcf).lineno, (pcf).statement,

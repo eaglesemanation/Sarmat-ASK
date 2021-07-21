@@ -1,3 +1,5 @@
+SET client_encoding = 'UTF8';
+
 CREATE OR REPLACE FUNCTION command_gas_bi_e()
     RETURNS trigger
     LANGUAGE 'plpgsql'

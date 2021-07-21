@@ -1,3 +1,5 @@
+SET client_encoding = 'UTF8';
+
 DROP TYPE IF EXISTS emu.ttt_rec CASCADE;
 CREATE TYPE emu.ttt_rec AS (
 	id BIGINT,
