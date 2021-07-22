@@ -904,7 +904,7 @@ COMMENT ON FUNCTION obj_ask.to_work()
     IS 'Переключить АСК в режим <Работает>';
 
 
-CREATE OR REPLACE FUNCTION obj_ask.shalving_need_redraw_clear(
+CREATE OR REPLACE FUNCTION obj_ask.shelving_need_redraw_clear(
     )
     RETURNS void
     LANGUAGE 'plpgsql'
@@ -916,12 +916,12 @@ BEGIN
     -- COMMIT;
 END;
 $BODY$;
-ALTER FUNCTION obj_ask.shalving_need_redraw_clear() OWNER TO postgres;
-COMMENT ON FUNCTION obj_ask.shalving_need_redraw_clear()
+ALTER FUNCTION obj_ask.shelving_need_redraw_clear() OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.shelving_need_redraw_clear()
     IS 'очистить список стеллажей для перерисовки';
 
 
-CREATE OR REPLACE FUNCTION obj_ask.shalving_need_redraw_clear(
+CREATE OR REPLACE FUNCTION obj_ask.shelving_need_redraw_clear(
     max_id_ bigint)
     RETURNS void
     LANGUAGE 'plpgsql'
@@ -934,8 +934,8 @@ BEGIN
     -- COMMIT;
 END;
 $BODY$;
-ALTER FUNCTION obj_ask.shalving_need_redraw_clear(bigint) OWNER TO postgres;
-COMMENT ON FUNCTION obj_ask.shalving_need_redraw_clear(bigint)
+ALTER FUNCTION obj_ask.shelving_need_redraw_clear(bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_ask.shelving_need_redraw_clear(bigint)
     IS 'очистить список стеллажей для перерисовки (но не более чем заданное ID)';
 
 

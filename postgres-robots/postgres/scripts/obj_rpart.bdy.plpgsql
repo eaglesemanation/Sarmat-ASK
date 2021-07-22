@@ -2087,7 +2087,7 @@ COMMENT ON FUNCTION obj_rpart.get_another_robot_id(bigint)
     IS 'получить id второго робота';
 
 
-CREATE OR REPLACE FUNCTION obj_rpart.crach_test_linear_tact(
+CREATE OR REPLACE FUNCTION obj_rpart.crash_test_linear_tact(
     )
     RETURNS void
     LANGUAGE 'plpgsql'
@@ -2274,8 +2274,8 @@ BEGIN
     END IF;
 END;
 $BODY$;
-ALTER FUNCTION obj_rpart.crach_test_linear_tact() OWNER TO postgres;
-COMMENT ON FUNCTION obj_rpart.crach_test_linear_tact()
+ALTER FUNCTION obj_rpart.crash_test_linear_tact() OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.crash_test_linear_tact()
     IS 'линейный такт креш-теста';
 
 
