@@ -1857,7 +1857,7 @@ BEGIN
         WHERE id = rid_;
     -- разбираем ответ от робота INFO
     --v_array := extend.parse_csv_string(rez_);--apex_util.string_to_table(rez_, ';');
-    v_array := regexp_split_to_array(rez_, ',');
+    v_array := regexp_split_to_array(rez_, ';');
     -- считываем ID команды
     IF v_array[19] IS NOT null THEN
         cmdid__ := service.to_number_my(v_array[19]);
