@@ -695,7 +695,7 @@ COMMENT ON FUNCTION obj_ask.get_desktop_container_history(text)
 
 CREATE OR REPLACE FUNCTION obj_ask.get_shelving_fullness(
     shelv_id bigint)
-    RETURNS bigint
+    RETURNS numeric
     LANGUAGE 'plpgsql'
     COST 100
     VOLATILE PARALLEL UNSAFE
@@ -705,7 +705,6 @@ DECLARE
     ff BIGINT;
     ee BIGINT;
 BEGIN
-    res := 0;
     SELECT coalesce(sum(is_full), 0) INTO ff
         FROM cell
         WHERE shelving_id = shelv_id
@@ -717,8 +716,10 @@ BEGIN
     res := ff / ee;
     IF (res > 1) THEN
         RETURN 1;
-    ELSE
+    ELSIF (res < 0) THEN
         RETURN 0;
+    ELSE
+        RETURN res;
     END IF;
 EXCEPTION WHEN others THEN
     RETURN 0;
