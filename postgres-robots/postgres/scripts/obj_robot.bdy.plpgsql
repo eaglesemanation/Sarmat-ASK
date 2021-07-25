@@ -1859,7 +1859,7 @@ BEGIN
     --v_array := extend.parse_csv_string(rez_);--apex_util.string_to_table(rez_, ';');
     v_array := regexp_split_to_array(rez_, ';');
     -- считываем ID команды
-    IF v_array[19] IS NOT null THEN
+    IF NOT extend.is_null_str(v_array[19]) THEN
         cmdid__ := service.to_number_my(v_array[19]);
     ELSE
         cmdid__ := null;
@@ -1978,7 +1978,7 @@ BEGIN
         END IF;
     END IF;
     -- направление
-    IF (v_array[17] IS NOT null) THEN
+    IF NOT extend.is_null_str(v_array[17]) THEN
         IF (v_array[17] = 'CCW') THEN
             new_dir_ := obj_robot."DIR_CCW"();
         ELSIF (v_array[17] = 'CW') THEN
@@ -2908,7 +2908,7 @@ BEGIN
         PERFORM obj_robot.log(robot_id_, errmm__);
         RAISE EXCEPTION '%', errmm__ USING errcode = 50012;
     END IF;
-    IF (cell_src_sname_ IS NULL) AND (cell_dest_sname_ IS NULL) THEN
+    IF extend.is_null_str(cell_src_sname_) AND extend.is_null_str(cell_dest_sname_) THEN
         errmm__ := 'ERROR постановки команды для робота ' || robot_id_ || ' - пустые и источник и приемник!';
         PERFORM obj_robot.log(robot_id_, errmm__);
         RAISE EXCEPTION '%', errmm__ USING errcode = 50012;
@@ -2916,7 +2916,7 @@ BEGIN
     rob_rec__.state := 1;
     ci_rec__.command_type_id := cmd_inner_type_;
     ci_rec__.direction := dir_;
-    IF (cell_src_sname_ IS NOT NULL) THEN
+    IF NOT extend.is_null_str(cell_src_sname_) THEN
         SELECT c.id, t.npp, t.id
             INTO ci_rec__.cell_src_id, ci_rec__.npp_src, ci_rec__.track_src_id
             FROM cell c
@@ -2931,7 +2931,7 @@ BEGIN
         ci_rec__.npp_src := 0;
         ci_rec__.track_src_id := 0;
     END IF;
-    IF (cell_dest_sname_ IS NOT NULL) THEN
+    IF NOT extend.is_null_str(cell_dest_sname_) THEN
         SELECT c.id, t.npp, t.id
         INTO ci_rec__.cell_dest_id, ci_rec__.npp_dest, ci_rec__.track_dest_id
         FROM cell c
@@ -2971,7 +2971,7 @@ BEGIN
         ELSE
             npp_rd__ := ci_rec__.npp_src;
         END IF;
-        IF check_point_ IS NOT NULL THEN
+        IF check_point_ IS NOT null THEN
             npp_rd__ := check_point_;
         END IF;
         IF (obj_rpart.is_track_locked(robot_id_, npp_rd__, dir_) = 0) THEN

@@ -430,7 +430,7 @@ BEGIN
                 WHERE id = container_id_;
         END IF;
         -- название контейнера
-        IF (NEW.notes IS NOT null) THEN
+        IF NOT extend.is_null_str(NEW.notes) THEN
             UPDATE container
                 SET notes = NEW.notes
                 WHERE id = container_id_;
@@ -458,12 +458,12 @@ BEGIN
         END IF;
 
         -- разбор строки состава принимаемого контейнера
-        IF (NEW.content IS NOT null) THEN
+        IF NOT extend.is_null_str(NEW.content) THEN
             PERFORM obj_cmd_gas.parse_cg_cc(NEW.id, NEW.content, cmgd);
             SELECT count(*) INTO cnt
                 FROM command_gas_container_content cgcc
                 WHERE command_gas_id = NEW.id
-                    AND gdp_id IS NOT null
+                    AND NOT extent.is_null_str(gdp_id)
                     AND NOT exists(
                         SELECT *
                             FROM gd_party gdp
@@ -905,7 +905,7 @@ BEGIN
             FROM repository_part
             WHERE id = NEW.rp_id;
         -- проверяем контейнеер
-        IF (NEW.container_barcode IS NOT null) THEN -- ШК контейнера не пустой - реальная команда
+        IF NOT extent.is_null_str(NEW.container_barcode) THEN -- ШК контейнера не пустой - реальная команда
             SELECT count(*) INTO cnt
                 FROM container
                 WHERE barcode = NEW.container_barcode;

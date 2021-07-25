@@ -2297,7 +2297,7 @@ BEGIN
         SELECT id INTO sgdr
             FROM good_desc
             WHERE trim(upper(id)) = trim(upper(sgd));
-        IF (ipc = 0) AND (gdp_id_ IS NOT null) THEN
+        IF (ipc = 0) AND NOT extend.is_null_str(gdp_id_) THEN
             RAISE EXCEPTION 'Calculation in parts is disabled!'
                 USING errcode = 50070;
         END IF;

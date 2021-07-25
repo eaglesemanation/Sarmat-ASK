@@ -187,7 +187,7 @@ DECLARE
     cnt_ BIGINT;
     exception_msg_ TEXT;
 BEGIN
-    IF (repository_part_id_ IS NULL) AND (robot_id_ IS NOT NULL) THEN
+    IF (repository_part_id_ IS null) AND (robot_id_ IS NOT null) THEN
         SELECT repository_part_id INTO rp_id__ FROM robot WHERE id = robot_id_;
     ELSE
         rp_id__ := repository_part_id_;
@@ -396,7 +396,7 @@ BEGIN
                 FROM cell
                 WHERE id = pcell_id
         ) LOOP
-            IF cc.notes IS NOT null THEN
+            IF NOT extend.is_null_str(cc.notes) THEN
                 RETURN (cc.sname || '-' || cc.notes);
             ELSE
                 RETURN cc.sname;
@@ -1096,7 +1096,7 @@ BEGIN
                                 INNER JOIN command_gas_container_content cgoo
                                     ON cg.id = cgoo.command_gas_id
                                 WHERE command_type_id=11
-                                    AND (cell_out_name IS NOT null OR coalesce(cell_name, '-') = 'Desktop')
+                                    AND (NOT extend.is_null_str(cell_out_name) OR coalesce(cell_name, '-') = 'Desktop')
                                     AND state IN (1,3,5)
                                     AND cgoo.gd_id = gd.id
                         ) qpry11,

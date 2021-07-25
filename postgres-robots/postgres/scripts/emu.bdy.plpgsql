@@ -640,7 +640,7 @@ BEGIN
             AS (rp_rec emu.trp_rec, ttrack emu.ttt_rec[]);
         rp_rec := init_ttrack_res__.rp_rec;
         ttrack := init_ttrack_res__.ttrack;
-        IF cell_dst IS NOT null THEN
+        IF NOT extend.is_null_str(cell_dst) THEN
             SELECT npp INTO cei_loc.dst_track_npp
                 FROM track
                 WHERE repository_part_id = rp_rec.id
@@ -654,7 +654,7 @@ BEGIN
                             )
                     );
         END IF;
-        IF cell_src IS NOT null THEN
+        IF NOT extend.is_null_str(cell_src) THEN
             SELECT npp INTO cei_loc.src_track_npp
                 FROM track
                 WHERE repository_part_id = rp_rec.id

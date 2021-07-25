@@ -42,15 +42,15 @@ BEGIN
             WHERE gd_id = OLD.id;
         UPDATE command_gas
             SET good_desc_id = NEW.id
-            WHERE good_desc_id IS NOT null
+            WHERE NOT extend.is_null_str(good_desc_id)
                 AND good_desc_id = OLD.id;
         UPDATE command_order
             SET good_desc_id = NEW.id
-            WHERE good_desc_id IS NOT null
+            WHERE NOT extend.is_null_str(good_desc_id)
                 AND good_desc_id = OLD.id;
         UPDATE command_gas_container_content
             SET gd_id = NEW.id
-            WHERE gd_id IS NOT null
+            WHERE NOT extend.is_null_str(gd_id)
                 AND gd_id = OLD.id;
     END IF;
     RETURN NEW;
