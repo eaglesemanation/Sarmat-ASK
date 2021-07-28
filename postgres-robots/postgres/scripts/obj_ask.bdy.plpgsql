@@ -702,8 +702,8 @@ CREATE OR REPLACE FUNCTION obj_ask.get_shelving_fullness(
 AS $BODY$
 DECLARE
     res NUMERIC;
-    ff BIGINT;
-    ee BIGINT;
+    ff NUMERIC;
+    ee NUMERIC;
 BEGIN
     SELECT coalesce(sum(is_full), 0) INTO ff
         FROM cell
