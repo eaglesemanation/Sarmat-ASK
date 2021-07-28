@@ -1,0 +1,42 @@
+SET client_encoding = 'UTF8';
+
+CREATE OR REPLACE FUNCTION cell_lc_bi_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+DECLARE
+    cnt BIGINT;
+    ifl BIGINT;
+    ifl_max BIGINT;
+BEGIN
+    SELECT is_full, max_full_size, sname
+        INTO ifl, ifl_max, NEW.sname
+        FROM cell
+        WHERE id = NEW.cell_id;
+    SELECT count(*) INTO cnt
+        FROM cell_cmd_lock
+        WHERE cell_id = NEW.cell_id;
+    IF (cnt > 0) THEN -- уже есть блокировка на ячейку - проверяем, есть ли куда
+        IF (ifl >= ifl_max) THEN
+            RAISE EXCEPTION 'Cell % always blocked by another commands! Cnt=%, is_full=%, is_full_max=%',
+                NEW.sname, cnt, ifl, ifl_max
+                USING errcode = 50003;
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION cell_lc_bi_e() OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS cell_lc_bi_e ON cell_cmd_lock;
+
+CREATE TRIGGER cell_lc_bi_e
+    BEFORE INSERT
+    ON cell_cmd_lock
+    FOR EACH ROW
+    EXECUTE PROCEDURE cell_lc_bi_e();
+
+-- vim: ft=pgsql
