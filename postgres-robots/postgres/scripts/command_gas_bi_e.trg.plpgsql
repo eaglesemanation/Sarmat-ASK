@@ -463,7 +463,7 @@ BEGIN
             SELECT count(*) INTO cnt
                 FROM command_gas_container_content cgcc
                 WHERE command_gas_id = NEW.id
-                    AND NOT extent.is_null_str(gdp_id)
+                    AND NOT extend.is_null_str(gdp_id)
                     AND NOT exists(
                         SELECT *
                             FROM gd_party gdp
@@ -905,7 +905,7 @@ BEGIN
             FROM repository_part
             WHERE id = NEW.rp_id;
         -- проверяем контейнеер
-        IF NOT extent.is_null_str(NEW.container_barcode) THEN -- ШК контейнера не пустой - реальная команда
+        IF NOT extend.is_null_str(NEW.container_barcode) THEN -- ШК контейнера не пустой - реальная команда
             SELECT count(*) INTO cnt
                 FROM container
                 WHERE barcode = NEW.container_barcode;
