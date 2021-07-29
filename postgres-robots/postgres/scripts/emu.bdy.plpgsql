@@ -284,6 +284,7 @@ CREATE OR REPLACE FUNCTION emu.get_next_npp(
     dir bigint,
     INOUT next_npp bigint,
     INOUT is_loop_end bigint)
+    RETURNS record
     LANGUAGE 'plpgsql'
     COST 100
     VOLATILE PARALLEL UNSAFE
@@ -335,6 +336,7 @@ CREATE OR REPLACE FUNCTION emu.ce_move(
     INOUT current_track_npp bigint,
     OUT res bigint
     )
+    RETURNS record
     LANGUAGE 'plpgsql'
     COST 100
     VOLATILE PARALLEL UNSAFE
@@ -387,6 +389,7 @@ CREATE OR REPLACE FUNCTION emu.ce_get_ecp_data(
     no_ bigint,
     OUT cp bigint,
     OUT dt date)
+    RETURNS record
     LANGUAGE 'plpgsql'
     COST 100
     VOLATILE PARALLEL UNSAFE
@@ -432,6 +435,7 @@ CREATE OR REPLACE FUNCTION emu.ce_move_cp(
     INOUT current_track_id bigint,
     INOUT current_track_npp bigint,
     OUT res bigint)
+    RETURNS record
     LANGUAGE 'plpgsql'
     COST 100
     VOLATILE PARALLEL UNSAFE
@@ -453,7 +457,7 @@ BEGIN
     ecp_pos := 1; -- первая точка останова
     was_stop := true;
     LOOP
-        SELECT emu.ce_get_ecp_data(robot_id, ecp_pos) INTO ecp_npp, ecp_dt;
+        SELECT * INTO ecp_npp, ecp_dt FROM emu.ce_get_ecp_data(robot_id, ecp_pos);
         RAISE NOTICE 'get_ecp_data ecp_pos=% ecp_npp=% ecp_dt=%',
             ecp_pos, ecp_npp, to_char(ecp_dt,'dd.mm.yy hh24:mi:ss');
         IF ecp_npp IS null THEN -- вышли за пределы точек останова, но конечная еще не достигнута
@@ -559,6 +563,7 @@ CREATE OR REPLACE FUNCTION emu.command_emu(
     OUT command_finished BIGINT,-- завершена ли команда к текущему моменту: 0 - нет, 1 - да
     use_cmd_emu_info BIGINT DEFAULT 0 -- использовать переменную инфо команды для ускорения
     )
+    RETURNS record
     LANGUAGE 'plpgsql'
     COST 100
     VOLATILE PARALLEL UNSAFE
@@ -692,19 +697,24 @@ BEGIN
             RAISE EXCEPTION 'Ошибка - в COMMAND_EMU вызывана команда MOVE с NULL ключевым параметром'
                 USING errcode = 50013;
         END IF;
-        SELECT emu.ce_move(
-            rp_rec,
-            ttrack,
-            cei_loc,
-            date_time_begin,
-            date_time_now,
-            track_rec_b_npp,
-            track_rec_e_npp,
-            dir,
-            sec_past,
-            current_track_id,
-            current_track_npp
-        ) INTO res;
+        SELECT *
+            INTO sec_past,
+                current_track_id,
+                current_track_npp,
+                res
+            FROM emu.ce_move(
+                rp_rec,
+                ttrack,
+                cei_loc,
+                date_time_begin,
+                date_time_now,
+                track_rec_b_npp,
+                track_rec_e_npp,
+                dir,
+                sec_past,
+                current_track_id,
+                current_track_npp
+            );
         IF res = 1 THEN -- переместить успели
             -- раз сюда дошли, то команда MOVE закончилась
             command_finished := 1;
@@ -729,20 +739,25 @@ BEGIN
         END IF;
         IF coalesce(im_npp_, -1) >= 0 THEN -- с промежуточной точкой
             --track_rec_e_npp:=im_npp_;
-            SELECT emu.ce_move_cp(
-                rp_rec,
-                ttrack,
-                cei_loc,
-                robot_id,
-                date_time_begin,
-                date_time_now,
-                track_rec_b_npp,
-                track_rec_e_npp,
-                dir,
-                sec_past,
-                current_track_id,
-                current_track_npp
-            ) INTO res;
+            SELECT *
+                INTO sec_past,
+                    current_track_id,
+                    current_track_npp,
+                    res
+                FROM emu.ce_move_cp(
+                    rp_rec,
+                    ttrack,
+                    cei_loc,
+                    robot_id,
+                    date_time_begin,
+                    date_time_now,
+                    track_rec_b_npp,
+                    track_rec_e_npp,
+                    dir,
+                    sec_past,
+                    current_track_id,
+                    current_track_npp
+                );
             IF (res = 1) THEN -- передвижение завершено
                 RAISE NOTICE 'move_cp=1';
                 -- успеем выгрузить?
@@ -757,19 +772,24 @@ BEGIN
                 END IF;
             END IF;
         ELSE -- обычная команда
-            SELECT emu.ce_move(
-                rp_rec,
-                ttrack,
-                cei_loc,
-                date_time_begin,
-                date_time_now,
-                track_rec_b_npp,
-                track_rec_e_npp,
-                dir,
-                sec_past,
-                current_track_id,
-                current_track_npp
-            ) INTO res;
+            SELECT *
+                INTO sec_past,
+                    current_track_id,
+                    current_track_npp,
+                    res
+                FROM emu.ce_move(
+                    rp_rec,
+                    ttrack,
+                    cei_loc,
+                    date_time_begin,
+                    date_time_now,
+                    track_rec_b_npp,
+                    track_rec_e_npp,
+                    dir,
+                    sec_past,
+                    current_track_id,
+                    current_track_npp
+                );
             IF res = 1 THEN -- передвижение завершено
                 -- успеем выгрузить?
                 IF (track_rec_b_npp = track_rec_e_npp) THEN
@@ -796,20 +816,25 @@ BEGIN
         END IF;
         IF coalesce(im_npp_, -1) >= 0 THEN -- с промежуточной точкой
             --track_rec_e_npp:=im_npp_;
-            SELECT emu.ce_move_cp(
-                rp_rec,
-                ttrack,
-                cei_loc,
-                robot_id,
-                date_time_begin,
-                date_time_now,
-                track_rec_b_npp,
-                track_rec_e_npp,
-                dir,
-                sec_past,
-                current_track_id,
-                current_track_npp
-            ) INTO res;
+            SELECT *
+                INTO sec_past,
+                    current_track_id,
+                    current_track_npp,
+                    res
+                FROM emu.ce_move_cp(
+                    rp_rec,
+                    ttrack,
+                    cei_loc,
+                    robot_id,
+                    date_time_begin,
+                    date_time_now,
+                    track_rec_b_npp,
+                    track_rec_e_npp,
+                    dir,
+                    sec_past,
+                    current_track_id,
+                    current_track_npp
+                );
             IF (res = 1) THEN -- передвижение завершено
                 RAISE NOTICE 'move_cp=1';
                 -- успеем выгрузить?
@@ -824,19 +849,24 @@ BEGIN
                 END IF;
             END IF;
         ELSE -- обычная команда
-            SELECT emu.ce_move(
-                rp_rec,
-                ttrack,
-                cei_loc,
-                date_time_begin,
-                date_time_now,
-                track_rec_b_npp,
-                track_rec_e_npp,
-                dir,
-                sec_past,
-                current_track_id,
-                current_track_npp
-            ) INTO res;
+            SELECT *
+                INTO sec_past,
+                    current_track_id,
+                    current_track_npp,
+                    res
+                FROM emu.ce_move(
+                    rp_rec,
+                    ttrack,
+                    cei_loc,
+                    date_time_begin,
+                    date_time_now,
+                    track_rec_b_npp,
+                    track_rec_e_npp,
+                    dir,
+                    sec_past,
+                    current_track_id,
+                    current_track_npp
+                );
             IF res = 1 THEN -- передвижение завершено
                 -- успеем выгрузить?
                 IF (track_rec_b_npp = track_rec_e_npp) THEN
@@ -868,19 +898,24 @@ BEGIN
             ELSE
                 dir := 0;
             END IF;
-            SELECT emu.ce_move(
-                rp_rec,
-                ttrack,
-                cei_loc,
-                date_time_begin,
-                date_time_now,
-                track_rec_b_npp,
-                track_rec_e_npp,
-                dir,
-                sec_past,
-                current_track_id,
-                current_track_npp
-            ) INTO res;
+            SELECT *
+                INTO sec_past,
+                    current_track_id,
+                    current_track_npp,
+                    res
+                FROM emu.ce_move(
+                    rp_rec,
+                    ttrack,
+                    cei_loc,
+                    date_time_begin,
+                    date_time_now,
+                    track_rec_b_npp,
+                    track_rec_e_npp,
+                    dir,
+                    sec_past,
+                    current_track_id,
+                    current_track_npp
+                );
             IF res = 1 THEN -- доехали таки
                 -- успеем загрузить?
                 sec_past := sec_past + cei_loc.tl_pl_tul;
@@ -892,19 +927,24 @@ BEGIN
                     ELSE
                         dir := 0;
                     END IF;
-                    SELECT emu.ce_move(
-                        rp_rec,
-                        ttrack,
-                        cei_loc,
-                        date_time_begin,
-                        date_time_now,
-                        track_rec_b_npp,
-                        track_rec_e_npp,
-                        dir,
-                        sec_past,
-                        current_track_id,
-                        current_track_npp
-                    ) INTO res;
+                    SELECT *
+                        INTO sec_past,
+                            current_track_id,
+                            current_track_npp,
+                            res
+                        FROM emu.ce_move(
+                            rp_rec,
+                            ttrack,
+                            cei_loc,
+                            date_time_begin,
+                            date_time_now,
+                            track_rec_b_npp,
+                            track_rec_e_npp,
+                            dir,
+                            sec_past,
+                            current_track_id,
+                            current_track_npp
+                        );
                     IF res = 1 THEN -- приехали таки
                         sec_past := sec_past + cei_loc.tl_pl_tul;
                         IF (date_time_begin + make_interval(secs => sec_past) <= date_time_now) THEN

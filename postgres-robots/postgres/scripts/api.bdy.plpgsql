@@ -128,13 +128,15 @@ CREATE OR REPLACE FUNCTION api.get_last_cmd(
     OUT dt_cr text,
     OUT sost text,
     OUT error_ text)
+    RETURNS record
     LANGUAGE 'plpgsql'
     COST 100
     VOLATILE PARALLEL UNSAFE
 AS $BODY$
 BEGIN
-    SELECT service.get_last_cmd(comp_name_)
-        INTO cmd_name, cmd_name_full, dt_cr, sost, error_;
+    SELECT *
+        INTO cmd_name, cmd_name_full, dt_cr, sost, error_
+        FROM service.get_last_cmd(comp_name_);
 END;
 $BODY$;
 ALTER FUNCTION api.get_last_cmd(text) OWNER TO postgres;

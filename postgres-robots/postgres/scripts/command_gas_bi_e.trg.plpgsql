@@ -2012,10 +2012,11 @@ BEGIN
                 || ' ' || NEW.rp_id
                 || ' ' || new_rp_id);
             -- gas.get_cell_name_for_accept(NEW.rp_id, NEW.container_id, NEW.command_type_id, NEW.cell_name, NEW.rp_id, new_rp_id);
-            SELECT obj_cmd_gas.get_cell_name_for_accept(
-                NEW.rp_id, NEW.container_id, NEW.command_type_id,
-                NEW.cell_name, NEW.rp_id
-            ) INTO new_rp_id, cell_sname_;
+            SELECT * INTO new_rp_id, cell_sname_
+                FROM obj_cmd_gas.get_cell_name_for_accept(
+                    NEW.rp_id, NEW.container_id, NEW.command_type_id,
+                    NEW.cell_name, NEW.rp_id
+                );
             FOR cc IN (
                 SELECT cc_.id
                     FROM container_collection cc_

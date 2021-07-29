@@ -187,6 +187,7 @@ CREATE OR REPLACE FUNCTION service.get_last_cmd(
     OUT dt_cr text,
     OUT sost text,
     OUT error_ text)
+    RETURNS record
     LANGUAGE 'plpgsql'
     COST 100
     VOLATILE PARALLEL UNSAFE

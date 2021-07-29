@@ -1859,10 +1859,11 @@ BEGIN
                 EXIT;
             END LOOP;
             PERFORM obj_ask.log('  GAS: ячейка приема/возврата свободна или там уже стоит то что нужно');
-            SELECT obj_cmd_gas.get_cell_name_for_accept(
-                rp_d_id__, cg.container_id, cg.command_type_id,
-                cg.cell_name, cg.rp_id
-            ) INTO new_rp_id__, cell_sname__;
+            SELECT * INTO new_rp_id__, cell_sname__
+                FROM obj_cmd_gas.get_cell_name_for_accept(
+                    rp_d_id__, cg.container_id, cg.command_type_id,
+                    cg.cell_name, cg.rp_id
+                );
             rp_d_id__ := new_rp_id__;
             PERFORM obj_ask.log('  GAS: ячейка для хранения определена как =' || cell_sname__
                 || ' склад для хранения=' || new_rp_id__ );
@@ -2373,6 +2374,7 @@ CREATE OR REPLACE FUNCTION obj_cmd_gas.get_cell_name_for_accept(
     cg_rp_id_ bigint,
     OUT new_rp_id_ bigint,
     OUT result text)
+    RETURNS record
     LANGUAGE 'plpgsql'
     COST 100
     VOLATILE PARALLEL UNSAFE

@@ -100,7 +100,7 @@ BEGIN
             NEW.command_id := -1;
             IF (tt.nor > 1) THEN
                 --cnt:=manager.try_to_lock(NEW.robot_id, tt.track_npp, NEW.direction_1,NEW.id);
-                SELECT result FROM obj_rpart.try_track_lock(NEW.robot_id, tt.track_npp, NEW.direction_1, true) INTO cnt;
+                SELECT result INTO cnt FROM obj_rpart.try_track_lock(NEW.robot_id, tt.track_npp, NEW.direction_1, true);
                 IF (cnt <> tt.track_id) THEN
                     RAISE EXCEPTION 'Try_to_lock bad answer %!', cnt
                         USING errcode = 50070;

@@ -427,6 +427,7 @@ CREATE OR REPLACE FUNCTION obj_rpart.get_cmd_rp_npp_dir(
     rid_ bigint,
     OUT crp_npp__ bigint,
     OUT crp_dir__ bigint)
+    RETURNS record
     LANGUAGE 'plpgsql'
     COST 100
     VOLATILE PARALLEL UNSAFE
@@ -466,6 +467,7 @@ CREATE OR REPLACE FUNCTION obj_rpart.get_next_npp(
     dir bigint,
     INOUT next_npp bigint,
     INOUT is_loop_end bigint)
+    RETURNS record
     LANGUAGE 'plpgsql'
 AS $BODY$
 BEGIN
@@ -2784,8 +2786,9 @@ BEGIN
                         || ')=0');
                 IF obj_rpart.is_track_locked(rr.id, ci_npp_dest_, ci.direction, 1) = 1 THEN
                     PERFORM obj_robot.log(rr.id, '  но можно заблокировать до куда надо');
-                    SELECT obj_rpart.try_track_lock(rr.id, ci_npp_dest_, ci.direction, true)
-                        INTO brr_, lt_;
+                    SELECT *
+                        INTO brr_, lt_
+                        FROM obj_rpart.try_track_lock(rr.id, ci_npp_dest_, ci.direction, true);
                     IF lt_ <> ci_npp_dest_ THEN
                         errm_ := '  ERROR - говорит, что можно заблокировать, а не блокирует, пытается только до ' || lt_;
                         PERFORM obj_robot.log(rr.id, errm_);
@@ -2801,8 +2804,9 @@ BEGIN
                     ELSE
                         IF obj_rpart.is_track_locked(rr.id, ci_npp_dest_, new_dir_, 1) = 1 THEN
                             PERFORM obj_robot.log(rr.id,'  но можно заблокировать до куда надо c другой стороны');
-                            SELECT obj_rpart.try_track_lock(rr.id, ci_npp_dest_, new_dir_, true)
-                                INTO brr_, lt_;
+                            SELECT *
+                                INTO brr_, lt_
+                                FROM obj_rpart.try_track_lock(rr.id, ci_npp_dest_, new_dir_, true);
                             IF lt_ <> ci_npp_dest_ THEN
                                 errm_ := '  ERROR - говорит, что можно заблокировать с другой стороны, а не блокирует, пытается только до ' || lt_;
                                 PERFORM obj_robot.log(rr.id, errm_);
@@ -3134,6 +3138,7 @@ CREATE OR REPLACE FUNCTION obj_rpart.try_assign_new_unload_cell(
     robot_id_ bigint,
     INOUT cellrec cell,
     INOUT dir bigint)
+    RETURNS record
     LANGUAGE 'plpgsql'
     COST 100
     VOLATILE PARALLEL UNSAFE
@@ -3559,8 +3564,9 @@ BEGIN
                     END IF;
                     --npp_lock_to__:=add_track_npp(rpid_, npp_new__,rr.sorb, dir__);
                     PERFORM obj_rpart.log(rpid_, '  пытаемся заблокировать до секции ' || npp_new__ || ' роботом ' || rr.id);
-                    SELECT obj_rpart.try_track_lock(rr.id, npp_new__, dir__, false)
-                        INTO br_id_, ttl__;
+                    SELECT *
+                        INTO br_id_, ttl__
+                        FROM obj_rpart.try_track_lock(rr.id, npp_new__, dir__, false);
                     PERFORM obj_robot.set_command_inner(
                         rr.id, 0, 1, 6,
                         dir__, null, cmd_cell__,
@@ -4293,8 +4299,9 @@ BEGIN
                 PERFORM obj_robot.log(robot_id_,'У робота назначили command_rp ' || crp_id_);
             END IF;
             IF coalesce(crp.substate, 0) IN (0,1,2) THEN -- только начала выполняться или уже доехали
-                SELECT obj_rpart.try_track_lock(robot_id_, crp.npp_src, crp.direction_1, is_ignore_buf_track_order_)
-                    INTO br_id_, ttl__;
+                SELECT *
+                    INTO br_id_, ttl__
+                    FROM obj_rpart.try_track_lock(robot_id_, crp.npp_src, crp.direction_1, is_ignore_buf_track_order_);
                 IF (ttl__ = crp.npp_src) THEN
                     PERFORM obj_rpart.log(robot.repository_part_id, '  удалось заблокировать до цели, шлем CMD_LOAD ');
                     PERFORM obj_robot.set_command_inner(
@@ -4357,8 +4364,9 @@ BEGIN
                     PERFORM obj_rpart.log(robot.repository_part_id, 'У команды ' || crp_id_ || ' назначили новое подостояние 1');
                 END IF;
             ELSIF crp.substate IN (3,4) THEN -- все еще едем куда надо
-                SELECT obj_rpart.try_track_lock(robot_id_, crp.npp_dest, crp.direction_2, is_ignore_buf_track_order_)
-                    INTO br_id_, ttl__;
+                SELECT *
+                    INTO br_id_, ttl__
+                    FROM obj_rpart.try_track_lock(robot_id_, crp.npp_dest, crp.direction_2, is_ignore_buf_track_order_);
                 IF (ttl__ = crp.npp_dest) THEN
                     PERFORM obj_rpart.log(robot.repository_part_id, '  удалось заблокировать до цели, шлем CMD_UNLOAD ');
                     PERFORM obj_robot.set_command_inner(
@@ -4632,8 +4640,9 @@ CREATE OR REPLACE FUNCTION obj_rpart.try_track_lock(
     npp_to_ bigint,
     dir_ bigint,
     ignore_buf_track_order boolean,
-    barrier_robot_id out bigint,
-    result out bigint)
+    OUT barrier_robot_id bigint,
+    OUT result bigint)
+    RETURNS record
     LANGUAGE 'plpgsql'
     COST 100
     VOLATILE PARALLEL UNSAFE
@@ -4794,8 +4803,8 @@ BEGIN
     END LOOP;
 END;
 $BODY$;
-ALTER FUNCTION obj_rpart.try_track_lock(bigint, bigint, bigint, boolean, out bigint, out bigint) OWNER TO postgres;
-COMMENT ON FUNCTION obj_rpart.try_track_lock(bigint, bigint, bigint, boolean, out bigint, out bigint)
+ALTER FUNCTION obj_rpart.try_track_lock(bigint, bigint, bigint, boolean) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.try_track_lock(bigint, bigint, bigint, boolean)
     IS 'возврщает track_npp, до которого удалось дойти
 если не может сдвинуться с места, шлет -1
 если не удалось дойти, то шлет заявку на участок пути
@@ -5219,6 +5228,7 @@ CREATE OR REPLACE FUNCTION obj_rpart.track_order_lock(
     OUT crp_npp__ bigint,
     OUT crp_dir__ bigint,
     OUT res bigint)
+    RETURNS record
     LANGUAGE 'plpgsql'
     COST 100
     VOLATILE PARALLEL UNSAFE
@@ -5257,8 +5267,8 @@ BEGIN
                 WHERE id = to_id_
         ) LOOP
             crp_npp__ := -1;
-            SELECT obj_rpart.get_cmd_rp_npp_dir(rid_)
-                INTO crp_npp__, crp_dir__;
+            SELECT * INTO crp_npp__, crp_dir__
+                FROM obj_rpart.get_cmd_rp_npp_dir(rid_);
             IF coalesce(rr.command_rp_id, 0) > 0 AND crp_npp__ >= 0 THEN
                 IF crp_dir__ = to_.direction
                     AND obj_rpart.is_track_locked(rid_, crp_npp__, crp_dir__, 1) = 1
@@ -5279,8 +5289,9 @@ BEGIN
                 rr.repository_part_id, to_.npp_to,
                 rr.spacing_of_robots + 1, to_.direction
             );
-            SELECT obj_rpart.try_track_lock(rid_, npp_to_sorb__, to_.direction, true)
-                INTO br_id_, ttl__;
+            SELECT *
+                INTO br_id_, ttl__
+                FROM obj_rpart.try_track_lock(rid_, npp_to_sorb__, to_.direction, true);
             res := ttl__;
             RETURN;
         END LOOP;
@@ -5368,8 +5379,8 @@ BEGIN
                     FROM track_order
                     WHERE id = tor_id_
             ) LOOP
-                SELECT obj_rpart.track_order_lock(rid_, to__.id)
-                    INTO npp_to_sorb__, crp_npp__, crp_dir__, ttl__ ;
+                SELECT * INTO npp_to_sorb__, crp_npp__, crp_dir__, ttl__
+                    FROM obj_rpart.track_order_lock(rid_, to__.id);
                 IF (ttl__ >= 0) THEN -- можно двинуться хоть чутка
                     -- анализируем, может нужно менять направление команды?
                     IF obj_rpart.is_track_locked(rid_, crp_npp__, obj_rpart.get_another_direction(crp_dir__), 0) = 1 THEN
