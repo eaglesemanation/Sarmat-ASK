@@ -106,7 +106,7 @@ BEGIN
         SELECT * INTO rr FROM robot WHERE id = cirec.robot_id;
         cnt := helpers.substrrpos(cirec.command_to_run,';');
         -- FIXME: Casting from BIGINT to INT, possible data loss
-        ncitext := substr(cirec.command_to_run, 0, cnt::int - 1);
+        ncitext := substring(cirec.command_to_run FROM 1 FOR cnt::int - 1);
         newcmddir := cirec.direction;
         IF (cirec.command_type_id IN (6,5)) THEN -- move/unload
             IF (obj_rpart.is_way_free(rr.id, obj_robot.get_cmd_inner_npp_dest(cirec.id,1), cirec.direction) <> 1) THEN

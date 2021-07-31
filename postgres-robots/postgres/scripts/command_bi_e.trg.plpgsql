@@ -447,7 +447,7 @@ BEGIN
                     WHERE repository_part_id = NEW.rp_src_id
                     AND is_error = 0
                     AND hi_level_type IN (1, 10)
-                    ORDER BY track_npp, substr(sname, 1, 3)
+                    ORDER BY track_npp, substring(sname FROM 1 FOR 3)
                 ) LOOP
                     INSERT INTO robot_cell_verify (
                         cmd_id, robot_ip, robot_id, cell_sname, cell_id, vstate

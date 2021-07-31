@@ -2567,7 +2567,7 @@ BEGIN
                             cl.track_npp
                     ) / 5), -- неважна точность, важно примерное расстояние
                     abs(cl.track_npp - last_save_cell_npp__) DESC, -- важна разность чтоб два робота напрягать
-                    abs(ascii(substr(orientaition,1,1))-ascii(substr(sbros_prev_orient,1,1))) DESC
+                    abs(ascii(substring(orientaition FROM 1 FOR 1))-ascii(substring(sbros_prev_orient FROM 1 FOR 1))) DESC
         ) LOOP
             IF ncl.repository_part_id <> rp_id_
                 AND obj_rpart.is_exists_cell_type(rp_id_, obj_ask."CELL_TYPE_TR_CELL"()) = 0
