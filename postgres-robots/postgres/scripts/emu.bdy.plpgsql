@@ -5,8 +5,8 @@ CREATE TYPE emu.ttt_rec AS (
 	id BIGINT,
 	npp BIGINT,
 	locked_by_robot_id BIGINT,
-	speed BIGINT,
-	length BIGINT,
+	speed FLOAT,
+	length FLOAT,
 	cell_sname TEXT
 ); -- элемент трека
 
