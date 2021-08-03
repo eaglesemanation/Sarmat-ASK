@@ -326,12 +326,12 @@ CREATE OR REPLACE FUNCTION emu.ce_move(
     rp_rec emu.trp_rec,
     ttrack emu.ttt_rec[],
     cei_loc emu.t_cmd_emu_info,
-    date_time_begin date,
-    date_time_now date,
+    date_time_begin timestamp,
+    date_time_now timestamp,
     track_rec_b_npp bigint,
     track_rec_e_npp bigint,
     dir bigint,
-    INOUT sec_past bigint,
+    INOUT sec_past float,
     INOUT current_track_id bigint,
     INOUT current_track_npp bigint,
     OUT res bigint
@@ -379,8 +379,8 @@ BEGIN
     END IF;
 END;
 $BODY$;
-ALTER FUNCTION emu.ce_move(emu.trp_rec, emu.ttt_rec[], emu.t_cmd_emu_info, date, date, bigint, bigint, bigint, bigint, bigint, bigint) OWNER TO postgres;
-COMMENT ON FUNCTION emu.ce_move(emu.trp_rec, emu.ttt_rec[], emu.t_cmd_emu_info, date, date, bigint, bigint, bigint, bigint, bigint, bigint)
+ALTER FUNCTION emu.ce_move(emu.trp_rec, emu.ttt_rec[], emu.t_cmd_emu_info, timestamp, timestamp, bigint, bigint, bigint, float, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.ce_move(emu.trp_rec, emu.ttt_rec[], emu.t_cmd_emu_info, timestamp, timestamp, bigint, bigint, bigint, float, bigint, bigint)
     IS 'функция движения';
 
 
@@ -426,12 +426,12 @@ CREATE OR REPLACE FUNCTION emu.ce_move_cp(
     ttrack emu.ttt_rec[],
     cei_loc emu.t_cmd_emu_info,
     robot_id bigint,
-    date_time_begin date,
-    date_time_now date,
+    date_time_begin timestamp,
+    date_time_now timestamp,
     track_rec_b_npp bigint,
     track_rec_e_npp bigint,
     dir bigint,
-    INOUT sec_past bigint,
+    INOUT sec_past float,
     INOUT current_track_id bigint,
     INOUT current_track_npp bigint,
     OUT res bigint)
@@ -517,8 +517,8 @@ BEGIN
     END IF;
 END;
 $BODY$;
-ALTER FUNCTION emu.ce_move_cp(emu.trp_rec, emu.ttt_rec[], emu.t_cmd_emu_info, bigint, date, date, bigint, bigint, bigint, bigint, bigint, bigint) OWNER TO postgres;
-COMMENT ON FUNCTION emu.ce_move_cp(emu.trp_rec, emu.ttt_rec[], emu.t_cmd_emu_info, bigint, date, date, bigint, bigint, bigint, bigint, bigint, bigint)
+ALTER FUNCTION emu.ce_move_cp(emu.trp_rec, emu.ttt_rec[], emu.t_cmd_emu_info, bigint, timestamp, timestamp, bigint, bigint, bigint, float, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.ce_move_cp(emu.trp_rec, emu.ttt_rec[], emu.t_cmd_emu_info, bigint, timestamp, timestamp, bigint, bigint, bigint, float, bigint, bigint)
     IS 'функция движения с промежуточными точками -- ее менять!';
 
 
@@ -550,8 +550,8 @@ COMMENT ON FUNCTION emu.get_ttrack_npp_by_id(emu.trp_rec, emu.ttt_rec[], bigint)
 
 CREATE OR REPLACE FUNCTION emu.command_emu(
     robot_id BIGINT,         -- на робота
-    date_time_begin DATE,    -- время начала выполнения команды
-    date_time_now DATE,      -- время текушее
+    date_time_begin TIMESTAMP, -- время начала выполнения команды
+    date_time_now TIMESTAMP, -- время текушее
     begin_track_id BIGINT,   -- участок пути, на котором робот начал выполнение команды
     command_type BIGINT,     -- тип команды: 1 - move, 2-  transfer, 3 - unload, 4 - load
     cell_src TEXT,           -- название  ячейки-источника
@@ -576,7 +576,7 @@ DECLARE
     track_rec_b_npp BIGINT;
     track_rec_e_npp BIGINT;
     dir BIGINT;
-    sec_past BIGINT;
+    sec_past FLOAT;
     current_track_npp BIGINT;
     xml_ XML;
     cc RECORD;
@@ -620,7 +620,7 @@ BEGIN
         );
     END LOOP;
     command_finished := 0;
-    sec_past := 0;
+    sec_past := 0.0;
     IF (use_cmd_emu_info = 1) THEN
         --cei_loc := cmd_emu_info;
         -- FIXME: use_cmd_emu_info now should always be 0
@@ -964,8 +964,8 @@ BEGIN
     END IF;
 END;
 $BODY$;
-ALTER FUNCTION emu.command_emu(bigint, date, date, bigint, bigint, text, text, bigint, bigint, text, bigint) OWNER TO postgres;
-COMMENT ON FUNCTION emu.command_emu(bigint, date, date, bigint, bigint, text, text, bigint, bigint, text, bigint)
+ALTER FUNCTION emu.command_emu(bigint, timestamp, timestamp, bigint, bigint, text, text, bigint, bigint, text, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION emu.command_emu(bigint, timestamp, timestamp, bigint, bigint, text, text, bigint, bigint, text, bigint)
     IS 'основная процедура - эмулятор команды';
 
 
