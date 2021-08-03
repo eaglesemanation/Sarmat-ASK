@@ -1837,7 +1837,7 @@ DECLARE
     rr robot;
 BEGIN
     ncmt__ := false;
-    PERFORM obj_robot.ifs_ilog('Начало цикла INFO', rid_, rez_, log_prefix_was__);
+    SELECT * INTO log_prefix_was__ FROM obj_robot.ifs_ilog('Начало цикла INFO', rid_, rez_, log_prefix_was__);
     IF extend.is_null_str(rez_) THEN -- нет связи
         UPDATE robot
             SET state = 8
@@ -1845,7 +1845,7 @@ BEGIN
                 AND state <> 8;
         GET DIAGNOSTICS rowcount__ := ROW_COUNT;
         IF (rowcount__ > 0) THEN
-            PERFORM obj_robot.ifs_ilog('Смена состояния робота в [Нет связи]', rid_, rez_, log_prefix_was__);
+            SELECT * INTO log_prefix_was__ FROM obj_robot.ifs_ilog('Смена состояния робота в [Нет связи]', rid_, rez_, log_prefix_was__);
         END IF;
         -- COMMIT;
         RETURN;
@@ -1878,7 +1878,7 @@ BEGIN
             IF coalesce(rr.wait_for_problem_resolve, 0) = 0 THEN
                 errm__ := '  ERROR for robot=' || rid_ || ' команда значится, а агент пустоту возвращает';
                 PERFORM obj_ask.global_error_log(obj_ask."ERROR_TYPE_ROBOT"(), rr.repository_part_id, rr.id, errm__);
-                PERFORM obj_robot.ifs_ilog(errm__, rid_, rez_, log_prefix_was__);
+                SELECT * INTO log_prefix_was__ FROM obj_robot.ifs_ilog(errm__, rid_, rez_, log_prefix_was__);
             END IF;
         END LOOP;
     END IF;
@@ -1890,7 +1890,7 @@ BEGIN
                 AND coalesce(command_inner_assigned_id, 0) <> 0
                 and coalesce(command_inner_assigned_id, 0) = coalesce(cmdid__, 0) -- команда прошла, и связь порвалась
     ) LOOP
-        PERFORM obj_robot.ifs_ilog('Прервалась связь на посылке команды, помечаем, что команда прошла ок!', rid_, rez_, log_prefix_was__);
+        SELECT * INTO log_prefix_was__ FROM obj_robot.ifs_ilog('Прервалась связь на посылке команды, помечаем, что команда прошла ок!', rid_, rez_, log_prefix_was__);
         PERFORM obj_robot.mark_cmd_inner_send_to_robot(rid_, cmdid__);
     END LOOP;
     -- состояние
@@ -1902,7 +1902,7 @@ BEGIN
                 AND state <> 2;
         GET DIAGNOSTICS rowcount__ := ROW_COUNT;
         IF (rowcount__ > 0) THEN
-            PERFORM obj_robot.ifs_ilog('Смена состояния робота на 2', rid_, rez_, log_prefix_was__);
+            SELECT * INTO log_prefix_was__ FROM obj_robot.ifs_ilog('Смена состояния робота на 2', rid_, rez_, log_prefix_was__);
             ncmt__ := true;
         END IF;
         -- COMMIT;
@@ -1915,7 +1915,7 @@ BEGIN
                 AND state <> 0;
         GET DIAGNOSTICS rowcount__ := ROW_COUNT;
         IF (rowcount__ > 0) THEN
-            PERFORM obj_robot.ifs_ilog('Смена состояния робота на 0', rid_, rez_, log_prefix_was__);
+            SELECT * INTO log_prefix_was__ FROM obj_robot.ifs_ilog('Смена состояния робота на 0', rid_, rez_, log_prefix_was__);
             ncmt__ := true;
         END IF;
         -- COMMIT;
@@ -1931,7 +1931,7 @@ BEGIN
             AND coalesce(real_npp, -1) <> new_track_npp__;
     GET DIAGNOSTICS rowcount__ := ROW_COUNT;
     IF (rowcount__ > 0) THEN
-        PERFORM obj_robot.ifs_ilog('Смена текущего реального трека на ' || new_track_npp__, rid_, rez_, log_prefix_was__);
+        SELECT * INTO log_prefix_was__ FROM obj_robot.ifs_ilog('Смена текущего реального трека на ' || new_track_npp__, rid_, rez_, log_prefix_was__);
         ncmt__ := true;
     END IF;
     -- ниже нужно будет переделать, чтою смотреть, можно ли проставлять трек такой
@@ -1943,15 +1943,15 @@ BEGIN
             AND current_track_id <> new_track_id__;
     GET DIAGNOSTICS rowcount__ := ROW_COUNT;
     IF (rowcount__ > 0) THEN
-        PERFORM obj_robot.ifs_ilog('Смена текущего трек ID на ' || new_track_id__ || ' (npp пришел ' || v_array[2] || ')', rid_, rez_, log_prefix_was__);
+        SELECT * INTO log_prefix_was__ FROM obj_robot.ifs_ilog('Смена текущего трек ID на ' || new_track_id__ || ' (npp пришел ' || v_array[2] || ')', rid_, rez_, log_prefix_was__);
         ncmt__ := true;
         SELECT current_track_npp INTO new_track_npp__
             FROM robot
             WHERE id = rid_;
-        PERFORM obj_robot.ifs_ilog('  новый трек NPP триггерно выставился ' || new_track_npp__, rid_, rez_, log_prefix_was__);
+        SELECT * INTO log_prefix_was__ FROM obj_robot.ifs_ilog('  новый трек NPP триггерно выставился ' || new_track_npp__, rid_, rez_, log_prefix_was__);
         IF (obj_rpart.check_lock_robot_around(rid_, new_track_npp__) <> 1) THEN
             errm__ := 'ERROR - не получается заблокировать вокруг робота в секции ' || v_array[2];
-            PERFORM obj_robot.ifs_ilog(errm__, rid_, rez_, log_prefix_was__);
+            SELECT * INTO log_prefix_was__ FROM obj_robot.ifs_ilog(errm__, rid_, rez_, log_prefix_was__);
             RAISE EXCEPTION '%', errm__
                 USING errcode = 50012;
         END IF;
@@ -1964,7 +1964,7 @@ BEGIN
                 AND platform_busy <> 0;
         GET DIAGNOSTICS rowcount__ := ROW_COUNT;
         IF (rowcount__ > 0) THEN
-            PERFORM obj_robot.ifs_ilog('Смена занятости платформы на 0', rid_, rez_, log_prefix_was__);
+            SELECT * INTO log_prefix_was__ FROM obj_robot.ifs_ilog('Смена занятости платформы на 0', rid_, rez_, log_prefix_was__);
             ncmt__ := true;
         END IF;
     ELSIF (v_array[6] = 'BUSY') THEN
@@ -1973,7 +1973,7 @@ BEGIN
             WHERE id = rid_
                 AND platform_busy <> 1;
         IF (rowcount__ > 0) THEN
-            PERFORM obj_robot.ifs_ilog('Смена занятости платформы на 1', rid_, rez_, log_prefix_was__);
+            SELECT * INTO log_prefix_was__ FROM obj_robot.ifs_ilog('Смена занятости платформы на 1', rid_, rez_, log_prefix_was__);
             ncmt__ := true;
         END IF;
     END IF;
@@ -1995,7 +1995,7 @@ BEGIN
             AND direction <> new_dir_;
     GET DIAGNOSTICS rowcount__ := ROW_COUNT;
     IF (rowcount__ > 0) THEN
-        PERFORM obj_robot.ifs_ilog('Смена направления движения робота на '||new_dir_, rid_, rez_, log_prefix_was__);
+        SELECT * INTO log_prefix_was__ FROM obj_robot.ifs_ilog('Смена направления движения робота на '||new_dir_, rid_, rez_, log_prefix_was__);
         ncmt__ := true;
     END IF;
     cmd_err_code__ := service.to_number_my(v_array[21]);
@@ -2009,7 +2009,7 @@ BEGIN
                     AND coalesce(command_inner_id, 0) <> 0
                     AND coalesce(wait_for_problem_resolve, 0) = 0
         ) LOOP
-            PERFORM obj_robot.ifs_ilog('Робот свободен, и на нём числится команда, разбираемся в ситуации', rid_, rez_, log_prefix_was__);
+            SELECT * INTO log_prefix_was__ FROM obj_robot.ifs_ilog('Робот свободен, и на нём числится команда, разбираемся в ситуации', rid_, rez_, log_prefix_was__);
             PERFORM obj_robot.real_cmd_report(rid_ , cmdid__, cmdans__, cmd_err_code__);
         END LOOP;
     END IF;
@@ -2020,7 +2020,7 @@ BEGIN
                 AND state <> 1;
         GET DIAGNOSTICS rowcount__ := ROW_COUNT;
         IF (rowcount__ > 0) THEN
-            PERFORM obj_robot.ifs_ilog('Смена состояния робота на 1', rid_, rez_, log_prefix_was__);
+            SELECT * INTO log_prefix_was__ FROM obj_robot.ifs_ilog('Смена состояния робота на 1', rid_, rez_, log_prefix_was__);
             ncmt__ := true;
         END IF;
     END IF;
@@ -2031,7 +2031,7 @@ BEGIN
                 AND state <> 3;
         GET DIAGNOSTICS rowcount__ := ROW_COUNT;
         IF (rowcount__ > 0) THEN
-            PERFORM obj_robot.ifs_ilog('Смена состояния робота на 3', rid_, rez_, log_prefix_was__);
+            SELECT * INTO log_prefix_was__ FROM obj_robot.ifs_ilog('Смена состояния робота на 3', rid_, rez_, log_prefix_was__);
             ncmt__ := true;
         END IF;
     END IF;
@@ -2049,7 +2049,7 @@ BEGIN
         -- COMMIT;
         null;
     END IF;
-    PERFORM obj_robot.ifs_ilog('Завершение такта цикла INFO', rid_, rez_, log_prefix_was__);
+    SELECT * INTO log_prefix_was__ FROM obj_robot.ifs_ilog('Завершение такта цикла INFO', rid_, rez_, log_prefix_was__);
 END;
 $BODY$;
 ALTER FUNCTION obj_robot.info_from_sarmat(bigint, text) OWNER TO postgres;

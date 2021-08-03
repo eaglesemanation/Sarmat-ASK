@@ -908,7 +908,7 @@ BEGIN
                         END IF;
                     END IF;
                 END LOOP;
-                PERFORM obj_rpart.get_next_npp(rrp.rpt, rrp.max_npp, tr_npp, npp2_, dir_, tr_npp, is_loop_exit);
+                SELECT * INTO tr_npp, is_loop_exit FROM obj_rpart.get_next_npp(rrp.rpt, rrp.max_npp, tr_npp, npp2_, dir_, tr_npp, is_loop_exit);
                 EXIT WHEN is_loop_exit = 1;
             END LOOP;
         END IF;
@@ -976,7 +976,7 @@ BEGIN
         IF coalesce(tr_locked_by_robot_id, 0) IN (robot_id_) THEN
             UPDATE track SET locked_by_robot_id = 0 WHERE id = tr_id;
         END IF;
-        PERFORM obj_rpart.get_next_npp(rpt, max_npp_, tr_npp, npp2, 1, tr_npp, is_loop_exit);
+        SELECT * INTO tr_npp, is_loop_exit FROM obj_rpart.get_next_npp(rpt, max_npp_, tr_npp, npp2, 1, tr_npp, is_loop_exit);
         EXIT WHEN is_loop_exit = 1;
     END LOOP;
     --log_track(rr.repository_part_id);
@@ -1231,7 +1231,7 @@ BEGIN
             ret_track_id := tr_id;
             npp_ret := tr_npp;
         END IF;
-        PERFORM obj_rpart.get_next_npp(rpt, max_npp_, tr_npp, npp2r, direction_, tr_npp, is_loop_exit);
+        SELECT * INTO tr_npp, is_loop_exit FROM obj_rpart.get_next_npp(rpt, max_npp_, tr_npp, npp2r, direction_, tr_npp, is_loop_exit);
         EXIT WHEN is_loop_exit = 1;
     END LOOP;
     IF (ret_track_id = track_id_dest_pl_sor) THEN
@@ -3120,7 +3120,7 @@ DECLARE
     cellrec cell;
     dir BIGINT;
 BEGIN
-    PERFORM obj_rpart.try_assign_new_unload_cell(old_cell_id, robot_id_, cellrec, dir);
+    SELECT * INTO cellrec, dir FROM obj_rpart.try_assign_new_unload_cell(old_cell_id, robot_id_, cellrec, dir);
     IF cellrec.id IS null THEN
         RETURN 0;
     ELSE
@@ -5098,7 +5098,7 @@ BEGIN
             ret_track_id := tr_id;
             -- npp_ret := tr_npp;
         END IF;
-        PERFORM obj_rpart.get_next_npp(rpt, max_npp_, tr_npp, npp2r, direction_, tr_npp, is_loop_exit);
+        SELECT * INTO tr_npp, is_loop_exit FROM obj_rpart.get_next_npp(rpt, max_npp_, tr_npp, npp2r, direction_, tr_npp, is_loop_exit);
         EXIT WHEN is_loop_exit = 1;
     END LOOP;
 

@@ -365,7 +365,7 @@ BEGIN
             res := 0;
             RETURN;
         END IF;
-        PERFORM emu.get_next_npp(rp_rec, current_track_npp, track_rec_e_npp, dir, nctn, is_loop_exit);
+        SELECT * INTO nctn, is_loop_exit FROM emu.get_next_npp(rp_rec, current_track_npp, track_rec_e_npp, dir, nctn, is_loop_exit);
         EXIT WHEN is_loop_exit = 1;
         current_track_npp := nctn;
     END LOOP;
@@ -496,7 +496,7 @@ BEGIN
             IF current_track_npp = ecp_npp THEN
                 ecp_pos := ecp_pos + 1;
             ELSE
-                PERFORM emu.get_next_npp(rp_rec, current_track_npp, track_rec_e_npp, dir, nctn, is_loop_exit);
+                SELECT * INTO nctn, is_loop_exit FROM emu.get_next_npp(rp_rec, current_track_npp, track_rec_e_npp, dir, nctn, is_loop_exit);
                 EXIT WHEN is_loop_exit = 1;
                 current_track_npp := nctn;
             END IF;
