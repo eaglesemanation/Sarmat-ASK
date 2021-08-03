@@ -95,7 +95,7 @@ BEGIN
         IF (emu."LOG_TRIGGER"() = 1) THEN
             PERFORM service.log2filen('molog', s);
         ELSE
-            RAISE NOTICE '% %', to_char(LOCALTIMESTAMP,'hh24:mi:ss.ff'), s;
+            RAISE NOTICE '% %', to_char(LOCALTIMESTAMP,'hh24:mi:ss.ms'), s;
         END IF;
     END IF;
 END;
@@ -115,7 +115,7 @@ AS $BODY$
 BEGIN
     IF (emu."EMU_LOG_LEVEL"() <> 0) THEN
         IF (emu."LOG_TRIGGER"() = 0) THEN
-            RAISE NOTICE '%; %', to_char(LOCALTIMESTAMP,'hh24:mi:ss.ff'), lstr;
+            RAISE NOTICE '%; %', to_char(LOCALTIMESTAMP,'hh24:mi:ss.ms'), lstr;
         ELSE
             PERFORM service.log2filen('emulog', lstr);
         END IF;
@@ -591,7 +591,7 @@ BEGIN
         || 'begin_track_id=' || begin_track_id || '; '
         || 'command_type=' || command_type || '; '
         || 'cell_src=' || cell_src || '; '
-        || 'cell_dst=' || cell_dst || '; '
+        || 'cell_dst=' || coalesce(cell_dst, 'null') || '; '
         || 'direction=' || direction || '; '
         || 'im_npp_=' || im_npp_ || '; '
         || 'cpl_xml_=' || cpl_xml_);
