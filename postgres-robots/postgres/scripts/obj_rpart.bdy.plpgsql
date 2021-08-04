@@ -3117,10 +3117,12 @@ CREATE OR REPLACE FUNCTION obj_rpart.is_poss_ass_new_unload_cell(
     VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
+    res RECORD;
     cellrec cell;
     dir BIGINT;
 BEGIN
-    SELECT * INTO cellrec, dir FROM obj_rpart.try_assign_new_unload_cell(old_cell_id, robot_id_, cellrec, dir);
+    res := obj_rpart.try_assign_new_unload_cell(old_cell_id, robot_id_, cellrec, dir);
+    cellrec := res.cellrec;
     IF cellrec.id IS null THEN
         RETURN 0;
     ELSE
