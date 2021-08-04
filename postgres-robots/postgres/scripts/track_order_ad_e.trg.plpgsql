@@ -1,0 +1,26 @@
+SET client_encoding = 'UTF8';
+
+CREATE OR REPLACE FUNCTION track_order_ad_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+BEGIN
+    PERFORM service.log2file('удаление заявки с id=' || OLD.id);
+    RETURN OLD;
+END;
+$BODY$;
+
+ALTER FUNCTION track_order_ad_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS track_order_ad_e ON track;
+
+CREATE TRIGGER track_order_ad_e
+    AFTER DELETE
+    ON track_order
+    FOR EACH ROW
+    EXECUTE PROCEDURE track_order_ad_e();
+
+-- vim: ft=pgsql

@@ -1,0 +1,34 @@
+SET client_encoding = 'UTF8';
+
+CREATE OR REPLACE FUNCTION track_order_bi_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+BEGIN
+    IF NEW.id IS null THEN
+        SELECT nextval('seq_track_order') INTO NEW.id;
+        NEW.date_time_create := LOCALTIMESTAMP;
+        IF NEW.repository_part_id IS null THEN
+            SELECT repository_part_id INTO NEW.repository_part_id
+                FROM robot
+                WHERE id = NEW.robot_id;
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION track_order_bi_e()
+    OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS track_order_bi_e ON repository_part;
+
+CREATE TRIGGER track_order_bi_e
+    BEFORE INSERT
+    ON track_order
+    FOR EACH ROW
+    EXECUTE PROCEDURE track_order_bi_e();
+
+-- vim: ft=pgsql
