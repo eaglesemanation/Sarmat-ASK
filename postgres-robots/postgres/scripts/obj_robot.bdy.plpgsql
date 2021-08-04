@@ -944,7 +944,7 @@ DECLARE
     max_d__ INTERVAL;
     ci__ command_inner;
 BEGIN
-    max_d__ := INTERVAL '6 minutes';
+    max_d__ := INTERVAL '6 seconds';
     FOR ci__ IN (
         SELECT *
             FROM command_inner
@@ -2660,7 +2660,7 @@ BEGIN
             PERFORM obj_robot.log(robot_id_, erm__);
             RETURN;
         END IF;
-        IF LOCALTIMESTAMP - cirec.date_time_begin < INTERVAL '10 minutes' THEN
+        IF LOCALTIMESTAMP - cirec.date_time_begin < INTERVAL '10 seconds' THEN
             PERFORM obj_robot.log(robot_id_,'  слишком малое время с начала выполнения команды');
             RETURN;
         END IF;
@@ -2677,7 +2677,7 @@ BEGIN
                     LOCALTIMESTAMP - coalesce(
                         obj_robot.get_cmd_inner_dtb(rr.command_inner_id),
                         LOCALTIMESTAMP - INTERVAL '1 day'
-                    ) < INTERVAL '10 minutes'
+                    ) < INTERVAL '10 seconds'
                 ) THEN
                     PERFORM obj_robot.log(robot_id_, '  мало времени прошло с момента выдачи последней команды на робота');
                     RETURN;
