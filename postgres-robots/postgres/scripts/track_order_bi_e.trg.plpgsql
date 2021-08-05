@@ -23,7 +23,7 @@ $BODY$;
 ALTER FUNCTION track_order_bi_e()
     OWNER TO postgres;
 
-DROP TRIGGER IF EXISTS track_order_bi_e ON repository_part;
+DROP TRIGGER IF EXISTS track_order_bi_e ON track_order;
 
 CREATE TRIGGER track_order_bi_e
     BEFORE INSERT

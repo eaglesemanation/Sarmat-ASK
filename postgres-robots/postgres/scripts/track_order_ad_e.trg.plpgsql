@@ -15,7 +15,7 @@ $BODY$;
 ALTER FUNCTION track_order_ad_e()
     OWNER TO postgres;
 
-DROP TRIGGER IF EXISTS track_order_ad_e ON track;
+DROP TRIGGER IF EXISTS track_order_ad_e ON track_order;
 
 CREATE TRIGGER track_order_ad_e
     AFTER DELETE
