@@ -402,7 +402,7 @@ DECLARE
     max_d__ INTERVAL;
     crp__ command_rp;
 BEGIN
-    max_d__ := INTERVAL '6 seconds';
+    max_d__ := INTERVAL '6 minutes';
     FOR crp__ IN (
         SELECT *
             FROM command_rp
