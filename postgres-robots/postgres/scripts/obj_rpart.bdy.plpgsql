@@ -1442,19 +1442,19 @@ COMMENT ON FUNCTION obj_rpart.is_way_locked(bigint, bigint, bigint)
 
 
 CREATE OR REPLACE FUNCTION obj_rpart.is_track_between(
-    goal_npp numeric,
-    npp_from numeric,
-    npp_to numeric,
-    dir numeric,
-    rp_id_ numeric)
-    RETURNS numeric
+    goal_npp bigint,
+    npp_from bigint,
+    npp_to bigint,
+    dir bigint,
+    rp_id_ bigint)
+    RETURNS bigint
     LANGUAGE 'plpgsql'
     COST 100
     VOLATILE PARALLEL UNSAFE
 AS $BODY$
 DECLARE
-    rp_rec_max_npp NUMERIC;
-    rp_rec_min_npp NUMERIC;
+    rp_rec_max_npp BIGINT;
+    rp_rec_min_npp BIGINT;
 BEGIN
     SELECT min(npp), max(npp) INTO rp_rec_min_npp, rp_rec_max_npp
         FROM track WHERE repository_part_id = rp_id_;
@@ -1482,7 +1482,7 @@ BEGIN
     -- Counterclockwise
     -- против часовой стрелке
     ELSE
-        FOR i IN REVERSE rp_rec_min_npp..npp_from LOOP
+        FOR i IN REVERSE npp_from..rp_rec_min_npp LOOP
             IF (i = goal_npp) THEN
                 RETURN 1;
             END IF;
@@ -1492,7 +1492,7 @@ BEGIN
         END LOOP;
         -- Looping over
         -- за конец
-        FOR i IN REVERSE npp_to..rp_rec_max_npp LOOP
+        FOR i IN REVERSE rp_rec_max_npp..npp_to LOOP
             IF (i = goal_npp) THEN
                 RETURN 1;
             END IF;
@@ -1504,8 +1504,8 @@ BEGIN
     RETURN 0;
 END;
 $BODY$;
-ALTER FUNCTION obj_rpart.is_track_between(numeric, numeric, numeric, numeric, numeric) OWNER TO postgres;
-COMMENT ON FUNCTION obj_rpart.is_track_between(numeric, numeric, numeric, numeric, numeric)
+ALTER FUNCTION obj_rpart.is_track_between(bigint, bigint, bigint, bigint, bigint) OWNER TO postgres;
+COMMENT ON FUNCTION obj_rpart.is_track_between(bigint, bigint, bigint, bigint, bigint)
     IS 'указанный трек между двумя треками по направлению?';
 
 
