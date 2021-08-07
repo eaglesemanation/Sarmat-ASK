@@ -35,31 +35,31 @@ BEGIN
             -- MOVE
             IF (NEW.problem_resolving_id = 9) THEN
                 -- повторить еще раз
-                PERFORM trigger.cmd_retry(NEW);
+                NEW := trigger.cmd_retry(NEW);
             ELSIF (NEW.problem_resolving_id = 10) THEN
                 -- отменить команду
-                PERFORM trigger.cmd_cancel(NEW);
+                NEW := trigger.cmd_cancel(NEW);
             ELSIF (NEW.problem_resolving_id = 19) THEN
                 -- команда выполнена вручную
-                PERFORM trigger.cmd_handle(NEW);
+                NEW := trigger.cmd_handle(NEW);
             END IF;
 
         ELSIF (NEW.command_type_id = obj_robot."CMD_LOAD_TYPE_ID"()) THEN
             -- LOAD
             IF (NEW.problem_resolving_id = obj_robot."PR_LOAD_RETRY"()) THEN
                 -- повторить еще раз
-                PERFORM trigger.cmd_retry(NEW);
+                NEW := trigger.cmd_retry(NEW);
             ELSIF (NEW.problem_resolving_id = 3) THEN
                 -- отменить команду
-                PERFORM trigger.cmd_cancel(NEW);
+                NEW := trigger.cmd_cancel(NEW);
             ELSIF (NEW.problem_resolving_id = 4) THEN
                 -- отменить команду
-                PERFORM trigger.cmd_cancel(NEW);
+                NEW := trigger.cmd_cancel(NEW);
                 UPDATE cell
                     SET is_error = 1
                     WHERE id = NEW.cell_src_id;
             ELSIF (NEW.problem_resolving_id = obj_robot."PR_LOAD_CELL_EMPTY"()) THEN
-                PERFORM trigger.cmd_cancel(NEW, 'B');
+                NEW := trigger.cmd_cancel(NEW, 'B');
                 UPDATE container
                     SET location = 0, cell_id = 0
                     WHERE id = NEW.container_id;
@@ -67,20 +67,20 @@ BEGIN
                     SET is_full = 0, container_id = 0
                     WHERE id = NEW.cell_src_id;
             ELSIF (NEW.problem_resolving_id = obj_robot."PR_LOAD_CELL_BAD"()) THEN
-                PERFORM trigger.cmd_cancel(NEW, 'B');
+                NEW := trigger.cmd_cancel(NEW, 'B');
                 UPDATE cell
                     SET is_error = 1
                     WHERE id = NEW.cell_src_id;
             ELSIF (NEW.problem_resolving_id = obj_robot."PR_LOAD_HANDLE"()) THEN
                 -- команда выполнена вручную
-                PERFORM trigger.cmd_handle(NEW);
+                NEW := trigger.cmd_handle(NEW);
             END IF;
 
         ELSIF (NEW.command_type_id = obj_robot."CMD_UNLOAD_TYPE_ID"()) THEN
             -- UNLOAD
             IF (NEW.problem_resolving_id = obj_robot."PR_UNLOAD_RETRY"()) THEN
                 -- повторить еще раз
-                PERFORM trigger.cmd_retry(NEW);
+                NEW := trigger.cmd_retry(NEW);
             ELSIF (NEW.problem_resolving_id = obj_robot."PR_UNLOAD_MARK_BAD_REDIRECT"()) THEN
                 -- перенаправить в другую ячейку
                 PERFORM obj_robot.redirect_robot_to_new_cell(
@@ -89,7 +89,7 @@ BEGIN
                     NEW.container_id,
                     NEW.npp_dest,
                     NEW.cell_dest_id);
-                PERFORM trigger.cmd_cancel(NEW, 'None');
+                NEW := trigger.cmd_cancel(NEW, 'None');
                 UPDATE cell
                     SET is_error = 1
                     WHERE id = NEW.cell_dest_id;
@@ -101,28 +101,28 @@ BEGIN
                     NEW.container_id,
                     NEW.npp_dest,
                     NEW.cell_dest_id);
-                PERFORM trigger.cmd_cancel(NEW, 'None');
+                NEW := trigger.cmd_cancel(NEW, 'None');
                 PERFORM obj_rpart.container_change_placement(
                     NEW.problem_resolving_par,
                     NEW.command_rp_id,
                     NEW.cell_dest_id);
             ELSIF (NEW.problem_resolving_id = 7) THEN
                 -- отменить команду
-                PERFORM trigger.cmd_cancel(NEW);
+                NEW := trigger.cmd_cancel(NEW);
             ELSIF (NEW.problem_resolving_id = 8) THEN
                 -- отменить команду
-                PERFORM trigger.cmd_cancel(NEW);
+                NEW := trigger.cmd_cancel(NEW);
                 UPDATE cell
                     SET is_error = 1
                     where id = NEW.cell_dest_id;
             ELSIF (NEW.problem_resolving_id = obj_robot."PR_UNLOAD_HANDLE"()) THEN
                 -- команда выполнена вручную
-                PERFORM trigger.cmd_handle(NEW);
+                NEW := trigger.cmd_handle(NEW);
             END IF;
         ELSIF (NEW.command_type_id = 32) THEN
             -- INITY
             -- повторить еще раз
-            PERFORM trigger.cmd_retry(NEW);
+            NEW := trigger.cmd_retry(NEW);
         END IF;
     END IF;
     RETURN NEW;
