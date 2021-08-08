@@ -1,0 +1,31 @@
+SET client_encoding = 'UTF8';
+
+CREATE OR REPLACE FUNCTION container_cont_bi_e()
+    RETURNS trigger
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE NOT LEAKPROOF
+AS $BODY$
+BEGIN
+    IF (NEW.id IS null) THEN
+        SELECT nextval('seq_cnt_cont') INTO NEW.id;
+    END IF;
+    RETURN NEW;
+END;
+$BODY$;
+
+ALTER FUNCTION container_cont_bi_e()
+    OWNER TO postgres;
+
+COMMENT ON FUNCTION container_cont_bi_e()
+    IS 'Generate ID for newly added container_content sequentially';
+
+DROP TRIGGER IF EXISTS container_cont_bi_e ON container_content;
+
+CREATE TRIGGER container_cont_bi_e
+    BEFORE INSERT
+    ON container_content
+    FOR EACH ROW
+    EXECUTE PROCEDURE container_cont_bi_e();
+
+-- vim: ft=pgsql
