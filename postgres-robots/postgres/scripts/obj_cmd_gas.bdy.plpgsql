@@ -2303,9 +2303,11 @@ BEGIN
                 USING errcode = 50070;
         END IF;
         INSERT INTO command_gas_container_content (
-            command_gas_id, gd_id, qty, notes, gdp_id
+            command_gas_id, gd_id, qty, notes,
+            gdp_id
         ) VALUES (
-            cg_id, sgdr, sn::BIGINT, snotes, gdp_id_::BIGINT
+            cg_id, sgdr, sn::BIGINT, snotes,
+            (CASE WHEN gdp_id_ <> '' THEN gdp_id_ ELSE null END)::BIGINT
         );
         RAISE NOTICE 'Вставка % % % % %', cg_id, sgdr, sn::INT, snotes, gdp_id_;
         IF (cnt >= length(s)) THEN

@@ -463,14 +463,14 @@ BEGIN
             SELECT count(*) INTO cnt
                 FROM command_gas_container_content cgcc
                 WHERE command_gas_id = NEW.id
-                    AND NOT extend.is_null_str(gdp_id)
+                    AND gdp_id IS NOT NULL
                     AND NOT exists(
                         SELECT *
                             FROM gd_party gdp
                             INNER JOIN good_desc gd
                                 ON gd.good_desc_id = gdp.gd_id
-                            WHERE cgcc.gdp_id = gdp.id
-                                AND cgcc.gd_id=gd.id
+                            WHERE cgcc.gdp_id::TEXT = gdp.id
+                                AND cgcc.gd_id = gd.id
                     );
             IF (cnt > 0) THEN
                 RAISE EXCEPTION 'Part No is bad!'
